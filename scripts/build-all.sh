@@ -79,6 +79,17 @@ build_mac() {
 
   cp "$binary_path" "$app_dir/Contents/MacOS/GreenPaste"
 
+  # Copy app icon and menu bar icon into Resources
+  local resources_src="$MAC_PROJECT_DIR/Resources"
+  if [[ -f "$resources_src/AppIcon.icns" ]]; then
+    cp "$resources_src/AppIcon.icns" "$app_dir/Contents/Resources/AppIcon.icns"
+  fi
+  for img in StatusBarIcon.png StatusBarIcon@2x.png; do
+    if [[ -f "$resources_src/$img" ]]; then
+      cp "$resources_src/$img" "$app_dir/Contents/Resources/$img"
+    fi
+  done
+
   cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -94,6 +105,8 @@ build_mac() {
   <string>GreenPaste</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleVersion</key>

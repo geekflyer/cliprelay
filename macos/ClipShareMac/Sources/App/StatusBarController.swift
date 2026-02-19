@@ -16,9 +16,24 @@ final class StatusBarController {
 
     init() {
         if let button = statusItem.button {
-            button.title = "Clip"
+            if let iconImage = loadStatusBarIcon() {
+                iconImage.isTemplate = true
+                button.image = iconImage
+            } else {
+                button.title = "GP"
+            }
         }
         renderMenu()
+    }
+
+    private func loadStatusBarIcon() -> NSImage? {
+        // Look in the app bundle's Resources directory
+        if let bundlePath = Bundle.main.path(forResource: "StatusBarIcon", ofType: "png") {
+            let image = NSImage(contentsOfFile: bundlePath)
+            image?.size = NSSize(width: 18, height: 18)
+            return image
+        }
+        return nil
     }
 
     func setConnected(_ connected: Bool) {
