@@ -9,11 +9,13 @@ struct ChunkHeader: Codable {
 final class ChunkAssembler {
     private var expectedChunks = 0
     private var expectedBytes = 0
+    private(set) var encoding = "utf-8"
     private var chunks: [Int: Data] = [:]
 
     func reset(with header: ChunkHeader) {
         expectedChunks = header.total_chunks
         expectedBytes = header.total_bytes
+        encoding = header.encoding
         chunks.removeAll(keepingCapacity: true)
     }
 
@@ -31,13 +33,13 @@ final class ChunkAssembler {
         return total == expectedBytes
     }
 
-    func assembleString() -> String? {
+    func assembleData() -> Data? {
         guard isComplete() else { return nil }
         var output = Data(capacity: expectedBytes)
         for i in 0..<expectedChunks {
             guard let chunk = chunks[i] else { return nil }
             output.append(chunk)
         }
-        return String(data: output, encoding: .utf8)
+        return output
     }
 }

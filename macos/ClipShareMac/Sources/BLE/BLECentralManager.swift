@@ -16,6 +16,12 @@ struct ClipboardAvailableMessage: Codable {
     let type: String
 }
 
+struct EncryptedClipboardEnvelope: Codable {
+    let algorithm: String?
+    let nonce: String
+    let ciphertext: String
+}
+
 final class BLECentralManager: NSObject {
     var onConnectionStateChanged: ((Bool) -> Void)?
 
@@ -25,6 +31,7 @@ final class BLECentralManager: NSObject {
     private var pushCharacteristic: CBCharacteristic?
     private let assembler = ChunkAssembler()
     private var reconnectDelay: TimeInterval = 1
+    private let bootstrapEncryptionSeed = Data("clipboard-sync-dev-seed".utf8)
 
     init(clipboardWriter: ClipboardWriter) {
         self.clipboardWriter = clipboardWriter
@@ -116,10 +123,38 @@ extension BLECentralManager: CBPeripheralDelegate {
                 assembler.reset(with: header)
             } else {
                 assembler.appendChunkFrame(data)
-                if let output = assembler.assembleString() {
+                if let outputData = assembler.assembleData(), let output = decodeClipboardPayload(outputData, encoding: assembler.encoding) {
                     clipboardWriter.writeText(output)
                 }
             }
         }
+    }
+
+    private func decodeClipboardPayload(_ payload: Data, encoding: String) -> String? {
+        if encoding == "aes-gcm-json" {
+            return decryptEnvelope(payload)
+        }
+        return String(data: payload, encoding: .utf8)
+    }
+
+    private func decryptEnvelope(_ payload: Data) -> String? {
+        guard
+            let envelope = try? JSONDecoder().decode(EncryptedClipboardEnvelope.self, from: payload),
+            let nonceData = Data(base64Encoded: envelope.nonce),
+            let ciphertextData = Data(base64Encoded: envelope.ciphertext)
+        else {
+            return nil
+        }
+
+        var blob = Data()
+        blob.append(nonceData)
+        blob.append(ciphertextData)
+
+        let key = E2ECrypto.transportKey(seed: bootstrapEncryptionSeed)
+        guard let plaintext = try? E2ECrypto.open(blob, key: key) else {
+            return nil
+        }
+
+        return String(data: plaintext, encoding: .utf8)
     }
 }

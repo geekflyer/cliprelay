@@ -5,11 +5,11 @@ import org.json.JSONObject
 object ChunkTransfer {
     private const val MAX_CHUNK_PAYLOAD = 509
 
-    fun header(totalChunks: Int, totalBytes: Int): ByteArray {
+    fun header(totalChunks: Int, totalBytes: Int, encoding: String = "utf-8"): ByteArray {
         val json = JSONObject()
             .put("total_chunks", totalChunks)
             .put("total_bytes", totalBytes)
-            .put("encoding", "utf-8")
+            .put("encoding", encoding)
             .toString()
         return json.toByteArray()
     }
