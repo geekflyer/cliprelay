@@ -348,15 +348,16 @@ extension BLECentralManager: CBCentralManagerDelegate {
         } else {
             let displayName = makeDiscoveryDisplayName(peripheral: peripheral, advertisementData: advertisementData)
 
-            // didDiscover fires twice per peripheral: once for the primary ad (no name yet)
-            // and again when the scan response arrives (with the full local name). Always
-            // remove any stale entry for this peripheral before re-evaluating so we don't
-            // accumulate "Unknown device" entries from incomplete first-pass advertisements.
+            // Always remove any stale entry for this peripheral before re-evaluating
+            // so we don't accumulate entries from incomplete first-pass advertisements.
             removeDiscoveredPeer(id: peripheralID)
 
-            // Show as a new discovered device. Even if the name matches an existing
-            // trusted peer (BLE address rotation), require explicit re-approval —
-            // names are trivially spoofable and cannot be used for trust migration.
+            // Skip first-pass ads that lack a real device name — a subsequent ad with
+            // the scan response will provide the actual name.
+            guard displayName != "Unknown device" else { return }
+
+            // Collapse duplicates from BLE address rotation: if another peripheral
+            // already advertises the same name, replace it with the latest one.
             let nameKey = discoveryNameKey(for: displayName)
             if let existingID = discoveredNameToPeerID[nameKey], existingID != peripheralID {
                 removeDiscoveredPeer(id: existingID)
