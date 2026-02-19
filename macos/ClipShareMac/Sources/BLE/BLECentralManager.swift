@@ -354,15 +354,26 @@ extension BLECentralManager: CBCentralManagerDelegate {
             // accumulate "Unknown device" entries from incomplete first-pass advertisements.
             removeDiscoveredPeer(id: peripheralID)
 
-            // Suppress from "Discovered" if an approved peer already has this display name.
-            // Handles BLE address rotation: Android periodically changes its MAC address,
-            // causing macOS to assign a new peripheral UUID to the same physical device.
-            let nameMatchesApproved = approvedPeerIDs.contains { id in
+            // BLE address rotation: Android periodically changes its MAC address, causing
+            // macOS to assign a new peripheral UUID to the same physical device. If a trusted
+            // peer's name matches this device, migrate trust to the new UUID automatically.
+            let staleApprovedID = approvedPeerIDs.first { id in
+                guard id != peripheralID else { return false }
                 guard let desc = seenPeerDescriptions[id] else { return false }
                 return desc.hasPrefix(displayName + " (")
             }
 
-            if !nameMatchesApproved {
+            if let staleID = staleApprovedID {
+                approvedPeerIDs.remove(staleID)
+                connectedPeers.removeValue(forKey: staleID)
+                connectingPeerIDs.remove(staleID)
+                pendingInboundHashByPeer.removeValue(forKey: staleID)
+                assemblerByPeer.removeValue(forKey: staleID)
+
+                approvedPeerIDs.insert(peripheralID)
+                persistApprovedPeerIDs()
+                connectToApprovedPeerIfNeeded(id: peripheralID)
+            } else {
                 let nameKey = discoveryNameKey(for: displayName)
                 if let existingID = discoveredNameToPeerID[nameKey], existingID != peripheralID {
                     removeDiscoveredPeer(id: existingID)
