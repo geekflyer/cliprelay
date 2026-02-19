@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothGattServerCallback
 import java.util.UUID
 
 class GattServerCallback(
+    private val onAvailableReceived: (ByteArray) -> Unit,
     private val onPushReceived: (ByteArray) -> Unit,
     private val onDeviceConnectionChanged: (Boolean) -> Unit
 ) : BluetoothGattServerCallback() {
@@ -47,6 +48,9 @@ class GattServerCallback(
         offset: Int,
         value: ByteArray
     ) {
+        if (characteristic.uuid == GattServerManager.AVAILABLE_UUID) {
+            onAvailableReceived(value)
+        }
         if (characteristic.uuid == GattServerManager.PUSH_UUID) {
             onPushReceived(value)
         }

@@ -1,9 +1,16 @@
 import AppKit
 
 final class StatusBarController {
+    var onPairRequested: (() -> Void)?
+
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
     private let statusMenuItem = NSMenuItem(title: "Status: Disconnected", action: nil, keyEquivalent: "")
+    private lazy var pairMenuItem: NSMenuItem = {
+        let item = NSMenuItem(title: "Pair New Device", action: #selector(handlePairRequest), keyEquivalent: "p")
+        item.target = self
+        return item
+    }()
 
     init() {
         if let button = statusItem.button {
@@ -11,6 +18,7 @@ final class StatusBarController {
         }
 
         menu.addItem(statusMenuItem)
+        menu.addItem(pairMenuItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(
             NSMenuItem(
@@ -24,5 +32,10 @@ final class StatusBarController {
 
     func setConnected(_ connected: Bool) {
         statusMenuItem.title = connected ? "Status: Connected" : "Status: Disconnected"
+    }
+
+    @objc
+    private func handlePairRequest() {
+        onPairRequested?()
     }
 }

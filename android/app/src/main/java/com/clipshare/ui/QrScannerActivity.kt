@@ -17,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.clipshare.R
 import com.clipshare.pairing.PairingStore
 import com.clipshare.pairing.PairingUriParser
+import com.clipshare.service.ClipShareService
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
@@ -139,6 +140,12 @@ class QrScannerActivity : AppCompatActivity() {
         handledResult = true
         PairingStore(this).save(pairingPayload)
         statusText.text = getString(R.string.pairing_saved)
+
+        startForegroundService(
+            Intent(this, ClipShareService::class.java).apply {
+                action = ClipShareService.ACTION_REFRESH_PAIRING
+            }
+        )
 
         val data = Intent().putExtra(EXTRA_SERVICE_UUID, pairingPayload.serviceUUID)
         setResult(RESULT_OK, data)

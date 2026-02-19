@@ -13,6 +13,14 @@ object E2ECrypto {
         return SecretKeySpec(digest, "AES")
     }
 
+    fun deriveSessionKey(sharedSeed: ByteArray, sessionNonce: ByteArray): SecretKey {
+        val input = ByteArray(sharedSeed.size + sessionNonce.size)
+        System.arraycopy(sharedSeed, 0, input, 0, sharedSeed.size)
+        System.arraycopy(sessionNonce, 0, input, sharedSeed.size, sessionNonce.size)
+        val digest = MessageDigest.getInstance("SHA-256").digest(input)
+        return SecretKeySpec(digest, "AES")
+    }
+
     fun encrypt(plaintext: ByteArray, key: SecretKey, nonce: ByteArray): ByteArray {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         val spec = GCMParameterSpec(128, nonce)
