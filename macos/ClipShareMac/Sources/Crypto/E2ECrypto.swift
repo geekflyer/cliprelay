@@ -6,8 +6,13 @@ enum E2ECrypto {
         Curve25519.KeyAgreement.PrivateKey()
     }
 
-    static func transportKey(seed: Data) -> SymmetricKey {
-        let digest = SHA256.hash(data: seed)
+    static func transportKey(seed: Data, sessionNonce: Data? = nil) -> SymmetricKey {
+        var input = Data()
+        input.append(seed)
+        if let sessionNonce {
+            input.append(sessionNonce)
+        }
+        let digest = SHA256.hash(data: input)
         return SymmetricKey(data: Data(digest))
     }
 
