@@ -1,0 +1,11 @@
+.DS_Store
+.idea/
+.gradle/
+build/
+**/build/
+macos/ClipShareMac/.build/
+DerivedData/
+*.xcworkspace
+*.xcodeproj/xcuserdata/
+*.swp
+local.properties

@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">GreenPaste</string>
+    <string name="service_channel_name">Clipboard Sync</string>
+    <string name="service_notification_text">BLE clipboard sync is active</string>
+</resources>
