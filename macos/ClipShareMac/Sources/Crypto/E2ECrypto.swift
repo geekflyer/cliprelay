@@ -6,6 +6,11 @@ enum E2ECrypto {
         Curve25519.KeyAgreement.PrivateKey()
     }
 
+    static func transportKey(seed: Data) -> SymmetricKey {
+        let digest = SHA256.hash(data: seed)
+        return SymmetricKey(data: Data(digest))
+    }
+
     static func deriveSharedSecret(
         privateKey: Curve25519.KeyAgreement.PrivateKey,
         peerPublicKeyRaw: Data

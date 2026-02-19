@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -14,13 +15,28 @@ import com.clipshare.R
 import com.clipshare.service.ClipShareService
 
 class MainActivity : AppCompatActivity() {
+    private lateinit var status: TextView
+
+    private val pairingScannerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val serviceUuid = result.data?.getStringExtra(QrScannerActivity.EXTRA_SERVICE_UUID).orEmpty()
+            if (serviceUuid.isNotBlank()) {
+                status.text = "Paired (service $serviceUuid)"
+            } else {
+                status.text = getString(R.string.pairing_saved)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         requestRuntimePermissions()
 
-        val status = findViewById<TextView>(R.id.statusText)
+        status = findViewById(R.id.statusText)
         val startServiceButton = findViewById<Button>(R.id.startServiceButton)
         val scanQrButton = findViewById<Button>(R.id.scanQrButton)
 
@@ -30,7 +46,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         scanQrButton.setOnClickListener {
-            startActivity(Intent(this, QrScannerActivity::class.java))
+            pairingScannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
         }
     }
 
