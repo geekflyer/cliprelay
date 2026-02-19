@@ -5,9 +5,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -17,19 +17,6 @@ import com.clipshare.service.ClipShareService
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
 
-    private val pairingScannerLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val serviceUuid = result.data?.getStringExtra(QrScannerActivity.EXTRA_SERVICE_UUID).orEmpty()
-            if (serviceUuid.isNotBlank()) {
-                status.text = "Paired (service $serviceUuid)"
-            } else {
-                status.text = getString(R.string.pairing_saved)
-            }
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -38,15 +25,15 @@ class MainActivity : AppCompatActivity() {
 
         status = findViewById(R.id.statusText)
         val startServiceButton = findViewById<Button>(R.id.startServiceButton)
-        val scanQrButton = findViewById<Button>(R.id.scanQrButton)
+        val pairButton = findViewById<Button>(R.id.openBluetoothSettingsButton)
 
         startServiceButton.setOnClickListener {
             startForegroundService(Intent(this, ClipShareService::class.java))
             status.text = "Service running"
         }
 
-        scanQrButton.setOnClickListener {
-            pairingScannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
+        pairButton.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         }
     }
 
@@ -54,8 +41,7 @@ class MainActivity : AppCompatActivity() {
         val permissions = mutableListOf(
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_ADVERTISE,
-            Manifest.permission.CAMERA
+            Manifest.permission.BLUETOOTH_ADVERTISE
         )
 
         if (Build.VERSION.SDK_INT >= 33) {

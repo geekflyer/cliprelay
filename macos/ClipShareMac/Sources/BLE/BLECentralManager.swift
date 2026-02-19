@@ -1,27 +1,18 @@
 import CoreBluetooth
 import CryptoKit
 import Foundation
-import Security
 
 enum BLEProtocol {
     static let serviceUUID = CBUUID(string: "C10B0001-1234-5678-9ABC-DEF012345678")
     static let availableUUID = CBUUID(string: "C10B0002-1234-5678-9ABC-DEF012345678")
     static let dataUUID = CBUUID(string: "C10B0003-1234-5678-9ABC-DEF012345678")
-    static let pushUUID = CBUUID(string: "C10B0004-1234-5678-9ABC-DEF012345678")
-    static let deviceInfoUUID = CBUUID(string: "C10B0005-1234-5678-9ABC-DEF012345678")
 }
 
 struct ClipboardAvailableMessage: Codable {
     let hash: String
     let size: Int
     let type: String
-}
-
-struct EncryptedClipboardEnvelope: Codable {
-    let algorithm: String?
-    let session: String?
-    let nonce: String
-    let ciphertext: String
+    let tx_id: String
 }
 
 final class BLECentralManager: NSObject {
@@ -29,37 +20,21 @@ final class BLECentralManager: NSObject {
     var onClipboardReceived: ((String) -> Void)?
 
     private let clipboardWriter: ClipboardWriter
-    private let sharedSeedProvider: () -> Data
 
     private var centralManager: CBCentralManager!
     private var peripheral: CBPeripheral?
-    private var pushCharacteristic: CBCharacteristic?
     private var availableCharacteristic: CBCharacteristic?
+    private var dataCharacteristic: CBCharacteristic?
+
     private let assembler = ChunkAssembler()
     private var reconnectDelay: TimeInterval = 1
-    private var expectedPairingTokenHex: String?
     private var lastInboundHash: String?
+    private var pendingInboundHashFromMetadata: String?
 
-    init(
-        clipboardWriter: ClipboardWriter,
-        sharedSeedProvider: @escaping () -> Data = { Data("clipboard-sync-dev-seed".utf8) }
-    ) {
+    init(clipboardWriter: ClipboardWriter) {
         self.clipboardWriter = clipboardWriter
-        self.sharedSeedProvider = sharedSeedProvider
         super.init()
         self.centralManager = CBCentralManager(delegate: self, queue: .main)
-    }
-
-    func setExpectedPairingToken(_ tokenHex: String?) {
-        let normalized = tokenHex?.trimmingCharacters(in: .whitespacesAndNewlines)
-        expectedPairingTokenHex = normalized?.isEmpty == false ? normalized?.lowercased() : nil
-
-        if centralManager.state == .poweredOn {
-            centralManager.stopScan()
-            if peripheral == nil {
-                scan()
-            }
-        }
     }
 
     func start() {
@@ -76,29 +51,40 @@ final class BLECentralManager: NSObject {
     }
 
     func sendClipboardText(_ text: String) {
-        guard let peripheral, let characteristic = pushCharacteristic else { return }
-        let data = Data(text.utf8)
-        guard data.count <= 102_400 else { return }
-
-        if let availableCharacteristic {
-            let metadata = ClipboardAvailableMessage(
-                hash: sha256Hex(data),
-                size: data.count,
-                type: "text/plain"
-            )
-            if let metadataData = try? JSONEncoder().encode(metadata) {
-                peripheral.writeValue(metadataData, for: availableCharacteristic, type: .withResponse)
-            }
+        guard
+            let peripheral,
+            let availableCharacteristic,
+            let dataCharacteristic
+        else {
+            return
         }
 
-        guard let frames = makeEncryptedChunkFrames(plaintext: data) else { return }
+        let payload = Data(text.utf8)
+        guard payload.count <= 102_400 else { return }
+
+        let txID = UUID().uuidString.lowercased()
+        let metadata = ClipboardAvailableMessage(
+            hash: sha256Hex(payload),
+            size: payload.count,
+            type: "text/plain",
+            tx_id: txID
+        )
+
+        guard
+            let metadataData = try? JSONEncoder().encode(metadata),
+            let frames = makeChunkFrames(payload: payload, txID: txID)
+        else {
+            return
+        }
+
+        peripheral.writeValue(metadataData, for: availableCharacteristic, type: .withResponse)
 
         for (index, frame) in frames.enumerated() {
             let delay = Double(index) * 0.01
-            let type: CBCharacteristicWriteType = index == 0 ? .withResponse : .withoutResponse
+            let writeType: CBCharacteristicWriteType = index == 0 ? .withResponse : .withoutResponse
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.peripheral == peripheral, self.pushCharacteristic != nil else { return }
-                peripheral.writeValue(frame, for: characteristic, type: type)
+                guard let self, self.peripheral == peripheral, self.dataCharacteristic != nil else { return }
+                peripheral.writeValue(frame, for: dataCharacteristic, type: writeType)
             }
         }
     }
@@ -115,66 +101,26 @@ final class BLECentralManager: NSObject {
         }
     }
 
-    private func shouldConnect(advertisementData: [String: Any]) -> Bool {
-        guard
-            let tokenHex = expectedPairingTokenHex,
-            !tokenHex.isEmpty
-        else {
-            return true
-        }
-
-        guard
-            let expectedPrefix = PairingManager.tokenPrefixData(tokenHex: tokenHex, length: 8),
-            let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data],
-            let advertisedTokenPrefix = serviceData[BLEProtocol.serviceUUID]
-        else {
-            return false
-        }
-
-        return advertisedTokenPrefix.starts(with: expectedPrefix)
-    }
-
-    private func makeEncryptedChunkFrames(plaintext: Data) -> [Data]? {
-        let sessionNonce = randomData(length: 16)
-        let nonceData = randomData(length: 12)
-
-        let key = E2ECrypto.transportKey(seed: sharedSeedProvider(), sessionNonce: sessionNonce)
-        guard let nonce = try? AES.GCM.Nonce(data: nonceData) else { return nil }
-        guard let sealed = try? AES.GCM.seal(plaintext, using: key, nonce: nonce, authenticating: Data("clipboard-sync-v1".utf8)) else {
-            return nil
-        }
-
-        let payload = sealed.ciphertext + sealed.tag
-        let envelope = EncryptedClipboardEnvelope(
-            algorithm: "aes-256-gcm",
-            session: sessionNonce.base64EncodedString(),
-            nonce: nonceData.base64EncodedString(),
-            ciphertext: payload.base64EncodedString()
-        )
-
-        guard let envelopeData = try? JSONEncoder().encode(envelope) else {
-            return nil
-        }
-
+    private func makeChunkFrames(payload: Data, txID: String) -> [Data]? {
         let chunkPayloadSize = 509
-        let totalChunks = Int(ceil(Double(envelopeData.count) / Double(chunkPayloadSize)))
+        let totalChunks = Int(ceil(Double(payload.count) / Double(chunkPayloadSize)))
         guard totalChunks > 0 else { return nil }
 
-        let header = ChunkHeader(total_chunks: totalChunks, total_bytes: envelopeData.count, encoding: "aes-gcm-json")
+        let header = ChunkHeader(tx_id: txID, total_chunks: totalChunks, total_bytes: payload.count, encoding: "utf-8")
         guard let headerData = try? JSONEncoder().encode(header) else {
             return nil
         }
 
-        var frames: [Data] = [headerData]
+        var frames = [headerData]
         frames.reserveCapacity(totalChunks + 1)
 
         for index in 0..<totalChunks {
             let start = index * chunkPayloadSize
-            let end = min(start + chunkPayloadSize, envelopeData.count)
+            let end = min(start + chunkPayloadSize, payload.count)
             var frame = Data()
             frame.append(UInt8((index >> 8) & 0xFF))
             frame.append(UInt8(index & 0xFF))
-            frame.append(envelopeData[start..<end])
+            frame.append(payload[start..<end])
             frames.append(frame)
         }
 
@@ -182,41 +128,16 @@ final class BLECentralManager: NSObject {
     }
 
     private func decodeClipboardPayload(_ payload: Data, encoding: String) -> String? {
-        if encoding == "aes-gcm-json" {
-            return decryptEnvelope(payload)
-        }
+        guard encoding == "utf-8" else { return nil }
         return String(data: payload, encoding: .utf8)
     }
 
-    private func decryptEnvelope(_ payload: Data) -> String? {
-        guard
-            let envelope = try? JSONDecoder().decode(EncryptedClipboardEnvelope.self, from: payload),
-            let nonceData = Data(base64Encoded: envelope.nonce),
-            let ciphertextData = Data(base64Encoded: envelope.ciphertext)
-        else {
-            return nil
+    private func processAvailableMetadata(_ data: Data) {
+        guard let message = try? JSONDecoder().decode(ClipboardAvailableMessage.self, from: data) else {
+            return
         }
 
-        let sessionNonce = envelope.session.flatMap { Data(base64Encoded: $0) }
-
-        var blob = Data()
-        blob.append(nonceData)
-        blob.append(ciphertextData)
-
-        let key = E2ECrypto.transportKey(seed: sharedSeedProvider(), sessionNonce: sessionNonce)
-        guard let plaintext = try? E2ECrypto.open(blob, key: key) else {
-            return nil
-        }
-
-        return String(data: plaintext, encoding: .utf8)
-    }
-
-    private func randomData(length: Int) -> Data {
-        var bytes = Data(count: length)
-        _ = bytes.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, length, $0.baseAddress!)
-        }
-        return bytes
+        pendingInboundHashFromMetadata = message.hash.isEmpty ? nil : message.hash
     }
 
     private func sha256Hex(_ data: Data) -> String {
@@ -233,10 +154,6 @@ extension BLECentralManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        guard shouldConnect(advertisementData: advertisementData) else {
-            return
-        }
-
         self.peripheral = peripheral
         peripheral.delegate = self
         central.stopScan()
@@ -252,8 +169,10 @@ extension BLECentralManager: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         onConnectionStateChanged?(false)
         self.peripheral = nil
-        self.pushCharacteristic = nil
-        self.availableCharacteristic = nil
+        availableCharacteristic = nil
+        dataCharacteristic = nil
+        pendingInboundHashFromMetadata = nil
+        assembler.clear()
         scheduleReconnect()
     }
 }
@@ -261,7 +180,7 @@ extension BLECentralManager: CBCentralManagerDelegate {
 extension BLECentralManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         peripheral.services?.forEach {
-            peripheral.discoverCharacteristics([BLEProtocol.availableUUID, BLEProtocol.dataUUID, BLEProtocol.pushUUID], for: $0)
+            peripheral.discoverCharacteristics([BLEProtocol.availableUUID, BLEProtocol.dataUUID], for: $0)
         }
     }
 
@@ -270,34 +189,52 @@ extension BLECentralManager: CBPeripheralDelegate {
             if characteristic.uuid == BLEProtocol.availableUUID || characteristic.uuid == BLEProtocol.dataUUID {
                 peripheral.setNotifyValue(true, for: characteristic)
             }
-            if characteristic.uuid == BLEProtocol.pushUUID {
-                pushCharacteristic = characteristic
-            }
+
             if characteristic.uuid == BLEProtocol.availableUUID {
                 availableCharacteristic = characteristic
+            }
+
+            if characteristic.uuid == BLEProtocol.dataUUID {
+                dataCharacteristic = characteristic
             }
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let data = characteristic.value else { return }
-        if characteristic.uuid == BLEProtocol.dataUUID {
-            if let header = try? JSONDecoder().decode(ChunkHeader.self, from: data) {
-                assembler.reset(with: header)
-                return
-            }
 
-            assembler.appendChunkFrame(data)
-            guard let assembledData = assembler.assembleData() else { return }
-            guard let output = decodeClipboardPayload(assembledData, encoding: assembler.encoding) else { return }
-
-            let outputData = Data(output.utf8)
-            let hash = sha256Hex(outputData)
-            guard hash != lastInboundHash else { return }
-
-            lastInboundHash = hash
-            clipboardWriter.writeText(output)
-            onClipboardReceived?(output)
+        if characteristic.uuid == BLEProtocol.availableUUID {
+            processAvailableMetadata(data)
+            return
         }
+
+        guard characteristic.uuid == BLEProtocol.dataUUID else {
+            return
+        }
+
+        if let header = try? JSONDecoder().decode(ChunkHeader.self, from: data) {
+            assembler.reset(with: header)
+            return
+        }
+
+        assembler.appendChunkFrame(data)
+        guard let assembledData = assembler.assembleData() else { return }
+        guard let output = decodeClipboardPayload(assembledData, encoding: assembler.encoding) else { return }
+
+        let outputData = Data(output.utf8)
+        let hash = sha256Hex(outputData)
+
+        if let metadataHash = pendingInboundHashFromMetadata, !metadataHash.isEmpty, metadataHash != hash {
+            pendingInboundHashFromMetadata = nil
+            return
+        }
+
+        pendingInboundHashFromMetadata = nil
+
+        guard hash != lastInboundHash else { return }
+
+        lastInboundHash = hash
+        clipboardWriter.writeText(output)
+        onClipboardReceived?(output)
     }
 }

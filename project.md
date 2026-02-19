@@ -1,16 +1,15 @@
-# GreenPaste — Cross-Platform Clipboard Sync (Mac ↔ Android)
+# GreenPaste — Cross-Platform Clipboard Sync (Mac <-> Android)
 
-> **Note:** The project name "GreenPaste" is provisional. Keep it loosely coupled — use a generic internal name like `clipboard-sync` or `clipshare` for package names, directory structures, and variable names. The user-facing name can be swapped later without refactoring internals.
+> Note: "GreenPaste" is a provisional product name. Keep internals generic (`clipboard-sync` / `clipshare`) so branding can be swapped later.
 
 ## Overview
 
-GreenPaste is a clipboard synchronization tool between macOS and Android. It replicates the UX of Apple's Universal Clipboard but works across platforms. The design is intentionally asymmetric due to Android's clipboard access restrictions.
+GreenPaste is a clipboard synchronization tool between macOS and Android with an intentionally asymmetric UX:
 
-**Target devices:**
-- MacBook Pro (M1 Max), macOS Tahoe 26.1+, Bluetooth 5.0
-- Pixel 10 Pro XL, Android 16+, Bluetooth 5.4
+- Mac -> Android is automatic.
+- Android -> Mac is explicit via Android Share sheet.
 
----
+Transport is BLE only. There is no cloud relay, server, or internet dependency.
 
 ## Architecture Summary
 
@@ -27,182 +26,117 @@ GreenPaste is a clipboard synchronization tool between macOS and Android. It rep
 
 ### Transport
 
-**BLE only.** No cloud relay, no server, no internet dependency. This is a deliberate security decision — clipboard content never leaves the local BLE link between the two paired devices. No third-party infrastructure is involved at any point.
-
-- Wi-Fi Direct is NOT available (macOS does not implement the Wi-Fi Direct standard; Apple uses proprietary AWDL which is not exposed to third parties and incompatible with Android)
-- BLE 5.0 (the bottleneck, from the Mac side) with LE 2M PHY and DLE gives ~1-1.5 Mbps real-world throughput — plenty for text clipboard content
-- Scope is text-only, so BLE throughput is never a bottleneck (even 100KB of text transfers in under a second)
-
----
+- BLE only.
+- Scope is text-only clipboard sync (up to 100 KiB per transfer).
+- Throughput requirements are modest for text, so reliability and simplicity take priority over maximizing bandwidth.
 
 ## Clipboard Flow
 
-### Mac → Android (fully automatic)
+### Mac -> Android (fully automatic)
 
-```
-1. macOS app polls NSPasteboard.changeCount (every 500ms)
-2. Change detected → content hashed (SHA-256)
-3. BLE: Write hash + metadata to "Clipboard Available" characteristic
-4. Android receives notification, compares hash to avoid duplicates
-5. If new: pull content over BLE (chunked GATT reads)
-6. Android calls ClipboardManager.setPrimaryClip()
-7. System toast confirms "Copied to clipboard" (automatic on Android 13+)
-```
+1. macOS app polls `NSPasteboard.changeCount` (default 500 ms, configurable constant).
+2. On change, app reads text, computes hash, and prepares transfer metadata.
+3. Mac writes metadata to the `Clipboard Available` characteristic.
+4. Mac sends chunked payload frames on the `Clipboard Data` characteristic.
+5. Android reassembles all chunks atomically, validates size/hash, then writes to `ClipboardManager`.
 
-**User experience:** Zero interaction required on either side. User copies on Mac, pastes on Android.
+### Android -> Mac (explicit share action)
 
-### Android → Mac (explicit share action)
+1. User taps Share on Android text content and selects GreenPaste.
+2. Android service receives `ACTION_SEND` text.
+3. Android sends metadata notification (`Clipboard Available`) and chunked data frames (`Clipboard Data`).
+4. macOS reassembles atomically and writes to `NSPasteboard`.
+5. macOS posts a brief "Clipboard received" notification.
 
-```
-1. User copies content on Android
-2. User taps Share → selects "GreenPaste" / "Send to Mac"
-3. App receives content via ACTION_SEND intent
-4. Content sent to Mac over BLE (chunked writes to "Clipboard Push" characteristic)
-5. macOS app receives content, writes to NSPasteboard
-6. macOS shows brief notification: "Clipboard received from Android"
-```
+Why explicit on Android: Android 10+ blocks background clipboard reads for privacy; Share sheet is the sanctioned path.
 
-**Why explicit on Android:** Android 10+ prevents background apps from reading clipboard content. The share sheet is the cleanest sanctioned mechanism. No accessibility service hacks, no keyboard replacement.
-
----
-
-## BLE Protocol Design
+## BLE Protocol Design (MVP)
 
 ### GATT Service
 
 ```
-Service UUID: (generate a custom 128-bit UUID)
-  e.g., "C10B0001-1234-5678-9ABC-DEF012345678"
+Service UUID: c10b0001-1234-5678-9abc-def012345678
 
 Characteristics:
 
-1. Clipboard Available (Mac → Android signaling)
-   UUID: C10B0002-...
-   Properties: READ, NOTIFY
-   Value: JSON { "hash": "<sha256>", "size": <bytes>, "type": "text/plain" }
-   Description: Mac writes here when clipboard changes. Android subscribes for notifications.
+1) Clipboard Available (bidirectional signaling)
+   UUID: c10b0002-1234-5678-9abc-def012345678
+   Properties: READ, WRITE, NOTIFY
+   Value: UTF-8 JSON metadata
+   Example: {"hash":"<sha256>","size":123,"type":"text/plain","tx_id":"<id>"}
 
-2. Clipboard Data (Mac → Android transfer)
-   UUID: C10B0003-...
-   Properties: READ
-   Value: Chunked clipboard content
-   Description: Android reads this characteristic repeatedly to pull clipboard data.
-   Chunking protocol:
-     - First read returns header: { "total_chunks": N, "total_bytes": M, "encoding": "utf-8" | "base64" }
-     - Subsequent reads return chunks with index prefix: [2-byte chunk index][payload]
-     - MTU negotiated to 512 bytes, so ~509 bytes usable per chunk
-
-3. Clipboard Push (Android → Mac transfer)
-   UUID: C10B0004-...
-   Properties: WRITE, WRITE_WITHOUT_RESPONSE
-   Value: Chunked clipboard content from Android
-   Description: Android writes clipboard data here. Mac subscribes.
-   Same chunking protocol as above, but Android is the writer.
-
-4. Device Info
-   UUID: C10B0005-...
-   Properties: READ
-   Value: JSON { "name": "<device_name>", "platform": "macos" | "android", "version": "1.0" }
+2) Clipboard Data (bidirectional transfer)
+   UUID: c10b0003-1234-5678-9abc-def012345678
+   Properties: READ, WRITE, NOTIFY
+   Value: Chunk header + chunk frames
 ```
+
+Chunking format:
+
+- Header frame (JSON): `{"tx_id":"...","total_chunks":N,"total_bytes":M,"encoding":"utf-8"}`
+- Chunk frame: `[2-byte big-endian chunk_index][payload_bytes]`
+- Payload limit: 100 KiB plain UTF-8 text.
+
+Transfer reliability rule:
+
+- Transfers are atomic.
+- If disconnect or framing failure occurs before all chunks are received, discard the partial transfer.
+- Retry only on the next full transfer after reconnect.
 
 ### BLE Connection Management
 
-- **macOS acts as BLE Central**, Android acts as BLE Peripheral (GATT Server)
-- Android advertises the ClipShare service UUID continuously via foreground service
-- macOS scans for the service UUID, connects when found
-- Reconnection: Exponential backoff on disconnect (1s, 2s, 4s, 8s, max 30s)
-- Bonding: Pair once, reconnect automatically thereafter
-- Connection interval: Request 15ms for responsive transfers, allow system to adjust
-
-### Why Android is the Peripheral
-
-- Android has excellent `BluetoothGattServer` APIs in Kotlin
-- Android foreground services can maintain BLE advertising reliably
-- macOS CoreBluetooth is strongest as a Central (scanning/connecting)
-- This matches the typical BLE pattern for mobile ↔ desktop
-
----
+- macOS acts as BLE Central.
+- Android acts as BLE Peripheral / GATT Server and advertises continuously while foreground service runs.
+- Reconnect with exponential backoff on macOS (1 s, 2 s, 4 s, 8 s, max 30 s).
+- Pair once via OS-native BLE Secure Connections; reconnect automatically afterward.
 
 ## Platform Implementation Details
 
 ### macOS (Swift)
 
-**App type:** Menu bar app (no dock icon, no main window)
+App type: menu bar app (no dock icon, no main window).
 
-**Components:**
+Responsibilities:
 
-```
-ClipShareMac/
-├── App/
-│   ├── AppDelegate.swift          # Menu bar setup, lifecycle
-│   └── StatusBarController.swift  # Menu bar icon + dropdown menu
-├── Clipboard/
-│   ├── ClipboardMonitor.swift     # NSPasteboard polling (500ms timer)
-│   └── ClipboardWriter.swift      # Write incoming content to NSPasteboard
-├── BLE/
-│   ├── BLECentralManager.swift    # CoreBluetooth CBCentralManager
-│   ├── BLEPeripheralDelegate.swift # Handle GATT interactions
-│   └── ChunkAssembler.swift       # Reassemble chunked BLE data
-├── Crypto/
-│   └── E2ECrypto.swift            # X25519 + AES-256-GCM
-├── Models/
-│   └── ClipboardContent.swift     # Content type, hash, payload
-└── Info.plist                     # NSBluetoothAlwaysUsageDescription
-```
+- Monitor pasteboard changes (polling).
+- Discover/connect to Android BLE GATT server.
+- Send/receive metadata and chunked frames.
+- Reassemble inbound transfers atomically.
+- Write received text to clipboard.
 
-**Key APIs:**
-- `NSPasteboard.general.changeCount` — poll for clipboard changes
-- `NSPasteboard.general.string(forType: .string)` — read text
-- `NSPasteboard.general.setString(_:forType:)` — write text
-- `CBCentralManager` — BLE scanning and connection
-- `CBPeripheral` — interact with Android's GATT server
-- `NSUserNotification` or `UNUserNotificationCenter` — notify on receive
+Key APIs:
 
-**Permissions required:**
-- Bluetooth (Info.plist: `NSBluetoothAlwaysUsageDescription`)
+- `NSPasteboard.general.changeCount`
+- `NSPasteboard.general.string(forType: .string)`
+- `NSPasteboard.general.setString(_:forType:)`
+- `CBCentralManager`, `CBPeripheral`
+- `UNUserNotificationCenter`
+
+Permissions:
+
+- Bluetooth (`NSBluetoothAlwaysUsageDescription`)
 - Notifications
-
-**Distribution:** Direct .app bundle or Homebrew cask. No App Store required for personal use.
 
 ### Android (Kotlin)
 
-**Components:**
+Responsibilities:
 
-```
-app/src/main/java/com/clipshare/
-├── ui/
-│   ├── MainActivity.kt            # Settings, pairing UI, connection status
-│   ├── QrScannerActivity.kt      # CameraX + ML Kit barcode scanner for pairing
-│   └── ShareReceiverActivity.kt   # Handles ACTION_SEND intents
-├── service/
-│   ├── ClipShareService.kt         # Foreground service (keeps BLE alive)
-│   └── ClipboardWriter.kt        # Write to ClipboardManager
-├── ble/
-│   ├── GattServerManager.kt      # BluetoothGattServer setup
-│   ├── GattServerCallback.kt     # Handle read/write requests
-│   ├── Advertiser.kt             # BLE advertising
-│   └── ChunkTransfer.kt          # Chunking/reassembly logic
-├── crypto/
-│   └── E2ECrypto.kt              # Matching crypto implementation
-└── models/
-    └── ClipboardContent.kt
-```
+- Foreground service hosts BLE GATT server and advertising.
+- Share target receives text from Android apps.
+- Receive Mac transfers and write to clipboard.
+- Publish Android->Mac transfers over BLE.
 
-**AndroidManifest.xml entries:**
+AndroidManifest highlights:
 
 ```xml
-<!-- Permissions -->
 <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-<uses-permission android:name="android.permission.CAMERA" /> <!-- QR code scanning for pairing -->
 
-<!-- Share target -->
-<activity android:name=".ui.ShareReceiverActivity"
-          android:exported="true">
+<activity android:name=".ui.ShareReceiverActivity" android:exported="true">
     <intent-filter>
         <action android:name="android.intent.action.SEND" />
         <category android:name="android.intent.category.DEFAULT" />
@@ -210,118 +144,72 @@ app/src/main/java/com/clipshare/
     </intent-filter>
 </activity>
 
-<!-- Foreground service -->
 <service android:name=".service.ClipShareService"
          android:foregroundServiceType="connectedDevice" />
 ```
 
-**Key APIs:**
-- `BluetoothGattServer` — host GATT service
-- `BluetoothLeAdvertiser` — advertise service UUID
-- `ClipboardManager.setPrimaryClip()` — write to clipboard (works from foreground service)
-**Clipboard writing behavior by Android version:**
-- Android 12 and below: `setPrimaryClip()` works silently from foreground service
-- Android 13+: `setPrimaryClip()` works but system shows automatic "Copied to clipboard" toast. This is fine — it's good UX feedback.
-
----
-
 ## Security
 
-### Pairing (QR Code)
+### Pairing
 
-One-time setup to establish trust between devices.
+- Use OS-native BLE Secure Connections pairing (numeric comparison / confirmation dialogs).
+- Do not implement custom QR pairing or custom pairing token protocol for MVP.
 
-**Flow:**
-1. User opens GreenPaste on macOS, clicks "Pair New Device"
-2. macOS generates a QR code displayed in a window containing:
-   - A one-time pairing token (random 32 bytes, hex-encoded)
-   - macOS device's X25519 public key
-   - BLE service UUID (so Android knows what to scan for)
-   - Encoded as JSON, then as a `clipshare://pair?data=<base64>` URI in the QR code
-3. User opens GreenPaste on Android, taps "Scan to Pair"
-4. Android scans QR code using CameraX / ML Kit barcode scanner
-5. Android extracts the pairing token and Mac's public key
-6. Android generates its own X25519 keypair
-7. Android starts BLE advertising with the pairing token embedded in the advertisement data
-8. macOS scans for BLE peripherals advertising the expected pairing token — this confirms the correct device
-9. BLE connection established. Android sends its X25519 public key over the encrypted BLE link
-10. Both devices derive a shared secret (X25519 ECDH) and store it:
-    - macOS: Keychain
-    - Android: Android Keystore (hardware-backed on Pixel)
-11. Pairing complete. Devices now recognize each other by BLE identity and shared secret.
+### Encryption Model (MVP)
 
-**Why QR code instead of numeric code:**
-- More data can be exchanged in one step (public key + token + service UUID)
-- No manual typing, less error-prone
-- The public key exchange happens out-of-band (camera), which prevents MITM on the BLE channel
-
-**Re-pairing:** User can unpair from either device's settings and repeat the flow.
-
-### Encryption
-
-- All clipboard content encrypted with AES-256-GCM before transmission
-- Unique nonce per message
-- Key rotation: derive per-session keys from the shared secret + session nonce
-- BLE characteristic values are always encrypted (BLE link-layer encryption is supplementary, not relied upon)
+- Rely on BLE link-layer encryption after pairing/bonding.
+- No extra app-layer encryption in MVP.
+- Revisit app-layer E2E only if threat model expands (for example relay/cloud support or multi-hop transport).
 
 ### Storage
 
-- macOS: Keychain for shared secret and device identity
-- Android: Android Keystore (hardware-backed on Pixel)
-- No clipboard content is persisted to disk — in-memory only, transient
-
----
+- Do not persist clipboard payloads to disk.
+- Keep transfer state in memory only.
 
 ## Content Scope
 
-**Text only.** Plain text clipboard content via BLE. No images, files, or rich text.
-
-Max payload: ~100KB of text (transfers in under a second over BLE between target devices). If clipboard content exceeds this, silently skip (don't attempt to send).
-
----
+- Text only (`text/plain`).
+- Maximum payload: ~100 KiB UTF-8 text.
+- Non-text or oversized payloads are ignored.
 
 ## Build & Tooling
 
 ### macOS
-- **Language:** Swift
-- **Min deployment target:** macOS Tahoe 26.1
-- **Build system:** Xcode / swift build
-- **Dependencies:** None beyond system frameworks (CoreBluetooth, CryptoKit, AppKit)
+
+- Language: Swift
+- Build: Xcode / `swift build`
+- Dependencies: system frameworks only
 
 ### Android
-- **Language:** Kotlin
-- **Min SDK:** 35 (Android 16) — target device specific
-- **Target SDK:** 35
-- **Build system:** Gradle with Kotlin DSL
-- **Dependencies:** AndroidX Core, Material3 for UI, CameraX + ML Kit Barcode for QR scanning. No third-party BLE libraries needed.
 
----
+- Language: Kotlin
+- Min SDK / Target SDK: 35
+- Build: Gradle (Kotlin DSL)
+- Dependencies: AndroidX Core + AppCompat + Material
 
 ## Implementation Milestones
 
-### Phase 1: Core BLE text sync
-1. Android GATT server with advertising + foreground service
-2. macOS BLE central that discovers and connects to Android
-3. QR code pairing flow (macOS displays QR, Android scans with CameraX/ML Kit)
-4. X25519 key exchange and shared secret storage (Keychain / Android Keystore)
-5. E2E encryption (AES-256-GCM) over BLE
-6. macOS clipboard monitor → BLE write → Android clipboard write (Mac→Android flow)
-7. Android share sheet target → BLE write → macOS clipboard write (Android→Mac flow)
+### Phase 1: Core Sync
+
+1. Android foreground BLE GATT server + advertising.
+2. macOS BLE central scan/connect/reconnect.
+3. Native OS BLE pairing flow.
+4. Mac clipboard polling -> Android clipboard write.
+5. Android Share target -> Mac clipboard write.
+6. Chunk framing/reassembly with atomic transfer discard on failure.
 
 ### Phase 2: Polish
-7. Connection status UI on both platforms
-8. Reconnection reliability (exponential backoff, auto-reconnect on BLE drop)
-9. Notification actions on Android ("Paste from Mac: {preview}")
-10. Settings: auto-connect on launch, content size limit
 
----
+1. Connection status UI on both platforms.
+2. Robust reconnection behavior tuning.
+3. Settings for auto-connect and polling interval.
+4. User-visible reason for skipped payloads (optional, lightweight).
 
 ## Known Constraints & Tradeoffs
 
-- **Android → Mac requires explicit user action (share sheet).** This is a deliberate design choice, not a limitation we can work around. Android 10+ prevents background clipboard reading for privacy. The share sheet is the only sanctioned path without resorting to Accessibility Services or building a custom keyboard.
-- **BLE range.** ~10m typical. Devices must be in BLE range for any sync to work. No remote fallback — this is intentional for security (clipboard data never touches any network or server).
-- **Text only.** Images and rich content are out of scope. If clipboard contains non-text content, it is silently ignored.
-- **No Wi-Fi Direct.** macOS does not implement Wi-Fi Direct (Wi-Fi Alliance standard). Apple uses proprietary AWDL, which is not exposed to third parties and is incompatible with Android.
-- **macOS clipboard polling.** `NSPasteboard` has no change notification API — polling `changeCount` is the standard approach (used by all Mac clipboard managers). 500ms interval is a good balance of responsiveness vs. CPU.
-- **BLE connection stability.** BLE connections can drop, especially when devices go in/out of range. Robust reconnection logic is essential. The Android foreground service ensures the GATT server stays alive.
-- **Sideloading only for Android.** No Play Store distribution planned. Install via ADB.
+- Android -> Mac requires explicit Share action (platform privacy constraint).
+- BLE range is local (~10 m typical).
+- Text only.
+- macOS clipboard uses polling (`changeCount`) by design.
+- Default polling interval is 500 ms but should remain configurable.
+- On transfer interruption/disconnect, partial payloads are discarded.

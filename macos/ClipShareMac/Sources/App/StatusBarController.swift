@@ -7,7 +7,7 @@ final class StatusBarController {
     private let menu = NSMenu()
     private let statusMenuItem = NSMenuItem(title: "Status: Disconnected", action: nil, keyEquivalent: "")
     private lazy var pairMenuItem: NSMenuItem = {
-        let item = NSMenuItem(title: "Pair New Device", action: #selector(handlePairRequest), keyEquivalent: "p")
+        let item = NSMenuItem(title: "Pair in Bluetooth Settings", action: #selector(handlePairRequest), keyEquivalent: "p")
         item.target = self
         return item
     }()

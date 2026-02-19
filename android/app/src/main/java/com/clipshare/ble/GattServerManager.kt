@@ -6,7 +6,6 @@ import android.bluetooth.BluetoothGattServer
 import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
 import android.content.Context
-import org.json.JSONObject
 import java.util.UUID
 
 class GattServerManager(
@@ -17,15 +16,12 @@ class GattServerManager(
         val SERVICE_UUID: UUID = UUID.fromString("c10b0001-1234-5678-9abc-def012345678")
         val AVAILABLE_UUID: UUID = UUID.fromString("c10b0002-1234-5678-9abc-def012345678")
         val DATA_UUID: UUID = UUID.fromString("c10b0003-1234-5678-9abc-def012345678")
-        val PUSH_UUID: UUID = UUID.fromString("c10b0004-1234-5678-9abc-def012345678")
-        val INFO_UUID: UUID = UUID.fromString("c10b0005-1234-5678-9abc-def012345678")
         private val CCC_DESCRIPTOR_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
     private var server: BluetoothGattServer? = null
     private var availableCharacteristic: BluetoothGattCharacteristic? = null
     private var dataCharacteristic: BluetoothGattCharacteristic? = null
-    private var infoCharacteristic: BluetoothGattCharacteristic? = null
 
     fun start() {
         val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -45,20 +41,11 @@ class GattServerManager(
 
         val data = BluetoothGattCharacteristic(
             DATA_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            BluetoothGattCharacteristic.PERMISSION_READ
-        )
-
-        val push = BluetoothGattCharacteristic(
-            PUSH_UUID,
-            BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
-            BluetoothGattCharacteristic.PERMISSION_WRITE
-        )
-
-        val info = BluetoothGattCharacteristic(
-            INFO_UUID,
-            BluetoothGattCharacteristic.PROPERTY_READ,
-            BluetoothGattCharacteristic.PERMISSION_READ
+            BluetoothGattCharacteristic.PROPERTY_READ or
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY or
+                BluetoothGattCharacteristic.PROPERTY_WRITE or
+                BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
+            BluetoothGattCharacteristic.PERMISSION_READ or BluetoothGattCharacteristic.PERMISSION_WRITE
         )
 
         available.addDescriptor(
@@ -67,6 +54,7 @@ class GattServerManager(
                 BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
             )
         )
+
         data.addDescriptor(
             BluetoothGattDescriptor(
                 CCC_DESCRIPTOR_UUID,
@@ -74,21 +62,11 @@ class GattServerManager(
             )
         )
 
-        info.value = JSONObject()
-            .put("name", android.os.Build.MODEL ?: "Android")
-            .put("platform", "android")
-            .put("version", "1.0")
-            .toString()
-            .toByteArray()
-
         availableCharacteristic = available
         dataCharacteristic = data
-        infoCharacteristic = info
 
         service.addCharacteristic(available)
         service.addCharacteristic(data)
-        service.addCharacteristic(push)
-        service.addCharacteristic(info)
         server?.addService(service)
     }
 
@@ -130,6 +108,5 @@ class GattServerManager(
         server = null
         availableCharacteristic = null
         dataCharacteristic = null
-        infoCharacteristic = null
     }
 }

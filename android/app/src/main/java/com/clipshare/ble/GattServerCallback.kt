@@ -10,7 +10,7 @@ import java.util.UUID
 
 class GattServerCallback(
     private val onAvailableReceived: (ByteArray) -> Unit,
-    private val onPushReceived: (ByteArray) -> Unit,
+    private val onDataReceived: (ByteArray) -> Unit,
     private val onDeviceConnectionChanged: (Boolean) -> Unit
 ) : BluetoothGattServerCallback() {
     companion object {
@@ -51,8 +51,8 @@ class GattServerCallback(
         if (characteristic.uuid == GattServerManager.AVAILABLE_UUID) {
             onAvailableReceived(value)
         }
-        if (characteristic.uuid == GattServerManager.PUSH_UUID) {
-            onPushReceived(value)
+        if (characteristic.uuid == GattServerManager.DATA_UUID) {
+            onDataReceived(value)
         }
         if (responseNeeded) {
             server?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null)

@@ -68,6 +68,10 @@ class ChunkReassembler {
         chunks.clear()
     }
 
+    fun reset() {
+        clear()
+    }
+
     private fun parseHeader(frame: ByteArray): JSONObject? {
         if (frame.isEmpty() || frame[0] != '{'.code.toByte()) {
             return null

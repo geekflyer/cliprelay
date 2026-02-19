@@ -2,10 +2,4 @@
     <string name="app_name">GreenPaste</string>
     <string name="service_channel_name">Clipboard Sync</string>
     <string name="service_notification_text">BLE clipboard sync is active</string>
-    <string name="qr_scanner_hint">Point the camera at your pairing QR code.</string>
-    <string name="cancel">Cancel</string>
-    <string name="camera_permission_required">Camera permission is required to scan pairing QR codes.</string>
-    <string name="invalid_pairing_qr">Invalid pairing QR. Try scanning again.</string>
-    <string name="pairing_saved">Pairing saved.</string>
-    <string name="qr_scan_failed">QR scan failed. Keep camera steady and try again.</string>
 </resources>

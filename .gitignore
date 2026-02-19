@@ -9,3 +9,4 @@ DerivedData/
 *.xcodeproj/xcuserdata/
 *.swp
 local.properties
+dist/

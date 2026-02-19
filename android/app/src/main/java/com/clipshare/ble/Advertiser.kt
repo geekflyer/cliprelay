@@ -10,15 +10,11 @@ import android.os.ParcelUuid
 class Advertiser(private val serviceUuid: ParcelUuid) {
     private val advertiser: BluetoothLeAdvertiser? = BluetoothAdapter.getDefaultAdapter()?.bluetoothLeAdvertiser
     private var callback: AdvertiseCallback? = null
-    private var activeServiceData: ByteArray? = null
 
-    fun start(serviceData: ByteArray? = null) {
+    fun start() {
         val instance = advertiser ?: return
-        if (callback != null && activeServiceData.contentEquals(serviceData)) {
-            return
-        }
         if (callback != null) {
-            stop()
+            return
         }
 
         val settings = AdvertiseSettings.Builder()
@@ -30,20 +26,14 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
             .setIncludeDeviceName(false)
             .addServiceUuid(serviceUuid)
 
-        serviceData?.takeIf { it.isNotEmpty() }?.let {
-            dataBuilder.addServiceData(serviceUuid, it)
-        }
-
         val data = dataBuilder.build()
         callback = object : AdvertiseCallback() {}
         instance.startAdvertising(settings, data, callback)
-        activeServiceData = serviceData?.copyOf()
     }
 
     fun stop() {
         val instance = advertiser ?: return
         callback?.let { instance.stopAdvertising(it) }
         callback = null
-        activeServiceData = null
     }
 }

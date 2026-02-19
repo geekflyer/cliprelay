@@ -1,6 +1,7 @@
 import Foundation
 
 struct ChunkHeader: Codable {
+    let tx_id: String?
     let total_chunks: Int
     let total_bytes: Int
     let encoding: String
@@ -16,6 +17,13 @@ final class ChunkAssembler {
         expectedChunks = header.total_chunks
         expectedBytes = header.total_bytes
         encoding = header.encoding
+        chunks.removeAll(keepingCapacity: true)
+    }
+
+    func clear() {
+        expectedChunks = 0
+        expectedBytes = 0
+        encoding = "utf-8"
         chunks.removeAll(keepingCapacity: true)
     }
 

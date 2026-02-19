@@ -2,19 +2,32 @@ import AppKit
 import CryptoKit
 
 final class ClipboardMonitor {
+    static let defaultPollInterval: TimeInterval = {
+        guard
+            let value = ProcessInfo.processInfo.environment["CLIPSHARE_POLL_INTERVAL_MS"],
+            let milliseconds = Double(value),
+            milliseconds >= 100
+        else {
+            return 0.5
+        }
+        return milliseconds / 1000
+    }()
+
     private let pasteboard = NSPasteboard.general
     private let onChange: (String) -> Void
+    private let pollInterval: TimeInterval
     private var timer: Timer?
     private var lastChangeCount: Int
     private var lastHash: String?
 
-    init(onChange: @escaping (String) -> Void) {
+    init(pollInterval: TimeInterval = ClipboardMonitor.defaultPollInterval, onChange: @escaping (String) -> Void) {
+        self.pollInterval = pollInterval
         self.onChange = onChange
         self.lastChangeCount = pasteboard.changeCount
     }
 
     func start() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             self?.poll()
         }
         RunLoop.main.add(timer!, forMode: .common)
