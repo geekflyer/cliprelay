@@ -4,7 +4,7 @@ Cross-platform clipboard sync between macOS and Android over BLE only.
 
 ## What this repo builds
 
-- macOS menu bar app bundle: `dist/ClipShareMac.app`
+- macOS menu bar app bundle: `dist/GreenPaste.app`
 - Android debug APK: `dist/greenpaste-debug.apk`
 
 Both are produced by one script: `scripts/build-all.sh`.
@@ -57,13 +57,13 @@ Optional:
 After build, copy app bundle:
 
 ```bash
-cp -R dist/ClipShareMac.app /Applications/
+cp -R dist/GreenPaste.app /Applications/
 ```
 
 Launch:
 
 ```bash
-open /Applications/ClipShareMac.app
+open /Applications/GreenPaste.app
 ```
 
 On first run, macOS may block unsigned app launch. If so:
@@ -95,7 +95,7 @@ If ADB is not found, add Android platform-tools to PATH.
 
 ## Artifact paths
 
-- mac app: `dist/ClipShareMac.app`
+- mac app: `dist/GreenPaste.app`
 - android apk: `dist/greenpaste-debug.apk`
 
 ## Notes

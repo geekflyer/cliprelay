@@ -2,4 +2,12 @@
     <string name="app_name">GreenPaste</string>
     <string name="service_channel_name">Clipboard Sync</string>
     <string name="service_notification_text">BLE clipboard sync is active</string>
+    <string name="main_title">GreenPaste</string>
+    <string name="main_subtitle">Clipboard sync stays on while this app is installed and permissions are granted.</string>
+    <string name="status_label">Service</string>
+    <string name="status_starting">Starting...</string>
+    <string name="status_running">Running in background</string>
+    <string name="status_help">If pairing fails, open Bluetooth settings and confirm both devices are paired.</string>
+    <string name="open_bluetooth_settings">Open Bluetooth Settings</string>
+    <string name="share_help">Tip: Use Android’s Share action in other apps to send selected text to your paired Mac.</string>
 </resources>

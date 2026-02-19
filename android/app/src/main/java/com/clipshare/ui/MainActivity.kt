@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -22,19 +21,21 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         requestRuntimePermissions()
+        ensureServiceRunning()
 
         status = findViewById(R.id.statusText)
-        val startServiceButton = findViewById<Button>(R.id.startServiceButton)
-        val pairButton = findViewById<Button>(R.id.openBluetoothSettingsButton)
-
-        startServiceButton.setOnClickListener {
-            startForegroundService(Intent(this, ClipShareService::class.java))
-            status.text = "Service running"
-        }
+        status.text = getString(R.string.status_running)
+        val pairButton = findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.openBluetoothSettingsButton
+        )
 
         pairButton.setOnClickListener {
             startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         }
+    }
+
+    private fun ensureServiceRunning() {
+        startForegroundService(Intent(this, ClipShareService::class.java))
     }
 
     private fun requestRuntimePermissions() {

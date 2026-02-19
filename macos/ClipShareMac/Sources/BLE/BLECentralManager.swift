@@ -15,52 +15,107 @@ struct ClipboardAvailableMessage: Codable {
     let tx_id: String
 }
 
+struct PeerSummary {
+    let id: UUID
+    let description: String
+}
+
+private struct ConnectedPeer {
+    let peripheral: CBPeripheral
+    let description: String
+    var availableCharacteristic: CBCharacteristic?
+    var dataCharacteristic: CBCharacteristic?
+}
+
 final class BLECentralManager: NSObject {
     var onConnectionStateChanged: ((Bool) -> Void)?
+    var onConnectedPeersChanged: (([PeerSummary]) -> Void)?
+    var onDiscoveredPeersChanged: (([PeerSummary]) -> Void)?
+    var onTrustedPeersChanged: (([PeerSummary]) -> Void)?
     var onClipboardReceived: ((String) -> Void)?
+
+    private static let approvedPeerIDsDefaultsKey = "greenpaste.approvedPeerIDs"
 
     private let clipboardWriter: ClipboardWriter
 
     private var centralManager: CBCentralManager!
-    private var peripheral: CBPeripheral?
-    private var availableCharacteristic: CBCharacteristic?
-    private var dataCharacteristic: CBCharacteristic?
+    private var knownPeripherals: [UUID: CBPeripheral] = [:]
+    private var seenPeerDescriptions: [UUID: String] = [:]
+    private var discoveredUnapprovedPeers: [UUID: String] = [:]
+    private var discoveredNameToPeerID: [String: UUID] = [:]
+    private var approvedPeerIDs: Set<UUID> = []
+    private var connectingPeerIDs: Set<UUID> = []
+    private var connectedPeers: [UUID: ConnectedPeer] = [:]
 
-    private let assembler = ChunkAssembler()
     private var reconnectDelay: TimeInterval = 1
     private var lastInboundHash: String?
-    private var pendingInboundHashFromMetadata: String?
+    private var pendingInboundHashByPeer: [UUID: String] = [:]
+    private var assemblerByPeer: [UUID: ChunkAssembler] = [:]
 
     init(clipboardWriter: ClipboardWriter) {
         self.clipboardWriter = clipboardWriter
+        self.approvedPeerIDs = Self.loadApprovedPeerIDs()
         super.init()
         self.centralManager = CBCentralManager(delegate: self, queue: .main)
     }
 
     func start() {
+        notifyAllPeerState()
         if centralManager.state == .poweredOn {
             scan()
         }
     }
 
     func stop() {
-        if let peripheral {
-            centralManager.cancelPeripheralConnection(peripheral)
+        for peer in connectedPeers.values {
+            centralManager.cancelPeripheralConnection(peer.peripheral)
         }
+        connectingPeerIDs.removeAll()
+        connectedPeers.removeAll()
+        pendingInboundHashByPeer.removeAll()
+        assemblerByPeer.removeAll()
         centralManager.stopScan()
+        notifyConnectionAndPeerState()
+    }
+
+    func approvePeer(id: UUID) {
+        guard !approvedPeerIDs.contains(id) else { return }
+        approvedPeerIDs.insert(id)
+        persistApprovedPeerIDs()
+        removeDiscoveredPeer(id: id)
+        discoveredUnapprovedPeers.removeValue(forKey: id)
+        connectToApprovedPeerIfNeeded(id: id)
+        notifyTrustedAndDiscoveredPeers()
+    }
+
+    func revokePeer(id: UUID) {
+        guard approvedPeerIDs.contains(id) else { return }
+        approvedPeerIDs.remove(id)
+        persistApprovedPeerIDs()
+
+        if let peer = connectedPeers[id] {
+            centralManager.cancelPeripheralConnection(peer.peripheral)
+        }
+        connectingPeerIDs.remove(id)
+        connectedPeers.removeValue(forKey: id)
+        pendingInboundHashByPeer.removeValue(forKey: id)
+        assemblerByPeer.removeValue(forKey: id)
+
+        if let description = seenPeerDescriptions[id] {
+            discoveredUnapprovedPeers[id] = description
+        }
+
+        notifyAllPeerState()
     }
 
     func sendClipboardText(_ text: String) {
-        guard
-            let peripheral,
-            let availableCharacteristic,
-            let dataCharacteristic
-        else {
-            return
-        }
-
         let payload = Data(text.utf8)
         guard payload.count <= 102_400 else { return }
+
+        let readyPeers = connectedPeers.values.filter { peer in
+            peer.availableCharacteristic != nil && peer.dataCharacteristic != nil
+        }
+        guard !readyPeers.isEmpty else { return }
 
         let txID = UUID().uuidString.lowercased()
         let metadata = ClipboardAvailableMessage(
@@ -77,16 +132,37 @@ final class BLECentralManager: NSObject {
             return
         }
 
-        peripheral.writeValue(metadataData, for: availableCharacteristic, type: .withResponse)
+        for peer in readyPeers {
+            guard let availableCharacteristic = peer.availableCharacteristic else { continue }
+            peer.peripheral.writeValue(metadataData, for: availableCharacteristic, type: .withResponse)
 
-        for (index, frame) in frames.enumerated() {
-            let delay = Double(index) * 0.01
-            let writeType: CBCharacteristicWriteType = index == 0 ? .withResponse : .withoutResponse
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.peripheral == peripheral, self.dataCharacteristic != nil else { return }
-                peripheral.writeValue(frame, for: dataCharacteristic, type: writeType)
+            for (index, frame) in frames.enumerated() {
+                let delay = Double(index) * 0.01
+                let writeType: CBCharacteristicWriteType = index == 0 ? .withResponse : .withoutResponse
+                let peripheral = peer.peripheral
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard
+                        let self,
+                        let currentPeer = self.connectedPeers[peripheral.identifier],
+                        let dataCharacteristic = currentPeer.dataCharacteristic
+                    else {
+                        return
+                    }
+                    peripheral.writeValue(frame, for: dataCharacteristic, type: writeType)
+                }
             }
         }
+    }
+
+    private func connectToApprovedPeerIfNeeded(id: UUID) {
+        guard approvedPeerIDs.contains(id) else { return }
+        guard connectedPeers[id] == nil else { return }
+        guard !connectingPeerIDs.contains(id) else { return }
+        guard let peripheral = knownPeripherals[id] else { return }
+
+        connectingPeerIDs.insert(id)
+        peripheral.delegate = self
+        centralManager.connect(peripheral, options: nil)
     }
 
     private func scan() {
@@ -99,6 +175,52 @@ final class BLECentralManager: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.scan()
         }
+    }
+
+    private func notifyConnectionAndPeerState() {
+        let connected = connectedPeerSummaries()
+        onConnectionStateChanged?(!connected.isEmpty)
+        onConnectedPeersChanged?(connected)
+    }
+
+    private func notifyTrustedAndDiscoveredPeers() {
+        onTrustedPeersChanged?(trustedPeerSummaries())
+        onDiscoveredPeersChanged?(discoveredPeerSummaries())
+    }
+
+    private func removeDiscoveredPeer(id: UUID) {
+        if let description = discoveredUnapprovedPeers.removeValue(forKey: id) {
+            let key = discoveryNameKey(for: description)
+            if discoveredNameToPeerID[key] == id {
+                discoveredNameToPeerID.removeValue(forKey: key)
+            }
+        }
+    }
+
+    private func notifyAllPeerState() {
+        notifyConnectionAndPeerState()
+        notifyTrustedAndDiscoveredPeers()
+    }
+
+    private func connectedPeerSummaries() -> [PeerSummary] {
+        connectedPeers.map { PeerSummary(id: $0.key, description: $0.value.description) }
+            .sorted { $0.description.localizedCaseInsensitiveCompare($1.description) == .orderedAscending }
+    }
+
+    private func discoveredPeerSummaries() -> [PeerSummary] {
+        discoveredUnapprovedPeers.map { PeerSummary(id: $0.key, description: $0.value) }
+            .sorted { $0.description.localizedCaseInsensitiveCompare($1.description) == .orderedAscending }
+    }
+
+    private func trustedPeerSummaries() -> [PeerSummary] {
+        approvedPeerIDs
+            .map { id in
+                let description = connectedPeers[id]?.description
+                    ?? seenPeerDescriptions[id]
+                    ?? "Unknown device (\(id.uuidString.prefix(8)))"
+                return PeerSummary(id: id, description: description)
+            }
+            .sorted { $0.description.localizedCaseInsensitiveCompare($1.description) == .orderedAscending }
     }
 
     private func makeChunkFrames(payload: Data, txID: String) -> [Data]? {
@@ -132,17 +254,72 @@ final class BLECentralManager: NSObject {
         return String(data: payload, encoding: .utf8)
     }
 
-    private func processAvailableMetadata(_ data: Data) {
+    private func processAvailableMetadata(_ data: Data, for peripheralID: UUID) {
         guard let message = try? JSONDecoder().decode(ClipboardAvailableMessage.self, from: data) else {
             return
         }
 
-        pendingInboundHashFromMetadata = message.hash.isEmpty ? nil : message.hash
+        if message.hash.isEmpty {
+            pendingInboundHashByPeer.removeValue(forKey: peripheralID)
+        } else {
+            pendingInboundHashByPeer[peripheralID] = message.hash
+        }
+    }
+
+    private func assembler(for peripheralID: UUID) -> ChunkAssembler {
+        if let existing = assemblerByPeer[peripheralID] {
+            return existing
+        }
+        let created = ChunkAssembler()
+        assemblerByPeer[peripheralID] = created
+        return created
     }
 
     private func sha256Hex(_ data: Data) -> String {
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func makePeerDescription(
+        peripheral: CBPeripheral,
+        advertisementData: [String: Any]
+    ) -> String {
+        let name = makeDiscoveryDisplayName(peripheral: peripheral, advertisementData: advertisementData)
+        let suffix = peripheral.identifier.uuidString.prefix(8)
+        return "\(name) (\(suffix))"
+    }
+
+    private func makeDiscoveryDisplayName(
+        peripheral: CBPeripheral,
+        advertisementData: [String: Any]
+    ) -> String {
+        if
+            let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data],
+            let encodedName = serviceData[BLEProtocol.serviceUUID],
+            let decodedName = String(data: encodedName, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !decodedName.isEmpty
+        {
+            return decodedName
+        }
+
+        let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        let name = advertisedName ?? peripheral.name ?? "Unknown device"
+        return name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func discoveryNameKey(for displayName: String) -> String {
+        displayName.lowercased()
+    }
+
+    private static func loadApprovedPeerIDs() -> Set<UUID> {
+        let stored = UserDefaults.standard.array(forKey: approvedPeerIDsDefaultsKey) as? [String] ?? []
+        return Set(stored.compactMap(UUID.init(uuidString:)))
+    }
+
+    private func persistApprovedPeerIDs() {
+        let values = approvedPeerIDs.map(\.uuidString).sorted()
+        UserDefaults.standard.set(values, forKey: Self.approvedPeerIDsDefaultsKey)
     }
 }
 
@@ -153,26 +330,84 @@ extension BLECentralManager: CBCentralManagerDelegate {
         }
     }
 
-    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        self.peripheral = peripheral
-        peripheral.delegate = self
-        central.stopScan()
-        central.connect(peripheral, options: nil)
+    func centralManager(
+        _ central: CBCentralManager,
+        didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any],
+        rssi RSSI: NSNumber
+    ) {
+        let peripheralID = peripheral.identifier
+        knownPeripherals[peripheralID] = peripheral
+
+        let description = makePeerDescription(peripheral: peripheral, advertisementData: advertisementData)
+        seenPeerDescriptions[peripheralID] = description
+
+        if approvedPeerIDs.contains(peripheralID) {
+            removeDiscoveredPeer(id: peripheralID)
+            connectToApprovedPeerIfNeeded(id: peripheralID)
+        } else {
+            let displayName = makeDiscoveryDisplayName(peripheral: peripheral, advertisementData: advertisementData)
+
+            // didDiscover fires twice per peripheral: once for the primary ad (no name yet)
+            // and again when the scan response arrives (with the full local name). Always
+            // remove any stale entry for this peripheral before re-evaluating so we don't
+            // accumulate "Unknown device" entries from incomplete first-pass advertisements.
+            removeDiscoveredPeer(id: peripheralID)
+
+            // Suppress from "Discovered" if an approved peer already has this display name.
+            // Handles BLE address rotation: Android periodically changes its MAC address,
+            // causing macOS to assign a new peripheral UUID to the same physical device.
+            let nameMatchesApproved = approvedPeerIDs.contains { id in
+                guard let desc = seenPeerDescriptions[id] else { return false }
+                return desc.hasPrefix(displayName + " (")
+            }
+
+            if !nameMatchesApproved {
+                let nameKey = discoveryNameKey(for: displayName)
+                if let existingID = discoveredNameToPeerID[nameKey], existingID != peripheralID {
+                    removeDiscoveredPeer(id: existingID)
+                }
+                discoveredUnapprovedPeers[peripheralID] = displayName
+                discoveredNameToPeerID[nameKey] = peripheralID
+            }
+        }
+
+        notifyTrustedAndDiscoveredPeers()
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         reconnectDelay = 1
-        onConnectionStateChanged?(true)
+        let peripheralID = peripheral.identifier
+        connectingPeerIDs.remove(peripheralID)
+
+        let description = seenPeerDescriptions[peripheralID]
+            ?? peripheral.name
+            ?? "Unknown device (\(peripheralID.uuidString.prefix(8)))"
+        connectedPeers[peripheralID] = ConnectedPeer(
+            peripheral: peripheral,
+            description: description,
+            availableCharacteristic: nil,
+            dataCharacteristic: nil
+        )
+
+        notifyConnectionAndPeerState()
+        notifyTrustedAndDiscoveredPeers()
         peripheral.discoverServices([BLEProtocol.serviceUUID])
     }
 
+    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        connectingPeerIDs.remove(peripheral.identifier)
+        scheduleReconnect()
+    }
+
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        onConnectionStateChanged?(false)
-        self.peripheral = nil
-        availableCharacteristic = nil
-        dataCharacteristic = nil
-        pendingInboundHashFromMetadata = nil
-        assembler.clear()
+        let peripheralID = peripheral.identifier
+        connectingPeerIDs.remove(peripheralID)
+        connectedPeers.removeValue(forKey: peripheralID)
+        pendingInboundHashByPeer.removeValue(forKey: peripheralID)
+        assemblerByPeer.removeValue(forKey: peripheralID)
+        notifyConnectionAndPeerState()
+        notifyTrustedAndDiscoveredPeers()
         scheduleReconnect()
     }
 }
@@ -185,26 +420,34 @@ extension BLECentralManager: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        let peripheralID = peripheral.identifier
+        guard var peer = connectedPeers[peripheralID] else {
+            return
+        }
+
         service.characteristics?.forEach { characteristic in
             if characteristic.uuid == BLEProtocol.availableUUID || characteristic.uuid == BLEProtocol.dataUUID {
                 peripheral.setNotifyValue(true, for: characteristic)
             }
 
             if characteristic.uuid == BLEProtocol.availableUUID {
-                availableCharacteristic = characteristic
+                peer.availableCharacteristic = characteristic
             }
 
             if characteristic.uuid == BLEProtocol.dataUUID {
-                dataCharacteristic = characteristic
+                peer.dataCharacteristic = characteristic
             }
         }
+
+        connectedPeers[peripheralID] = peer
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let data = characteristic.value else { return }
 
+        let peripheralID = peripheral.identifier
         if characteristic.uuid == BLEProtocol.availableUUID {
-            processAvailableMetadata(data)
+            processAvailableMetadata(data, for: peripheralID)
             return
         }
 
@@ -212,24 +455,25 @@ extension BLECentralManager: CBPeripheralDelegate {
             return
         }
 
+        let chunkAssembler = assembler(for: peripheralID)
         if let header = try? JSONDecoder().decode(ChunkHeader.self, from: data) {
-            assembler.reset(with: header)
+            chunkAssembler.reset(with: header)
             return
         }
 
-        assembler.appendChunkFrame(data)
-        guard let assembledData = assembler.assembleData() else { return }
-        guard let output = decodeClipboardPayload(assembledData, encoding: assembler.encoding) else { return }
+        chunkAssembler.appendChunkFrame(data)
+        guard let assembledData = chunkAssembler.assembleData() else { return }
+        guard let output = decodeClipboardPayload(assembledData, encoding: chunkAssembler.encoding) else { return }
 
         let outputData = Data(output.utf8)
         let hash = sha256Hex(outputData)
 
-        if let metadataHash = pendingInboundHashFromMetadata, !metadataHash.isEmpty, metadataHash != hash {
-            pendingInboundHashFromMetadata = nil
+        if let metadataHash = pendingInboundHashByPeer[peripheralID], metadataHash != hash {
+            pendingInboundHashByPeer.removeValue(forKey: peripheralID)
             return
         }
 
-        pendingInboundHashFromMetadata = nil
+        pendingInboundHashByPeer.removeValue(forKey: peripheralID)
 
         guard hash != lastInboundHash else { return }
 

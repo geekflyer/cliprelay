@@ -5,11 +5,11 @@ let package = Package(
     name: "clipboard-sync-mac",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "ClipShareMac", targets: ["ClipShareMac"])
+        .executable(name: "GreenPaste", targets: ["GreenPaste"])
     ],
     targets: [
         .executableTarget(
-            name: "ClipShareMac",
+            name: "GreenPaste",
             path: "Sources"
         )
     ]

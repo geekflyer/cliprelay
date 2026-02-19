@@ -60,23 +60,24 @@ build_mac() {
   echo "==> Building macOS app"
   swift build --configuration release --package-path "$MAC_PROJECT_DIR"
 
-  local binary_path="$MAC_PROJECT_DIR/.build/release/ClipShareMac"
+  local binary_path="$MAC_PROJECT_DIR/.build/release/GreenPaste"
   if [[ ! -x "$binary_path" ]]; then
-    if [[ -x "$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/ClipShareMac" ]]; then
-      binary_path="$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/ClipShareMac"
-    elif [[ -x "$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/ClipShareMac" ]]; then
-      binary_path="$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/ClipShareMac"
+    if [[ -x "$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/GreenPaste" ]]; then
+      binary_path="$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/GreenPaste"
+    elif [[ -x "$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/GreenPaste" ]]; then
+      binary_path="$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/GreenPaste"
     else
       echo "Could not locate built macOS binary." >&2
       exit 1
     fi
   fi
 
-  local app_dir="$DIST_DIR/ClipShareMac.app"
+  local app_dir="$DIST_DIR/GreenPaste.app"
+  rm -rf "$DIST_DIR/ClipShareMac.app"
   rm -rf "$app_dir"
   mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 
-  cp "$binary_path" "$app_dir/Contents/MacOS/ClipShareMac"
+  cp "$binary_path" "$app_dir/Contents/MacOS/GreenPaste"
 
   cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -88,9 +89,9 @@ build_mac() {
   <key>CFBundleDisplayName</key>
   <string>GreenPaste</string>
   <key>CFBundleIdentifier</key>
-  <string>com.clipshare.mac</string>
+  <string>com.greenpaste.mac</string>
   <key>CFBundleExecutable</key>
-  <string>ClipShareMac</string>
+  <string>GreenPaste</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
