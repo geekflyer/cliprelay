@@ -354,33 +354,15 @@ extension BLECentralManager: CBCentralManagerDelegate {
             // accumulate "Unknown device" entries from incomplete first-pass advertisements.
             removeDiscoveredPeer(id: peripheralID)
 
-            // BLE address rotation: Android periodically changes its MAC address, causing
-            // macOS to assign a new peripheral UUID to the same physical device. If a trusted
-            // peer's name matches this device, migrate trust to the new UUID automatically.
-            let staleApprovedID = approvedPeerIDs.first { id in
-                guard id != peripheralID else { return false }
-                guard let desc = seenPeerDescriptions[id] else { return false }
-                return desc.hasPrefix(displayName + " (")
+            // Show as a new discovered device. Even if the name matches an existing
+            // trusted peer (BLE address rotation), require explicit re-approval —
+            // names are trivially spoofable and cannot be used for trust migration.
+            let nameKey = discoveryNameKey(for: displayName)
+            if let existingID = discoveredNameToPeerID[nameKey], existingID != peripheralID {
+                removeDiscoveredPeer(id: existingID)
             }
-
-            if let staleID = staleApprovedID {
-                approvedPeerIDs.remove(staleID)
-                connectedPeers.removeValue(forKey: staleID)
-                connectingPeerIDs.remove(staleID)
-                pendingInboundHashByPeer.removeValue(forKey: staleID)
-                assemblerByPeer.removeValue(forKey: staleID)
-
-                approvedPeerIDs.insert(peripheralID)
-                persistApprovedPeerIDs()
-                connectToApprovedPeerIfNeeded(id: peripheralID)
-            } else {
-                let nameKey = discoveryNameKey(for: displayName)
-                if let existingID = discoveredNameToPeerID[nameKey], existingID != peripheralID {
-                    removeDiscoveredPeer(id: existingID)
-                }
-                discoveredUnapprovedPeers[peripheralID] = displayName
-                discoveredNameToPeerID[nameKey] = peripheralID
-            }
+            discoveredUnapprovedPeers[peripheralID] = displayName
+            discoveredNameToPeerID[nameKey] = peripheralID
         }
 
         notifyTrustedAndDiscoveredPeers()
