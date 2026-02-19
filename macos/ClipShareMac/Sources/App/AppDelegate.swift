@@ -30,13 +30,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.bleManager?.sendClipboardText(text)
         }
 
-        statusBarController.setConnected(false)
-        statusBarController.setConnectedPeers([])
-        bleManager?.onConnectionStateChanged = { [weak self] isConnected in
-            DispatchQueue.main.async {
-                self?.statusBarController.setConnected(isConnected)
-            }
-        }
         bleManager?.onConnectedPeersChanged = { [weak self] peerDescriptions in
             DispatchQueue.main.async {
                 self?.statusBarController.setConnectedPeers(peerDescriptions)

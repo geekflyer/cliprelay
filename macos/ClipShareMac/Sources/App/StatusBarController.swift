@@ -9,10 +9,12 @@ final class StatusBarController {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
 
-    private var isConnected = false
     private var connectedPeers: [PeerSummary] = []
     private var discoveredPeers: [PeerSummary] = []
     private var trustedPeers: [PeerSummary] = []
+
+    private lazy var connectedDot: NSImage = makeStatusDot(color: .systemGreen)
+    private lazy var disconnectedDot: NSImage = makeStatusDot(color: .tertiaryLabelColor)
 
     init() {
         if let button = statusItem.button {
@@ -27,18 +29,12 @@ final class StatusBarController {
     }
 
     private func loadStatusBarIcon() -> NSImage? {
-        // Look in the app bundle's Resources directory
         if let bundlePath = Bundle.main.path(forResource: "StatusBarIcon", ofType: "png") {
             let image = NSImage(contentsOfFile: bundlePath)
             image?.size = NSSize(width: 18, height: 18)
             return image
         }
         return nil
-    }
-
-    func setConnected(_ connected: Bool) {
-        isConnected = connected
-        renderMenu()
     }
 
     func setConnectedPeers(_ peers: [PeerSummary]) {
@@ -56,68 +52,117 @@ final class StatusBarController {
         renderMenu()
     }
 
+    // MARK: - Menu rendering
+
     private func renderMenu() {
         menu.removeAllItems()
 
-        menu.addItem(NSMenuItem(title: isConnected ? "Status: Connected" : "Status: Disconnected", action: nil, keyEquivalent: ""))
-
-        if connectedPeers.isEmpty {
-            menu.addItem(NSMenuItem(title: "Devices: Not connected", action: nil, keyEquivalent: ""))
-        } else {
-            let connectedHeader = NSMenuItem(title: "Connected devices", action: nil, keyEquivalent: "")
-            connectedHeader.isEnabled = false
-            menu.addItem(connectedHeader)
-            connectedPeers.forEach { peer in
-                let item = NSMenuItem(title: "  \(peer.description)", action: nil, keyEquivalent: "")
-                item.isEnabled = false
-                menu.addItem(item)
-            }
-        }
-
+        renderTrustedDevicesSection()
+        menu.addItem(NSMenuItem.separator())
+        renderDiscoveredDevicesSection()
         menu.addItem(NSMenuItem.separator())
 
-        let discoveredHeader = NSMenuItem(title: "Discovered devices", action: nil, keyEquivalent: "")
-        discoveredHeader.isEnabled = false
-        menu.addItem(discoveredHeader)
-        if discoveredPeers.isEmpty {
-            let none = NSMenuItem(title: "  No new devices found", action: nil, keyEquivalent: "")
-            none.isEnabled = false
-            menu.addItem(none)
-        } else {
-            discoveredPeers.forEach { peer in
-                let item = NSMenuItem(title: "  Allow \(peer.description)", action: #selector(handleApproveDevice(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = peer.id.uuidString
-                menu.addItem(item)
-            }
-        }
-
-        menu.addItem(NSMenuItem.separator())
-
-        let trustedHeader = NSMenuItem(title: "Trusted devices", action: nil, keyEquivalent: "")
-        trustedHeader.isEnabled = false
-        menu.addItem(trustedHeader)
-        if trustedPeers.isEmpty {
-            let none = NSMenuItem(title: "  No trusted devices", action: nil, keyEquivalent: "")
-            none.isEnabled = false
-            menu.addItem(none)
-        } else {
-            trustedPeers.forEach { peer in
-                let item = NSMenuItem(title: "  Forget \(peer.description)", action: #selector(handleForgetDevice(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = peer.id.uuidString
-                menu.addItem(item)
-            }
-        }
-
-        menu.addItem(NSMenuItem.separator())
-        let openSettings = NSMenuItem(title: "Open Bluetooth Settings (Troubleshoot)", action: #selector(handleOpenBluetoothSettings), keyEquivalent: "b")
+        let openSettings = NSMenuItem(
+            title: "Bluetooth Settings\u{2026}",
+            action: #selector(handleOpenBluetoothSettings),
+            keyEquivalent: "b"
+        )
         openSettings.target = self
         menu.addItem(openSettings)
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        menu.addItem(NSMenuItem(
+            title: "Quit GreenPaste",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        ))
 
         statusItem.menu = menu
     }
+
+    private func renderTrustedDevicesSection() {
+        let header = NSMenuItem(title: "Trusted Devices", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        if trustedPeers.isEmpty {
+            let empty = NSMenuItem(title: "  No trusted devices", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return
+        }
+
+        let connectedIDs = Set(connectedPeers.map(\.id))
+
+        for peer in trustedPeers {
+            let isConnected = connectedIDs.contains(peer.id)
+
+            let item = NSMenuItem(title: peer.description, action: nil, keyEquivalent: "")
+            item.image = isConnected ? connectedDot : disconnectedDot
+            item.isEnabled = true
+
+            let submenu = NSMenu()
+            let statusLabel = NSMenuItem(
+                title: isConnected ? "Connected" : "Not in range",
+                action: nil,
+                keyEquivalent: ""
+            )
+            statusLabel.isEnabled = false
+            submenu.addItem(statusLabel)
+            submenu.addItem(NSMenuItem.separator())
+
+            let forgetItem = NSMenuItem(
+                title: "Forget Device",
+                action: #selector(handleForgetDevice(_:)),
+                keyEquivalent: ""
+            )
+            forgetItem.target = self
+            forgetItem.representedObject = peer.id.uuidString
+            submenu.addItem(forgetItem)
+
+            item.submenu = submenu
+            menu.addItem(item)
+        }
+    }
+
+    private func renderDiscoveredDevicesSection() {
+        let header = NSMenuItem(title: "Discovered Devices", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        if discoveredPeers.isEmpty {
+            let empty = NSMenuItem(title: "  Scanning\u{2026}", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return
+        }
+
+        for peer in discoveredPeers {
+            let item = NSMenuItem(
+                title: peer.description,
+                action: #selector(handleApproveDevice(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = peer.id.uuidString
+            item.toolTip = "Click to trust this device"
+            menu.addItem(item)
+        }
+    }
+
+    // MARK: - Status dot
+
+    private func makeStatusDot(color: NSColor) -> NSImage {
+        let size = NSSize(width: 8, height: 8)
+        let image = NSImage(size: size, flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    // MARK: - Actions
 
     @objc
     private func handleOpenBluetoothSettings() {
