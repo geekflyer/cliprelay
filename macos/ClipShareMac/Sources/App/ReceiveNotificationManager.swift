@@ -3,7 +3,11 @@ import UserNotifications
 
 final class ReceiveNotificationManager {
     func requestAuthorization() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // Delay to avoid crash when UNUserNotificationCenter is accessed
+        // before the app bundle is fully initialized.
+        DispatchQueue.main.async {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
     }
 
     func postClipboardReceived(text: String) {

@@ -52,7 +52,7 @@ class QrScannerActivity : AppCompatActivity() {
 
         val store = PairingStore(this)
         store.saveToken(token)
-        Toast.makeText(this, "Paired successfully! Restart the service to connect.", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Paired successfully!", Toast.LENGTH_SHORT).show()
 
         setResult(RESULT_OK)
         finish()
