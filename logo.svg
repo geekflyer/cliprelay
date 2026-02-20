@@ -23,16 +23,7 @@
     <filter id="shadow">
       <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.3"/>
     </filter>
-    <clipPath id="bgClip">
-      <rect x="32" y="32" width="448" height="448" rx="96" ry="96"/>
-    </clipPath>
   </defs>
-  
-  <!-- Background -->
-  <rect x="32" y="32" width="448" height="448" rx="96" ry="96" fill="#12122A"/>
-  
-  <!-- Subtle radial highlight behind center -->
-  <circle cx="256" cy="256" r="160" fill="rgba(61,220,132,0.06)" clip-path="url(#bgClip)"/>
 
   <!-- Left clipboard (Mac - slate) - overlapping slightly behind -->
   <g transform="translate(175, 260) rotate(-8)" filter="url(#shadow)">

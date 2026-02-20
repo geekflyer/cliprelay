@@ -14,15 +14,11 @@ final class StatusBarController {
     private lazy var connectedDot: NSImage = makeStatusDot(color: .systemGreen)
     private lazy var disconnectedDot: NSImage = makeStatusDot(color: .tertiaryLabelColor)
 
+    private var baseStatusBarImage: NSImage?
+
     init() {
-        if let button = statusItem.button {
-            if let iconImage = loadStatusBarIcon() {
-                iconImage.isTemplate = true
-                button.image = iconImage
-            } else {
-                button.title = "GP"
-            }
-        }
+        baseStatusBarImage = loadStatusBarIcon()
+        updateStatusBarIcon()
         renderMenu()
     }
 
@@ -35,8 +31,26 @@ final class StatusBarController {
         return nil
     }
 
+    private func updateStatusBarIcon() {
+        guard let button = statusItem.button else { return }
+        guard let base = baseStatusBarImage else {
+            button.title = "GP"
+            return
+        }
+        if !connectedPeers.isEmpty {
+            let green = base.colorized(with: .systemGreen)
+            green.isTemplate = false
+            button.image = green
+        } else {
+            let template = base.copy() as! NSImage
+            template.isTemplate = true
+            button.image = template
+        }
+    }
+
     func setConnectedPeers(_ peers: [PeerSummary]) {
         connectedPeers = peers
+        updateStatusBarIcon()
         renderMenu()
     }
 
@@ -132,5 +146,24 @@ final class StatusBarController {
     private func handleForgetDevice(_ sender: NSMenuItem) {
         guard let token = sender.representedObject as? String else { return }
         onForgetDeviceRequested?(token)
+    }
+}
+
+// MARK: - NSImage tinting
+
+private extension NSImage {
+    /// Returns a copy of the image with every opaque pixel replaced by `color`.
+    func colorized(with color: NSColor) -> NSImage {
+        guard let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return self
+        }
+        return NSImage(size: size, flipped: false) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            ctx.setFillColor(color.cgColor)
+            ctx.fill(rect)
+            ctx.setBlendMode(.destinationIn)
+            ctx.draw(cgImage, in: rect)
+            return true
+        }
     }
 }
