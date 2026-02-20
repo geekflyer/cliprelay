@@ -11,5 +11,6 @@
     <string name="status_paired">Paired — waiting for Mac</string>
     <string name="status_connected">Connected</string>
     <string name="pair_with_mac">Pair with Mac</string>
+    <string name="unpair">Unpair</string>
     <string name="share_help">Tip: Use Android’s Share action in other apps to send selected text to your paired Mac.</string>
 </resources>

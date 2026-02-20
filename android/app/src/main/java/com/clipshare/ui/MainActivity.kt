@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -19,13 +20,15 @@ import com.clipshare.service.ClipShareService
 
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
+    private lateinit var pairButton: com.google.android.material.button.MaterialButton
+    private lateinit var unpairButton: com.google.android.material.button.MaterialButton
     private var isPaired = false
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ClipShareService.ACTION_CONNECTION_STATE) {
                 val connected = intent.getBooleanExtra(ClipShareService.EXTRA_CONNECTED, false)
-                updateStatusText(connected)
+                updateUI(connected)
             }
         }
     }
@@ -35,7 +38,7 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             isPaired = true
-            updateStatusText(connected = false)
+            updateUI(connected = false)
             // Tell service to reload pairing and restart advertising
             val reloadIntent = Intent(this, ClipShareService::class.java)
             reloadIntent.action = ClipShareService.ACTION_RELOAD_PAIRING
@@ -51,14 +54,21 @@ class MainActivity : AppCompatActivity() {
         ensureServiceRunning()
 
         status = findViewById(R.id.statusText)
+        pairButton = findViewById(R.id.pairWithMacButton)
+        unpairButton = findViewById(R.id.unpairButton)
         isPaired = PairingStore(this).loadToken() != null
-        updateStatusText(connected = false)
+        updateUI(connected = false)
 
-        val pairButton = findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.pairWithMacButton
-        )
         pairButton.setOnClickListener {
             scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
+        }
+        unpairButton.setOnClickListener {
+            PairingStore(this).clear()
+            isPaired = false
+            updateUI(connected = false)
+            val reloadIntent = Intent(this, ClipShareService::class.java)
+            reloadIntent.action = ClipShareService.ACTION_RELOAD_PAIRING
+            startForegroundService(reloadIntent)
         }
     }
 
@@ -77,12 +87,14 @@ class MainActivity : AppCompatActivity() {
         unregisterReceiver(connectionReceiver)
     }
 
-    private fun updateStatusText(connected: Boolean) {
+    private fun updateUI(connected: Boolean) {
         status.text = when {
             !isPaired -> getString(R.string.status_help)
             connected -> getString(R.string.status_connected)
             else -> getString(R.string.status_paired)
         }
+        pairButton.visibility = if (isPaired) View.GONE else View.VISIBLE
+        unpairButton.visibility = if (isPaired) View.VISIBLE else View.GONE
     }
 
     private fun ensureServiceRunning() {
