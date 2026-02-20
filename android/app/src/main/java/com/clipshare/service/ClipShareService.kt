@@ -29,6 +29,7 @@ class ClipShareService : Service() {
         const val ACTION_PUSH_TEXT = "com.clipshare.action.PUSH_TEXT"
         const val ACTION_RELOAD_PAIRING = "com.clipshare.action.RELOAD_PAIRING"
         const val ACTION_CONNECTION_STATE = "com.clipshare.action.CONNECTION_STATE"
+        const val ACTION_QUERY_CONNECTION = "com.clipshare.action.QUERY_CONNECTION"
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_CONNECTED = "extra_connected"
 
@@ -112,6 +113,9 @@ class ClipShareService : Service() {
             ACTION_RELOAD_PAIRING -> {
                 loadPairingState()
                 advertiser.restart()
+            }
+            ACTION_QUERY_CONNECTION -> {
+                sendConnectionBroadcast(gattServer.hasConnectedCentral())
             }
         }
 
