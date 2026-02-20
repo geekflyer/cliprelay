@@ -71,6 +71,15 @@
             android:layout_marginTop="16dp"
             android:text="@string/pair_with_mac" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/unpairButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/unpair"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/shareHelpText"
             android:layout_width="match_parent"
