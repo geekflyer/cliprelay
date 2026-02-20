@@ -103,16 +103,15 @@ class ClipShareService : Service() {
                         handleIncomingDataFrame(bytes)
                     }
                 },
-                onDeviceConnectionChanged = { isConnected, deviceName ->
+                onDeviceConnectionChanged = { isConnected ->
                     if (!isConnected) {
                         transferExecutor.execute {
                             incomingDataReassembler.reset()
                             pendingInboundHashFromMetadata = null
                         }
-                    } else if (deviceName != null) {
-                        saveConnectedDeviceName(deviceName)
                     }
-                    sendConnectionBroadcast(isConnected, if (isConnected) deviceName else null)
+                    val name = if (isConnected) loadConnectedDeviceName() else null
+                    sendConnectionBroadcast(isConnected, name)
                 }
             )
         )

@@ -11,7 +11,7 @@ import java.util.UUID
 class GattServerCallback(
     private val onAvailableReceived: (ByteArray) -> Unit,
     private val onDataReceived: (ByteArray) -> Unit,
-    private val onDeviceConnectionChanged: (isConnected: Boolean, deviceName: String?) -> Unit
+    private val onDeviceConnectionChanged: (isConnected: Boolean) -> Unit
 ) : BluetoothGattServerCallback() {
     companion object {
         private val CCC_DESCRIPTOR_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
@@ -34,13 +34,12 @@ class GattServerCallback(
         }
 
         synchronized(connectedDevices) {
-            val deviceName = if (newState == BluetoothGatt.STATE_CONNECTED) device.name else null
             if (newState == BluetoothGatt.STATE_CONNECTED) {
                 connectedDevices.add(device)
             } else {
                 connectedDevices.remove(device)
             }
-            onDeviceConnectionChanged(connectedDevices.isNotEmpty(), deviceName)
+            onDeviceConnectionChanged(connectedDevices.isNotEmpty())
         }
     }
 
