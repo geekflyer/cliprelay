@@ -99,6 +99,7 @@ final class BLECentralManager: NSObject {
         let readyPeers = connectedPeers.values.filter { peer in
             peer.availableCharacteristic != nil && peer.dataCharacteristic != nil
         }
+        print("[BLE] sendClipboardText: connectedPeers=\(connectedPeers.count) readyPeers=\(readyPeers.count) textLen=\(text.count)")
         guard !readyPeers.isEmpty else { return }
 
         for peer in readyPeers {
@@ -281,6 +282,7 @@ final class BLECentralManager: NSObject {
 
 extension BLECentralManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        print("[BLE] Central state: \(central.state.rawValue) (4=poweredOn)")
         if central.state == .poweredOn {
             scan()
         }
@@ -295,8 +297,24 @@ extension BLECentralManager: CBCentralManagerDelegate {
         let peripheralID = peripheral.identifier
         knownPeripherals[peripheralID] = peripheral
 
-        guard let tag = extractDeviceTag(from: advertisementData) else { return }
-        guard let device = pairingManager.findDevice(byTag: tag) else { return }
+        let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
+        print("[BLE] Discovered \(peripheral.name ?? "nil") mfgData=\(mfgData?.map { String(format: "%02x", $0) }.joined() ?? "nil") rssi=\(RSSI)")
+
+        guard let tag = extractDeviceTag(from: advertisementData) else {
+            print("[BLE]   -> No device tag in advertisement")
+            return
+        }
+        print("[BLE]   -> Tag: \(tag.map { String(format: "%02x", $0) }.joined())")
+        guard let device = pairingManager.findDevice(byTag: tag) else {
+            print("[BLE]   -> No paired device matches this tag")
+            let allDevices = pairingManager.loadDevices()
+            for d in allDevices {
+                let dt = pairingManager.deviceTag(for: d.token)
+                print("[BLE]      stored tag: \(dt?.map { String(format: "%02x", $0) }.joined() ?? "nil") name=\(d.displayName)")
+            }
+            return
+        }
+        print("[BLE]   -> Matched paired device: \(device.displayName)")
 
         peripheralTokenMap[peripheralID] = device.token
 
@@ -318,8 +336,12 @@ extension BLECentralManager: CBCentralManagerDelegate {
         reconnectDelay = 1
         let peripheralID = peripheral.identifier
         connectingPeerIDs.remove(peripheralID)
+        print("[BLE] didConnect: \(peripheral.name ?? "nil") id=\(peripheralID)")
 
-        guard let token = peripheralTokenMap[peripheralID] else { return }
+        guard let token = peripheralTokenMap[peripheralID] else {
+            print("[BLE]   -> No token mapped for this peripheral")
+            return
+        }
 
         // Update stored display name from the peripheral's advertised name
         // (replaces "Pending pairing…" after first successful connection).
@@ -348,11 +370,13 @@ extension BLECentralManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        print("[BLE] didFailToConnect: \(peripheral.name ?? "nil") error=\(error?.localizedDescription ?? "nil")")
         connectingPeerIDs.remove(peripheral.identifier)
         scheduleReconnect()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        print("[BLE] didDisconnect: \(peripheral.name ?? "nil") error=\(error?.localizedDescription ?? "nil")")
         let peripheralID = peripheral.identifier
         connectingPeerIDs.remove(peripheralID)
         connectedPeers.removeValue(forKey: peripheralID)
@@ -367,12 +391,14 @@ extension BLECentralManager: CBCentralManagerDelegate {
 
 extension BLECentralManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        print("[BLE] didDiscoverServices: \(peripheral.services?.map(\.uuid.uuidString) ?? []) error=\(error?.localizedDescription ?? "nil")")
         peripheral.services?.forEach {
             peripheral.discoverCharacteristics([BLEProtocol.availableUUID, BLEProtocol.dataUUID], for: $0)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        print("[BLE] didDiscoverCharacteristics: \(service.characteristics?.map(\.uuid.uuidString) ?? []) error=\(error?.localizedDescription ?? "nil")")
         let peripheralID = peripheral.identifier
         guard var peer = connectedPeers[peripheralID] else { return }
 
@@ -393,6 +419,7 @@ extension BLECentralManager: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let data = characteristic.value else { return }
+        print("[BLE] didUpdateValue: char=\(characteristic.uuid.uuidString) bytes=\(data.count)")
 
         let peripheralID = peripheral.identifier
         if characteristic.uuid == BLEProtocol.availableUUID {

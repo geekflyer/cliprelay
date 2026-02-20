@@ -28,7 +28,9 @@ class ClipShareService : Service() {
     companion object {
         const val ACTION_PUSH_TEXT = "com.clipshare.action.PUSH_TEXT"
         const val ACTION_RELOAD_PAIRING = "com.clipshare.action.RELOAD_PAIRING"
+        const val ACTION_CONNECTION_STATE = "com.clipshare.action.CONNECTION_STATE"
         const val EXTRA_TEXT = "extra_text"
+        const val EXTRA_CONNECTED = "extra_connected"
 
         private const val TAG = "ClipShareService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
@@ -77,6 +79,7 @@ class ClipShareService : Service() {
                             pendingInboundHashFromMetadata = null
                         }
                     }
+                    sendConnectionBroadcast(isConnected)
                 }
             )
         )
@@ -237,6 +240,13 @@ class ClipShareService : Service() {
     private fun sha256Hex(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return digest.joinToString(separator = "") { "%02x".format(it) }
+    }
+
+    private fun sendConnectionBroadcast(connected: Boolean) {
+        val intent = Intent(ACTION_CONNECTION_STATE)
+        intent.setPackage(packageName)
+        intent.putExtra(EXTRA_CONNECTED, connected)
+        sendBroadcast(intent)
     }
 
     private fun buildNotification(): Notification {
