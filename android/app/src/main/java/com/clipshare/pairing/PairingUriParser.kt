@@ -2,16 +2,16 @@ package com.clipshare.pairing
 
 import android.net.Uri
 
+data class PairingInfo(val token: String, val deviceName: String?)
+
 object PairingUriParser {
-    /**
-     * Parse a greenpaste://pair?t=<hex-token> URI and return the token.
-     */
-    fun parse(rawValue: String): String? {
+    fun parse(rawValue: String): PairingInfo? {
         val uri = Uri.parse(rawValue.trim())
         if (uri.scheme != "greenpaste" || uri.host != "pair") return null
         val token = uri.getQueryParameter("t") ?: return null
         if (token.length != 64) return null
         if (!token.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
-        return token.lowercase()
+        val deviceName = uri.getQueryParameter("n")?.takeIf { it.isNotBlank() }
+        return PairingInfo(token.lowercase(), deviceName)
     }
 }

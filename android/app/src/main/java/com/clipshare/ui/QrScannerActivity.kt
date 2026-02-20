@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.clipshare.pairing.PairingStore
 import com.clipshare.pairing.PairingUriParser
+import com.clipshare.service.ClipShareService
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -43,17 +44,23 @@ class QrScannerActivity : AppCompatActivity() {
     }
 
     private fun handleScannedValue(rawValue: String) {
-        val token = PairingUriParser.parse(rawValue)
-        if (token == null) {
+        val info = PairingUriParser.parse(rawValue)
+        if (info == null) {
             Toast.makeText(this, "Invalid pairing QR code", Toast.LENGTH_LONG).show()
             finish()
             return
         }
 
-        val store = PairingStore(this)
-        store.saveToken(token)
-        Toast.makeText(this, "Paired successfully!", Toast.LENGTH_SHORT).show()
+        PairingStore(this).saveToken(info.token)
 
+        if (info.deviceName != null) {
+            getSharedPreferences(ClipShareService.PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(ClipShareService.KEY_CONNECTED_DEVICE, info.deviceName)
+                .apply()
+        }
+
+        Toast.makeText(this, "Paired successfully!", Toast.LENGTH_SHORT).show()
         setResult(RESULT_OK)
         finish()
     }

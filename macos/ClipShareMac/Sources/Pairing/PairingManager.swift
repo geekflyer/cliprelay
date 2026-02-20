@@ -40,7 +40,11 @@ final class PairingManager {
         var components = URLComponents()
         components.scheme = "greenpaste"
         components.host = "pair"
-        components.queryItems = [URLQueryItem(name: "t", value: token)]
+        let macName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        components.queryItems = [
+            URLQueryItem(name: "t", value: token),
+            URLQueryItem(name: "n", value: macName)
+        ]
         return components.url
     }
 
