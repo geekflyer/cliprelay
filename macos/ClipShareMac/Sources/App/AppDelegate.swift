@@ -32,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bleManager?.onConnectedPeersChanged = { [weak self] peers in
             DispatchQueue.main.async {
                 self?.statusBarController.setConnectedPeers(peers)
+                if !peers.isEmpty {
+                    self?.pairingWindowController.close()
+                }
             }
         }
         bleManager?.onTrustedPeersChanged = { [weak self] peers in
