@@ -259,12 +259,12 @@ final class BLECentralManager: NSObject {
     // MARK: - Service data extraction
 
     private func extractDeviceTag(from advertisementData: [String: Any]) -> Data? {
+        // Device tag is in manufacturer data: [2-byte company ID (0xFFFF)] [8-byte tag]
         guard
-            let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data],
-            let tag = serviceData[BLEProtocol.serviceUUID],
-            tag.count >= 8
+            let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
+            mfgData.count >= 10
         else { return nil }
-        return tag.prefix(8)
+        return mfgData.subdata(in: 2..<10)
     }
 
     private func extractDisplayName(
@@ -299,6 +299,18 @@ extension BLECentralManager: CBCentralManagerDelegate {
         guard let device = pairingManager.findDevice(byTag: tag) else { return }
 
         peripheralTokenMap[peripheralID] = device.token
+
+        // Capture advertised name early (available from scan response)
+        let advName = extractDisplayName(peripheral: peripheral, advertisementData: advertisementData)
+        if advName != "Unknown device", device.displayName != advName {
+            pairingManager.addDevice(PairedDevice(
+                token: device.token,
+                displayName: advName,
+                datePaired: device.datePaired
+            ))
+            notifyAllState()
+        }
+
         connectToPairedPeerIfNeeded(peripheralID: peripheralID)
     }
 

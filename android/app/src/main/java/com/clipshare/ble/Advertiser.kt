@@ -37,13 +37,15 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
             .addServiceUuid(serviceUuid)
             .build()
 
-        // Scan response: device tag as service data for paired device recognition.
-        // 128-bit UUID service data with 8-byte tag = ~26 bytes, fits in 31.
+        // Scan response: device tag as manufacturer data + device name.
+        // Manufacturer data: 2 (company ID) + 8 (tag) = 10 bytes + overhead ~12 bytes.
+        // Device name: up to ~17 chars. Both fit in 31 bytes.
         val scanResponseBuilder = AdvertiseData.Builder()
-            .setIncludeDeviceName(false)
+            .setIncludeDeviceName(true)
         val tag = deviceTag
         if (tag != null) {
-            scanResponseBuilder.addServiceData(serviceUuid, tag)
+            // 0xFFFF = Bluetooth SIG reserved for testing/development
+            scanResponseBuilder.addManufacturerData(0xFFFF, tag)
         }
         val scanResponse = scanResponseBuilder.build()
 

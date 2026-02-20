@@ -8,7 +8,7 @@
     <string name="status_starting">Starting...</string>
     <string name="status_running">Running in background</string>
     <string name="status_help">Tap "Pair with Mac" and scan the QR code shown on your Mac.</string>
-    <string name="status_paired">Paired — connecting…</string>
+    <string name="status_paired">Paired</string>
     <string name="pair_with_mac">Pair with Mac</string>
     <string name="share_help">Tip: Use Android’s Share action in other apps to send selected text to your paired Mac.</string>
 </resources>
