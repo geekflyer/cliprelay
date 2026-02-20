@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 
 final class StatusBarController {
-    var onOpenBluetoothSettingsRequested: (() -> Void)?
     var onPairNewDeviceRequested: (() -> Void)?
     var onForgetDeviceRequested: ((String) -> Void)?
 
@@ -64,14 +63,6 @@ final class StatusBarController {
 
         menu.addItem(NSMenuItem.separator())
 
-        let openSettings = NSMenuItem(
-            title: "Bluetooth Settings\u{2026}",
-            action: #selector(handleOpenBluetoothSettings),
-            keyEquivalent: "b"
-        )
-        openSettings.target = self
-        menu.addItem(openSettings)
-
         menu.addItem(NSMenuItem(
             title: "Quit GreenPaste",
             action: #selector(NSApplication.terminate(_:)),
@@ -103,15 +94,6 @@ final class StatusBarController {
             item.isEnabled = true
 
             let submenu = NSMenu()
-            let statusLabel = NSMenuItem(
-                title: isConnected ? "Connected" : "Not in range",
-                action: nil,
-                keyEquivalent: ""
-            )
-            statusLabel.isEnabled = false
-            submenu.addItem(statusLabel)
-            submenu.addItem(NSMenuItem.separator())
-
             let forgetItem = NSMenuItem(
                 title: "Forget Device",
                 action: #selector(handleForgetDevice(_:)),
@@ -140,11 +122,6 @@ final class StatusBarController {
     }
 
     // MARK: - Actions
-
-    @objc
-    private func handleOpenBluetoothSettings() {
-        onOpenBluetoothSettingsRequested?()
-    }
 
     @objc
     private func handlePairNewDevice() {
