@@ -309,11 +309,18 @@ extension BLECentralManager: CBCentralManagerDelegate {
 
         guard let token = peripheralTokenMap[peripheralID] else { return }
 
-        let displayName: String
-        if let device = pairingManager.loadDevices().first(where: { $0.token == token }) {
-            displayName = device.displayName
-        } else {
-            displayName = peripheral.name ?? "Unknown device"
+        // Update stored display name from the peripheral's advertised name
+        // (replaces "Pending pairing…" after first successful connection).
+        let peripheralName = peripheral.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let device = pairingManager.loadDevices().first(where: { $0.token == token })
+        let displayName = peripheralName ?? device?.displayName ?? "Unknown device"
+
+        if let peripheralName, device != nil, device?.displayName != peripheralName {
+            pairingManager.addDevice(PairedDevice(
+                token: token,
+                displayName: peripheralName,
+                datePaired: device?.datePaired ?? Date()
+            ))
         }
 
         connectedPeers[peripheralID] = ConnectedPeer(

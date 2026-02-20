@@ -30,20 +30,22 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
             .setConnectable(true)
             .build()
 
-        val advertiseDataBuilder = AdvertiseData.Builder()
+        // Primary advertisement: service UUID only (for central scan filtering).
+        // Must stay under 31 bytes: 3 (flags) + 18 (128-bit UUID) = 21 bytes.
+        val advertiseData = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
             .addServiceUuid(serviceUuid)
+            .build()
 
+        // Scan response: device tag as service data for paired device recognition.
+        // 128-bit UUID service data with 8-byte tag = ~26 bytes, fits in 31.
+        val scanResponseBuilder = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
         val tag = deviceTag
         if (tag != null) {
-            advertiseDataBuilder.addServiceData(serviceUuid, tag)
+            scanResponseBuilder.addServiceData(serviceUuid, tag)
         }
-
-        val advertiseData = advertiseDataBuilder.build()
-
-        val scanResponse = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
-            .build()
+        val scanResponse = scanResponseBuilder.build()
 
         callback = object : AdvertiseCallback() {
             override fun onStartFailure(errorCode: Int) {
