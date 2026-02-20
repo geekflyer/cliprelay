@@ -284,7 +284,17 @@ extension BLECentralManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         print("[BLE] Central state: \(central.state.rawValue) (4=poweredOn)")
         if central.state == .poweredOn {
+            reconnectDelay = 1
             scan()
+        } else {
+            // Bluetooth turned off — all peripherals are invalidated by CoreBluetooth
+            knownPeripherals.removeAll()
+            connectingPeerIDs.removeAll()
+            connectedPeers.removeAll()
+            peripheralTokenMap.removeAll()
+            pendingInboundHashByPeer.removeAll()
+            assemblerByPeer.removeAll()
+            notifyAllState()
         }
     }
 
