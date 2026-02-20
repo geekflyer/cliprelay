@@ -1,6 +1,8 @@
 .DS_Store
 .idea/
 .gradle/
+.gradle-local/
+.vscode/
 build/
 **/build/
 macos/ClipShareMac/.build/
