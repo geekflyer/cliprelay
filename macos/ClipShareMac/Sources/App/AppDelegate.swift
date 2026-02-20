@@ -1,9 +1,11 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let pairingManager = PairingManager()
     private let statusBarController = StatusBarController()
     private let clipboardWriter = ClipboardWriter()
     private let notificationManager = ReceiveNotificationManager()
+    private let pairingWindowController = PairingWindowController()
 
     private var bleManager: BLECentralManager?
     private var clipboardMonitor: ClipboardMonitor?
@@ -14,14 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController.onOpenBluetoothSettingsRequested = { [weak self] in
             self?.openBluetoothSettings()
         }
-        statusBarController.onApproveDeviceRequested = { [weak self] id in
-            self?.bleManager?.approvePeer(id: id)
+        statusBarController.onPairNewDeviceRequested = { [weak self] in
+            self?.startPairing()
         }
-        statusBarController.onForgetDeviceRequested = { [weak self] id in
-            self?.bleManager?.revokePeer(id: id)
+        statusBarController.onForgetDeviceRequested = { [weak self] token in
+            self?.bleManager?.forgetDevice(token: token)
         }
 
-        bleManager = BLECentralManager(clipboardWriter: clipboardWriter)
+        bleManager = BLECentralManager(clipboardWriter: clipboardWriter, pairingManager: pairingManager)
         bleManager?.onClipboardReceived = { [weak self] text in
             self?.notificationManager.postClipboardReceived(text: text)
         }
@@ -30,14 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.bleManager?.sendClipboardText(text)
         }
 
-        bleManager?.onConnectedPeersChanged = { [weak self] peerDescriptions in
+        bleManager?.onConnectedPeersChanged = { [weak self] peers in
             DispatchQueue.main.async {
-                self?.statusBarController.setConnectedPeers(peerDescriptions)
-            }
-        }
-        bleManager?.onDiscoveredPeersChanged = { [weak self] peers in
-            DispatchQueue.main.async {
-                self?.statusBarController.setDiscoveredPeers(peers)
+                self?.statusBarController.setConnectedPeers(peers)
             }
         }
         bleManager?.onTrustedPeersChanged = { [weak self] peers in
@@ -55,11 +52,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bleManager?.stop()
     }
 
+    private func startPairing() {
+        let token = pairingManager.generateToken()
+        let device = PairedDevice(
+            token: token,
+            displayName: "Pending pairing\u{2026}",
+            datePaired: Date()
+        )
+        pairingManager.addDevice(device)
+
+        guard let uri = pairingManager.pairingURI(token: token) else { return }
+        pairingWindowController.showPairingQR(uri: uri)
+
+        // Refresh trusted list to show pending device
+        bleManager?.notifyAllState()
+    }
+
     private func openBluetoothSettings() {
         let deepLinks = [
             "x-apple.systempreferences:com.apple.BluetoothSettings",
             "x-apple.systempreferences:com.apple.preference.bluetooth",
-            "x-apple.systempreferences:com.apple.Bluetooth"
+            "x-apple.systempreferences:com.apple.Bluetooth",
         ]
 
         for link in deepLinks {

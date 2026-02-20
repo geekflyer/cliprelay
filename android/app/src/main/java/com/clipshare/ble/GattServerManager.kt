@@ -36,8 +36,8 @@ class GattServerManager(
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY or
                 BluetoothGattCharacteristic.PROPERTY_WRITE or
                 BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
-            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED or
-                BluetoothGattCharacteristic.PERMISSION_WRITE_ENCRYPTED
+            BluetoothGattCharacteristic.PERMISSION_READ or
+                BluetoothGattCharacteristic.PERMISSION_WRITE
         )
 
         val data = BluetoothGattCharacteristic(
@@ -46,23 +46,23 @@ class GattServerManager(
                 BluetoothGattCharacteristic.PROPERTY_NOTIFY or
                 BluetoothGattCharacteristic.PROPERTY_WRITE or
                 BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
-            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED or
-                BluetoothGattCharacteristic.PERMISSION_WRITE_ENCRYPTED
+            BluetoothGattCharacteristic.PERMISSION_READ or
+                BluetoothGattCharacteristic.PERMISSION_WRITE
         )
 
         available.addDescriptor(
             BluetoothGattDescriptor(
                 CCC_DESCRIPTOR_UUID,
-                BluetoothGattDescriptor.PERMISSION_READ_ENCRYPTED or
-                    BluetoothGattDescriptor.PERMISSION_WRITE_ENCRYPTED
+                BluetoothGattDescriptor.PERMISSION_READ or
+                    BluetoothGattDescriptor.PERMISSION_WRITE
             )
         )
 
         data.addDescriptor(
             BluetoothGattDescriptor(
                 CCC_DESCRIPTOR_UUID,
-                BluetoothGattDescriptor.PERMISSION_READ_ENCRYPTED or
-                    BluetoothGattDescriptor.PERMISSION_WRITE_ENCRYPTED
+                BluetoothGattDescriptor.PERMISSION_READ or
+                    BluetoothGattDescriptor.PERMISSION_WRITE
             )
         )
 

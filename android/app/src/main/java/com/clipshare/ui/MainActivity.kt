@@ -5,8 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -15,6 +15,18 @@ import com.clipshare.service.ClipShareService
 
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
+
+    private val scannerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            status.text = getString(R.string.status_paired)
+            // Tell service to reload pairing and restart advertising
+            val reloadIntent = Intent(this, ClipShareService::class.java)
+            reloadIntent.action = ClipShareService.ACTION_RELOAD_PAIRING
+            startForegroundService(reloadIntent)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,12 +37,12 @@ class MainActivity : AppCompatActivity() {
 
         status = findViewById(R.id.statusText)
         status.text = getString(R.string.status_running)
-        val pairButton = findViewById<com.google.android.material.button.MaterialButton>(
-            R.id.openBluetoothSettingsButton
-        )
 
+        val pairButton = findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.pairWithMacButton
+        )
         pairButton.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
         }
     }
 
