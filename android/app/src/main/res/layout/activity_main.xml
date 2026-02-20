@@ -64,12 +64,12 @@
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/openBluetoothSettingsButton"
+            android:id="@+id/pairWithMacButton"
             style="@style/Widget.Material3.Button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="@string/open_bluetooth_settings" />
+            android:text="@string/pair_with_mac" />
 
         <TextView
             android:id="@+id/shareHelpText"

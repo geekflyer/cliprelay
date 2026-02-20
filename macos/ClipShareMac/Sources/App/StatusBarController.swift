@@ -3,14 +3,13 @@ import Foundation
 
 final class StatusBarController {
     var onOpenBluetoothSettingsRequested: (() -> Void)?
-    var onApproveDeviceRequested: ((UUID) -> Void)?
-    var onForgetDeviceRequested: ((UUID) -> Void)?
+    var onPairNewDeviceRequested: (() -> Void)?
+    var onForgetDeviceRequested: ((String) -> Void)?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
 
     private var connectedPeers: [PeerSummary] = []
-    private var discoveredPeers: [PeerSummary] = []
     private var trustedPeers: [PeerSummary] = []
 
     private lazy var connectedDot: NSImage = makeStatusDot(color: .systemGreen)
@@ -42,11 +41,6 @@ final class StatusBarController {
         renderMenu()
     }
 
-    func setDiscoveredPeers(_ peers: [PeerSummary]) {
-        discoveredPeers = peers
-        renderMenu()
-    }
-
     func setTrustedPeers(_ peers: [PeerSummary]) {
         trustedPeers = peers
         renderMenu()
@@ -59,7 +53,15 @@ final class StatusBarController {
 
         renderTrustedDevicesSection()
         menu.addItem(NSMenuItem.separator())
-        renderDiscoveredDevicesSection()
+
+        let pairItem = NSMenuItem(
+            title: "Pair New Device\u{2026}",
+            action: #selector(handlePairNewDevice),
+            keyEquivalent: "n"
+        )
+        pairItem.target = self
+        menu.addItem(pairItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let openSettings = NSMenuItem(
@@ -80,12 +82,12 @@ final class StatusBarController {
     }
 
     private func renderTrustedDevicesSection() {
-        let header = NSMenuItem(title: "Trusted Devices", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "Paired Devices", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
 
         if trustedPeers.isEmpty {
-            let empty = NSMenuItem(title: "  No trusted devices", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: "  No paired devices", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
             return
@@ -116,35 +118,10 @@ final class StatusBarController {
                 keyEquivalent: ""
             )
             forgetItem.target = self
-            forgetItem.representedObject = peer.id.uuidString
+            forgetItem.representedObject = peer.token
             submenu.addItem(forgetItem)
 
             item.submenu = submenu
-            menu.addItem(item)
-        }
-    }
-
-    private func renderDiscoveredDevicesSection() {
-        let header = NSMenuItem(title: "Discovered Devices", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-
-        if discoveredPeers.isEmpty {
-            let empty = NSMenuItem(title: "  Scanning\u{2026}", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
-            return
-        }
-
-        for peer in discoveredPeers {
-            let item = NSMenuItem(
-                title: peer.description,
-                action: #selector(handleApproveDevice(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = peer.id.uuidString
-            item.toolTip = "Click to trust this device"
             menu.addItem(item)
         }
     }
@@ -170,24 +147,13 @@ final class StatusBarController {
     }
 
     @objc
-    private func handleApproveDevice(_ sender: NSMenuItem) {
-        guard
-            let rawID = sender.representedObject as? String,
-            let id = UUID(uuidString: rawID)
-        else {
-            return
-        }
-        onApproveDeviceRequested?(id)
+    private func handlePairNewDevice() {
+        onPairNewDeviceRequested?()
     }
 
     @objc
     private func handleForgetDevice(_ sender: NSMenuItem) {
-        guard
-            let rawID = sender.representedObject as? String,
-            let id = UUID(uuidString: rawID)
-        else {
-            return
-        }
-        onForgetDeviceRequested?(id)
+        guard let token = sender.representedObject as? String else { return }
+        onForgetDeviceRequested?(token)
     }
 }

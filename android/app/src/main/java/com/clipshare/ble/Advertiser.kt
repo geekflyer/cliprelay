@@ -16,6 +16,8 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
     private val advertiser: BluetoothLeAdvertiser? = BluetoothAdapter.getDefaultAdapter()?.bluetoothLeAdvertiser
     private var callback: AdvertiseCallback? = null
 
+    var deviceTag: ByteArray? = null
+
     fun start() {
         val instance = advertiser ?: return
         if (callback != null) {
@@ -27,17 +29,18 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(true)
             .build()
-        // Primary advertisement: service UUID only (for central scan filtering).
-        // Service UUID (128-bit) takes 18 bytes + 3 bytes flags = 21 bytes, well within 31.
-        val advertiseData = AdvertiseData.Builder()
+
+        val advertiseDataBuilder = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
             .addServiceUuid(serviceUuid)
-            .build()
 
-        // Scan response: full device name via the standard Local Name AD type.
-        // Using setIncludeDeviceName(true) instead of custom service data avoids the
-        // 13-byte name limit imposed by 128-bit UUID service data overhead, and uses
-        // the same name source that the macOS Bluetooth pairing dialog reads.
+        val tag = deviceTag
+        if (tag != null) {
+            advertiseDataBuilder.addServiceData(serviceUuid, tag)
+        }
+
+        val advertiseData = advertiseDataBuilder.build()
+
         val scanResponse = AdvertiseData.Builder()
             .setIncludeDeviceName(true)
             .build()
@@ -54,5 +57,10 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
         val instance = advertiser ?: return
         callback?.let { instance.stopAdvertising(it) }
         callback = null
+    }
+
+    fun restart() {
+        stop()
+        start()
     }
 }
