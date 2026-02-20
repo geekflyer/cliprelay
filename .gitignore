@@ -12,3 +12,4 @@ DerivedData/
 *.swp
 local.properties
 dist/
+notes.md
