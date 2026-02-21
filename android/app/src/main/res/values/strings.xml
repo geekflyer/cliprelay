@@ -6,7 +6,6 @@
     <string name="main_subtitle">Clipboard sync stays on while this app is installed and permissions are granted.</string>
     <string name="status_label">Service</string>
     <string name="status_starting">Starting...</string>
-    <string name="status_running">Running in background</string>
     <string name="status_help">Tap "Pair with Mac" and scan the QR code shown on your Mac.</string>
     <string name="status_paired">Paired — waiting for Mac</string>
     <string name="status_connected">Connected</string>

@@ -15,7 +15,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.clipshare.R
 import com.clipshare.ble.Advertiser
-import com.clipshare.ble.AssembledPayload
 import com.clipshare.ble.ChunkReassembler
 import com.clipshare.ble.ChunkTransfer
 import com.clipshare.ble.GattServerCallback

@@ -30,5 +30,8 @@ Maximum payload: 100 KiB UTF-8 text.
 
 ## Security model (MVP)
 
-- Pairing and encryption rely on BLE Secure Connections (OS/native bonding).
-- No additional application-layer encryption in v1.
+- Pairing is QR-based using a shared 64-char hex token (`greenpaste://pair?t=<token>&n=<name>`).
+- Application-layer encryption is always enabled with AES-256-GCM.
+- Key derivation is `SHA-256(token_bytes)`.
+- AAD is fixed to `greenpaste-v1`.
+- Ciphertext wire format is `[12-byte nonce][ciphertext + 16-byte GCM tag]`.

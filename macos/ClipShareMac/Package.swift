@@ -11,6 +11,11 @@ let package = Package(
         .executableTarget(
             name: "GreenPaste",
             path: "Sources"
+        ),
+        .testTarget(
+            name: "GreenPasteTests",
+            dependencies: ["GreenPaste"],
+            path: "Tests/GreenPasteTests"
         )
     ]
 )
