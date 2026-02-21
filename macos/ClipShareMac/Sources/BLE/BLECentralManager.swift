@@ -63,8 +63,14 @@ final class BLECentralManager: NSObject {
     }
 
     func stop() {
+        // Cancel both connected and connecting peripherals to release all connection slots.
         for peer in connectedPeers.values {
             centralManager.cancelPeripheralConnection(peer.peripheral)
+        }
+        for id in connectingPeerIDs {
+            if let peripheral = knownPeripherals[id] {
+                centralManager.cancelPeripheralConnection(peripheral)
+            }
         }
         connectingPeerIDs.removeAll()
         connectedPeers.removeAll()
@@ -79,8 +85,8 @@ final class BLECentralManager: NSObject {
 
         let peripheralIDs = peripheralTokenMap.filter { $0.value == token }.map(\.key)
         for id in peripheralIDs {
-            if let peer = connectedPeers[id] {
-                centralManager.cancelPeripheralConnection(peer.peripheral)
+            if let peripheral = knownPeripherals[id] {
+                centralManager.cancelPeripheralConnection(peripheral)
             }
             connectingPeerIDs.remove(id)
             connectedPeers.removeValue(forKey: id)
@@ -186,6 +192,10 @@ final class BLECentralManager: NSObject {
         guard connectedPeers[peripheralID] == nil else { return }
         guard !connectingPeerIDs.contains(peripheralID) else { return }
         guard let peripheral = knownPeripherals[peripheralID] else { return }
+
+        // Cancel any stale pending connection before re-issuing, so we don't
+        // accumulate ghost connection slots in CoreBluetooth.
+        centralManager.cancelPeripheralConnection(peripheral)
 
         connectingPeerIDs.insert(peripheralID)
         peripheral.delegate = self
@@ -404,6 +414,8 @@ extension BLECentralManager: CBCentralManagerDelegate {
         // (e.g. the phone re-enables Bluetooth). This avoids relying on the scan to
         // re-discover the peripheral, which won't happen while the duplicate filter is active.
         if peripheralTokenMap[peripheralID] != nil {
+            // Cancel first to release any lingering connection slot.
+            centralManager.cancelPeripheralConnection(peripheral)
             connectingPeerIDs.insert(peripheralID)
             peripheral.delegate = self
             centralManager.connect(peripheral, options: nil)
