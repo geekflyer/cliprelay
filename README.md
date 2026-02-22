@@ -50,6 +50,14 @@ Optional:
 ./scripts/build-all.sh --android-only
 ```
 
+## Run automated tests
+
+From repo root:
+
+```bash
+./scripts/test-all.sh
+```
+
 ## Install and run
 
 ### 1) Install the mac app
