@@ -50,14 +50,23 @@ final class PairingManager {
 
     func deviceTag(for token: String) -> Data? {
         guard let tokenData = hexToData(token) else { return nil }
-        let hash = SHA256.hash(data: tokenData)
-        return Data(hash.prefix(8))
+        let ikm = SymmetricKey(data: tokenData)
+        let tagKey = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: ikm,
+            info: Data("greenpaste-tag-v1".utf8),
+            outputByteCount: 8
+        )
+        return tagKey.withUnsafeBytes { Data($0) }
     }
 
     func encryptionKey(for token: String) -> SymmetricKey? {
         guard let tokenData = hexToData(token) else { return nil }
-        let hash = SHA256.hash(data: tokenData)
-        return SymmetricKey(data: Data(hash))
+        let ikm = SymmetricKey(data: tokenData)
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: ikm,
+            info: Data("greenpaste-enc-v1".utf8),
+            outputByteCount: 32
+        )
     }
 
     func findDevice(byTag tag: Data) -> PairedDevice? {

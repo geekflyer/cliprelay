@@ -1,7 +1,7 @@
 package com.clipshare.crypto
 
-import java.security.MessageDigest
 import javax.crypto.Cipher
+import javax.crypto.Mac
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -13,14 +13,13 @@ object E2ECrypto {
 
     fun deriveKey(tokenHex: String): SecretKey {
         val tokenBytes = hexToBytes(tokenHex)
-        val hash = MessageDigest.getInstance("SHA-256").digest(tokenBytes)
-        return SecretKeySpec(hash, "AES")
+        val keyBytes = hkdf(tokenBytes, "greenpaste-enc-v1", 32)
+        return SecretKeySpec(keyBytes, "AES")
     }
 
     fun deviceTag(tokenHex: String): ByteArray {
         val tokenBytes = hexToBytes(tokenHex)
-        val hash = MessageDigest.getInstance("SHA-256").digest(tokenBytes)
-        return hash.copyOfRange(0, 8)
+        return hkdf(tokenBytes, "greenpaste-tag-v1", 8)
     }
 
     fun seal(plaintext: ByteArray, key: SecretKey): ByteArray {
@@ -41,6 +40,31 @@ object E2ECrypto {
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
         cipher.updateAAD(AAD)
         return cipher.doFinal(ciphertextWithTag)
+    }
+
+    private fun hkdf(ikm: ByteArray, info: String, length: Int): ByteArray {
+        val infoBytes = info.toByteArray(Charsets.UTF_8)
+        val mac = Mac.getInstance("HmacSHA256")
+        // Extract: PRK = HMAC-SHA256(salt=zeros, IKM)
+        mac.init(SecretKeySpec(ByteArray(32), "HmacSHA256"))
+        val prk = mac.doFinal(ikm)
+        // Expand
+        mac.init(SecretKeySpec(prk, "HmacSHA256"))
+        val okm = ByteArray(length)
+        var t = ByteArray(0)
+        var offset = 0
+        var counter: Byte = 1
+        while (offset < length) {
+            mac.update(t)
+            mac.update(infoBytes)
+            mac.update(counter)
+            t = mac.doFinal()
+            val copyLen = minOf(t.size, length - offset)
+            System.arraycopy(t, 0, okm, offset, copyLen)
+            offset += copyLen
+            counter++
+        }
+        return okm
     }
 
     private fun hexToBytes(hex: String): ByteArray {
