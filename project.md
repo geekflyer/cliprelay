@@ -51,6 +51,7 @@ Transport is BLE only. There is no cloud relay, server, or internet dependency.
 3. A toast shows "Sent to \<device_name\>" (e.g. "Sent to christian's Laptop").
 4. Service encrypts, chunks, and sends metadata + data frames via BLE notifications.
 5. macOS reassembles, decrypts, writes to `NSPasteboard`, and posts a user notification ("Clipboard received from Android" with text preview).
+6. Because Mac → Android sync is automatic to all currently connected paired Android devices, this can fan out to additional Android devices that are connected to the same Mac.
 
 Why explicit on Android: Android 10+ blocks background clipboard reads for privacy; Share sheet is the sanctioned path.
 
@@ -209,6 +210,7 @@ Outputs:
 
 - Android → Mac requires explicit Share action (platform privacy constraint).
 - Android system clipboard UI differs by OS version; newer Android versions may show clipboard overlays while Android 10 may show none. GreenPaste does not post per-transfer clipboard notifications.
+- Multi-device fan-out is currently expected: Android → Mac updates can propagate to other connected Android devices via the Mac clipboard loop.
 - BLE range is local (~10 m typical).
 - Text only (100 KiB max).
 - macOS clipboard uses polling (`changeCount`) by design.
