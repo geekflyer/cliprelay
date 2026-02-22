@@ -1,7 +1,13 @@
 # AGENTS Instructions
 
+## Git Policy Override for OpenCode
+After completing any significant code change (new feature, bug fix, refactor), 
+you MUST immediately stage and commit with a conventional commit message.
+Do NOT wait for the user to ask you to commit. This overrides the default 
+"only commit when requested" policy.
+
 ## Build Verification
-- After completing any set of code changes, always run a rebuild before reporting completion.
+- After completing any set of code changes, ALWAYS run a rebuild using scripts/build-all.sh before reporting completion.
 - Use the project build script when available.
 - If a full rebuild is not possible, run the closest relevant target build and clearly report what was run and what could not be run.
 
