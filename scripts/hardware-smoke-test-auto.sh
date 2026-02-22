@@ -13,6 +13,7 @@ WIRELESS_ENDPOINT=""
 ADB_PAIR_ENDPOINT=""
 ADB_PAIR_CODE=""
 TIMEOUT_SEC=90
+BLE_CONNECT_TIMEOUT_MAX_SEC=10
 KEEP_PAIRING=false
 PAIR_TOKEN=""
 
@@ -38,6 +39,7 @@ Runs a near-fully automated BLE smoke test on debug builds:
 Notes:
   - Requires an attached Android device via USB debugging or wireless debugging
   - Requires debug APK installed (for debug smoke receiver and probe state)
+  - BLE connection waits are capped at 10 seconds
   - Cleans up the temporary pairing token on both devices at the end (unless --keep-pairing is set)
 EOF
 }
@@ -146,20 +148,20 @@ select_target_device() {
     local wireless_devices=()
     local serial
     for serial in "${all_devices[@]}"; do
-      if [[ "$serial" == *:* ]]; then
+      if is_wireless_serial "$serial"; then
         wireless_devices+=("$serial")
       fi
     done
 
     if [[ ${#wireless_devices[@]} -eq 0 ]]; then
-      echo "Wireless debugging requested, but no wireless adb device (ip:port) is online." >&2
+      echo "Wireless debugging requested, but no wireless adb device is online." >&2
       echo "Run with --connect <ip:port> after enabling Wireless debugging." >&2
       exit 1
     fi
 
     if [[ ${#wireless_devices[@]} -gt 1 ]]; then
       echo "Multiple wireless adb devices found: ${wireless_devices[*]}" >&2
-      echo "Use --serial <ip:port> to choose one." >&2
+      echo "Use --serial <adb-serial> to choose one." >&2
       exit 1
     fi
 
@@ -176,6 +178,17 @@ select_target_device() {
 
   ANDROID_SERIAL="${all_devices[0]}"
   ADB=(adb -s "$ANDROID_SERIAL")
+}
+
+is_wireless_serial() {
+  local serial="$1"
+  if [[ "$serial" == *:* ]]; then
+    return 0
+  fi
+  if [[ "$serial" == *"._adb-tls-connect._tcp"* ]]; then
+    return 0
+  fi
+  return 1
 }
 
 cleanup_smoke_pairing() {
@@ -474,13 +487,15 @@ fi
 if [[ -n "$WIRELESS_ENDPOINT" ]]; then
   echo "- Connecting to wireless debugging target: $WIRELESS_ENDPOINT"
   adb connect "$WIRELESS_ENDPOINT" >/dev/null
-  if [[ -z "$ANDROID_SERIAL" ]]; then
-    ANDROID_SERIAL="$WIRELESS_ENDPOINT"
-  fi
 fi
 
 select_target_device
 echo "- Using adb device: $ANDROID_SERIAL"
+
+BLE_CONNECT_TIMEOUT_SEC="$TIMEOUT_SEC"
+if (( BLE_CONNECT_TIMEOUT_SEC > BLE_CONNECT_TIMEOUT_MAX_SEC )); then
+  BLE_CONNECT_TIMEOUT_SEC="$BLE_CONNECT_TIMEOUT_MAX_SEC"
+fi
 
 if [[ ! -d "$MAC_APP_PATH" ]]; then
   echo "Missing macOS app bundle: $MAC_APP_PATH" >&2
@@ -532,7 +547,7 @@ broadcast_debug_action "com.clipshare.debug.RESET_PROBE"
 start_mac_app
 
 echo "- Waiting for BLE connection"
-wait_for_probe_value "connected" "true" "$TIMEOUT_SEC"
+wait_for_probe_value "connected" "true" "$BLE_CONNECT_TIMEOUT_SEC"
 
 android_to_mac_text="smoke-a2m-$(date +%s)-$RANDOM"
 echo "- Running Android -> Mac transfer"
@@ -551,7 +566,7 @@ if ! toggle_bluetooth; then
 fi
 
 wait_for_probe_counter_gt "$counter_before_reconnect" 30
-wait_for_probe_value "connected" "true" "$TIMEOUT_SEC"
+wait_for_probe_value "connected" "true" "$BLE_CONNECT_TIMEOUT_SEC"
 
 android_to_mac_text_re="smoke-a2m-re-$(date +%s)-$RANDOM"
 echo "- Re-verify Android -> Mac after reconnect"
