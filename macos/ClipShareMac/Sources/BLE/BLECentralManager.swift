@@ -1,3 +1,4 @@
+import AppKit
 import CoreBluetooth
 import CryptoKit
 import Foundation
@@ -64,9 +65,16 @@ final class BLECentralManager: NSObject {
             scan()
             startConnectionWatchdogIfNeeded()
         }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
     }
 
     func stop() {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         // Cancel both connected and connecting peripherals to release all connection slots.
         for peer in connectedPeers.values {
             centralManager.cancelPeripheralConnection(peer.peripheral)
@@ -84,6 +92,46 @@ final class BLECentralManager: NSObject {
         centralManager.stopScan()
         stopConnectionWatchdog()
         notifyAllState()
+    }
+
+    @objc private func handleSystemWake() {
+        print("[BLE] System wake detected – forcing BLE reconnection cycle")
+        guard centralManager.state == .poweredOn else {
+            // Bluetooth not ready yet; centralManagerDidUpdateState will
+            // trigger scanning once it transitions to poweredOn.
+            return
+        }
+
+        // Cancel all existing connections – they are stale after sleep.
+        for peer in connectedPeers.values {
+            centralManager.cancelPeripheralConnection(peer.peripheral)
+        }
+        for id in connectingPeerIDs {
+            if let peripheral = knownPeripherals[id] {
+                centralManager.cancelPeripheralConnection(peripheral)
+            }
+        }
+
+        // Preserve peripheralTokenMap and knownPeripherals so we can
+        // immediately reconnect to known devices without waiting for
+        // advertisement re-discovery.
+        connectingPeerIDs.removeAll()
+        connectingSinceByPeerID.removeAll()
+        connectedPeers.removeAll()
+        pendingInboundHashByPeer.removeAll()
+        assemblerByPeer.removeAll()
+        notifyAllState()
+
+        // Reset backoff and restart scanning + direct connection attempts.
+        reconnectDelay = 1
+        centralManager.stopScan()
+        scan()
+        startConnectionWatchdogIfNeeded()
+
+        // Re-queue direct connection attempts for all known paired peripherals.
+        for (peripheralID, _) in peripheralTokenMap {
+            connectToPairedPeerIfNeeded(peripheralID: peripheralID)
+        }
     }
 
     func forgetDevice(token: String) {
