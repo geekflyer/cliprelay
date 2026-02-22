@@ -200,9 +200,13 @@ final class BLECentralManager: NSObject {
         guard !connectingPeerIDs.contains(peripheralID) else { return }
         guard let peripheral = knownPeripherals[peripheralID] else { return }
 
-        // Cancel any stale pending connection before re-issuing, so we don't
-        // accumulate ghost connection slots in CoreBluetooth.
-        centralManager.cancelPeripheralConnection(peripheral)
+        // Only cancel if CoreBluetooth still thinks this peripheral has an
+        // active/pending link. Calling cancel on an already-disconnected
+        // peripheral can prevent the first connection after pairing from
+        // completing on some macOS versions.
+        if peripheral.state != .disconnected {
+            centralManager.cancelPeripheralConnection(peripheral)
+        }
 
         connectingPeerIDs.insert(peripheralID)
         connectingSinceByPeerID[peripheralID] = Date()
@@ -211,7 +215,10 @@ final class BLECentralManager: NSObject {
     }
 
     private func scan() {
-        centralManager.scanForPeripherals(withServices: [BLEProtocol.serviceUUID], options: nil)
+        centralManager.scanForPeripherals(
+            withServices: [BLEProtocol.serviceUUID],
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+        )
     }
 
     private func scheduleReconnect() {
@@ -315,12 +322,19 @@ final class BLECentralManager: NSObject {
     // MARK: - Service data extraction
 
     private func extractDeviceTag(from advertisementData: [String: Any]) -> Data? {
-        // Device tag is in manufacturer data: [2-byte company ID (0xFFFF)] [8-byte tag]
-        guard
-            let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
-            mfgData.count >= 10
-        else { return nil }
-        return mfgData.subdata(in: 2..<10)
+        guard let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data else {
+            return nil
+        }
+
+        // Most stacks include [2-byte company ID][8-byte tag], but some report
+        // only the manufacturer payload bytes in scan responses.
+        if mfgData.count >= 10 {
+            return mfgData.subdata(in: 2..<10)
+        }
+        if mfgData.count == 8 {
+            return mfgData
+        }
+        return nil
     }
 
     private func extractDisplayName(

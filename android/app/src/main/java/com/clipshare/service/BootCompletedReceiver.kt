@@ -3,10 +3,15 @@ package com.clipshare.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.clipshare.permissions.BlePermissions
 
 class BootCompletedReceiver : BroadcastReceiver() {
+    companion object {
+        private const val TAG = "BootCompletedReceiver"
+    }
+
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
         if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_LOCKED_BOOT_COMPLETED) {
@@ -18,6 +23,10 @@ class BootCompletedReceiver : BroadcastReceiver() {
         }
 
         val serviceIntent = Intent(context, ClipShareService::class.java)
-        ContextCompat.startForegroundService(context, serviceIntent)
+        runCatching {
+            ContextCompat.startForegroundService(context, serviceIntent)
+        }.onFailure { error ->
+            Log.w(TAG, "Could not start service from boot receiver: ${error.message}")
+        }
     }
 }

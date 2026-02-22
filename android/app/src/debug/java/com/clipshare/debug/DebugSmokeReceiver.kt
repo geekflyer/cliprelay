@@ -36,11 +36,7 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                             .apply()
                     }
                     DebugSmokeProbe.onPairingImported(context, normalizedToken, deviceName)
-
-                    val reloadIntent = Intent(context, ClipShareService::class.java).apply {
-                        action = ClipShareService.ACTION_RELOAD_PAIRING
-                    }
-                    ContextCompat.startForegroundService(context, reloadIntent)
+                    reloadPairingInService(context)
                 }.onFailure {
                     setResultCode(3)
                     return
@@ -56,11 +52,7 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                         .edit()
                         .remove(ClipShareService.KEY_CONNECTED_DEVICE)
                         .apply()
-
-                    val reloadIntent = Intent(context, ClipShareService::class.java).apply {
-                        action = ClipShareService.ACTION_RELOAD_PAIRING
-                    }
-                    ContextCompat.startForegroundService(context, reloadIntent)
+                    reloadPairingInService(context)
                     DebugSmokeProbe.reset(context)
                 }.onFailure {
                     setResultCode(3)
@@ -84,5 +76,19 @@ class DebugSmokeReceiver : BroadcastReceiver() {
     private fun isHexToken(token: String): Boolean {
         if (token.length != 64) return false
         return token.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+    }
+
+    private fun reloadPairingInService(context: Context) {
+        val reloadIntent = Intent(context, ClipShareService::class.java).apply {
+            action = ClipShareService.ACTION_RELOAD_PAIRING
+        }
+
+        val startedExistingService = runCatching {
+            context.startService(reloadIntent)
+        }.getOrNull() != null
+
+        if (!startedExistingService) {
+            ContextCompat.startForegroundService(context, reloadIntent)
+        }
     }
 }

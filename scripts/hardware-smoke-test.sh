@@ -303,7 +303,7 @@ broadcast_debug_action() {
 }
 
 start_android_app() {
-  ${ADB[@]} shell monkey -p "$ANDROID_APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
+  ${ADB[@]} shell am start -W -n com.clipshare/.ui.MainActivity >/dev/null 2>&1 || true
 }
 
 start_mac_app() {
