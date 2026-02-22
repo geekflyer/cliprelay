@@ -9,10 +9,12 @@ MAC_BIN="$MAC_APP_PATH/Contents/MacOS/GreenPaste"
 
 ANDROID_SERIAL=""
 TIMEOUT_SEC=90
+KEEP_PAIRING=false
+PAIR_TOKEN=""
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/ble-hardware-smoke-auto.sh [--serial <adb-serial>] [--timeout <seconds>]
+Usage: ./scripts/ble-hardware-smoke-auto.sh [--serial <adb-serial>] [--timeout <seconds>] [--keep-pairing]
 
 Runs a near-fully automated BLE smoke test on debug builds:
   1) Generates and imports a fresh pairing token on macOS and Android
@@ -23,6 +25,7 @@ Runs a near-fully automated BLE smoke test on debug builds:
 Notes:
   - Requires an attached Android device with USB debugging enabled
   - Requires debug APK installed (for debug smoke receiver and probe state)
+  - Cleans up the temporary pairing token on both devices at the end (unless --keep-pairing is set)
 EOF
 }
 
@@ -44,6 +47,10 @@ while [[ $# -gt 0 ]]; do
       TIMEOUT_SEC="$2"
       shift 2
       ;;
+    --keep-pairing)
+      KEEP_PAIRING=true
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -60,6 +67,24 @@ ADB=(adb)
 if [[ -n "$ANDROID_SERIAL" ]]; then
   ADB=(adb -s "$ANDROID_SERIAL")
 fi
+
+cleanup_smoke_pairing() {
+  if [[ "$KEEP_PAIRING" == true ]]; then
+    return
+  fi
+  if [[ -z "$PAIR_TOKEN" ]]; then
+    return
+  fi
+
+  echo "- Cleaning up smoke pairing token"
+  "$MAC_BIN" --smoke-remove-pairing --token "$PAIR_TOKEN" >/dev/null 2>&1 || true
+  ${ADB[@]} shell am broadcast \
+    -n com.clipshare/.debug.DebugSmokeReceiver \
+    -a com.clipshare.debug.CLEAR_PAIRING \
+    --receiver-foreground >/dev/null 2>&1 || true
+}
+
+trap cleanup_smoke_pairing EXIT
 
 require_cmd() {
   local cmd="$1"

@@ -27,6 +27,7 @@ Notes for automated helper:
 - Uses a debug-only Android receiver to import a fresh pairing token.
 - Uses a macOS CLI mode (`--smoke-import-pairing`) to import the same token locally.
 - Reads debug probe state from app private storage via `adb run-as`.
+- Removes the temporary smoke pairing at the end by default (pass `--keep-pairing` to keep it).
 
 ## Manual Test Cases
 

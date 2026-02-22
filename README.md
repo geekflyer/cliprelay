@@ -82,6 +82,9 @@ Optional device selection:
 ./scripts/ble-hardware-smoke-auto.sh --serial <adb-serial>
 ```
 
+By default the script removes the temporary smoke-test pairing from both devices at the end.
+Use `--keep-pairing` if you want to retain that pairing.
+
 ## Install and run
 
 ### 1) Install the mac app

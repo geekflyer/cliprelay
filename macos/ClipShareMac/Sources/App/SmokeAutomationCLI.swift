@@ -2,10 +2,18 @@ import Foundation
 
 enum SmokeAutomationCLI {
     static func runIfRequested(arguments: [String]) -> Int32? {
-        guard arguments.contains("--smoke-import-pairing") else {
-            return nil
+        if arguments.contains("--smoke-import-pairing") {
+            return runImport(arguments: arguments)
         }
 
+        if arguments.contains("--smoke-remove-pairing") {
+            return runRemove(arguments: arguments)
+        }
+
+        return nil
+    }
+
+    private static func runImport(arguments: [String]) -> Int32 {
         guard let token = value(for: "--token", in: arguments) else {
             fputs("Missing --token for --smoke-import-pairing\n", stderr)
             return 2
@@ -25,6 +33,22 @@ enum SmokeAutomationCLI {
 
         PairingManager().addDevice(paired)
         print("Imported pairing token for \(displayName)")
+        return 0
+    }
+
+    private static func runRemove(arguments: [String]) -> Int32 {
+        guard let token = value(for: "--token", in: arguments) else {
+            fputs("Missing --token for --smoke-remove-pairing\n", stderr)
+            return 2
+        }
+
+        guard isHexToken(token) else {
+            fputs("Invalid token. Expected 64-char hex string.\n", stderr)
+            return 2
+        }
+
+        PairingManager().removeDevice(token: token.lowercased())
+        print("Removed pairing token")
         return 0
     }
 

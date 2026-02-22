@@ -6,6 +6,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.clipshare.debug.IMPORT_PAIRING" />
+                <action android:name="com.clipshare.debug.CLEAR_PAIRING" />
                 <action android:name="com.clipshare.debug.RESET_PROBE" />
             </intent-filter>
         </receiver>
