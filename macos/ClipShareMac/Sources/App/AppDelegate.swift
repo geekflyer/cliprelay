@@ -15,12 +15,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         notificationManager.requestAuthorization()
+        pairingManager.removePendingDevices()
 
         statusBarController.onPairNewDeviceRequested = { [weak self] in
             self?.startPairing()
         }
         statusBarController.onForgetDeviceRequested = { [weak self] token in
             self?.bleManager?.forgetDevice(token: token)
+        }
+        pairingWindowController.onDidClose = { [weak self] in
+            self?.handlePairingWindowClosed()
         }
 
         bleManager = BLECentralManager(clipboardWriter: clipboardWriter, pairingManager: pairingManager)
@@ -47,8 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 let newlyConnectedPeers = connectedPeerIDs.subtracting(self.pairingBaselineConnectedPeerIDs)
                 if !newlyConnectedPeers.isEmpty {
-                    self.pairingWindowController.close()
                     self.awaitingNewPairingConnection = false
+                    self.bleManager?.setPendingPairingToken(nil)
+                    self.pairingWindowController.close()
                 }
             }
         }
@@ -68,6 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startPairing() {
+        pairingManager.removePendingDevices()
+
         let token = pairingManager.generateToken()
         let device = PairedDevice(
             token: token,
@@ -78,11 +85,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         pairingBaselineConnectedPeerIDs = lastConnectedPeerIDs
         awaitingNewPairingConnection = true
+        bleManager?.setPendingPairingToken(token)
 
         guard let uri = pairingManager.pairingURI(token: token) else { return }
         pairingWindowController.showPairingQR(uri: uri)
 
         // Refresh trusted list to show pending device
+        bleManager?.notifyAllState()
+    }
+
+    private func handlePairingWindowClosed() {
+        guard awaitingNewPairingConnection else { return }
+        awaitingNewPairingConnection = false
+        pairingManager.removePendingDevices()
+        bleManager?.setPendingPairingToken(nil)
         bleManager?.notifyAllState()
     }
 

@@ -48,6 +48,7 @@ final class BLECentralManager: NSObject {
     private let connectionAttemptTimeout: TimeInterval = 60
     private var connectionWatchdogTimer: Timer?
     private var connectingSinceByPeerID: [UUID: Date] = [:]
+    private var pendingPairingToken: String?
     private var lastInboundHash: String?
     private var pendingInboundHashByPeer: [UUID: String] = [:]
     private var assemblerByPeer: [UUID: ChunkAssembler] = [:]
@@ -136,6 +137,9 @@ final class BLECentralManager: NSObject {
 
     func forgetDevice(token: String) {
         pairingManager.removeDevice(token: token)
+        if pendingPairingToken == token {
+            pendingPairingToken = nil
+        }
 
         let peripheralIDs = peripheralTokenMap.filter { $0.value == token }.map(\.key)
         for id in peripheralIDs {
@@ -151,6 +155,10 @@ final class BLECentralManager: NSObject {
         }
 
         notifyAllState()
+    }
+
+    func setPendingPairingToken(_ token: String?) {
+        pendingPairingToken = token
     }
 
     func sendClipboardText(_ text: String) {
@@ -394,20 +402,18 @@ final class BLECentralManager: NSObject {
         return name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown device"
     }
 
-    private func pendingPairingFallbackDevice() -> PairedDevice? {
-        let pendingDevices = pairingManager.loadDevices().filter { device in
-            device.displayName.hasPrefix("Pending pairing")
-        }
-        guard pendingDevices.count == 1 else { return nil }
-        return pendingDevices[0]
+    private func pendingPairingFallbackToken() -> String? {
+        guard let token = pendingPairingToken else { return nil }
+        guard pairingManager.isPendingDeviceToken(token) else { return nil }
+        return token
     }
 
     private func connectUsingPendingPairingFallbackIfAvailable(peripheralID: UUID) -> Bool {
         guard peripheralTokenMap[peripheralID] == nil else { return false }
-        guard let pendingDevice = pendingPairingFallbackDevice() else { return false }
+        guard let token = pendingPairingFallbackToken() else { return false }
 
         print("[BLE]   -> Falling back to pending pairing token for discovered peripheral")
-        peripheralTokenMap[peripheralID] = pendingDevice.token
+        peripheralTokenMap[peripheralID] = token
         connectToPairedPeerIfNeeded(peripheralID: peripheralID)
         return true
     }
@@ -492,6 +498,10 @@ extension BLECentralManager: CBCentralManagerDelegate {
         guard let token = peripheralTokenMap[peripheralID] else {
             print("[BLE]   -> No token mapped for this peripheral")
             return
+        }
+
+        if pendingPairingToken == token {
+            pendingPairingToken = nil
         }
 
         // Update stored display name from the peripheral's advertised name

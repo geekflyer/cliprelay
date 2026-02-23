@@ -10,6 +10,7 @@ struct PairedDevice: Codable, Equatable {
 
 final class PairingManager {
     private static let keychainAccount = "paired_devices"
+    private static let pendingDisplayNamePrefix = "Pending pairing"
     private let keychain = KeychainStore(service: "greenpaste")
 
     func loadDevices() -> [PairedDevice] {
@@ -28,6 +29,18 @@ final class PairingManager {
         var devices = loadDevices()
         devices.removeAll { $0.token == token }
         persist(devices)
+    }
+
+    func removePendingDevices() {
+        var devices = loadDevices()
+        devices.removeAll { $0.displayName.hasPrefix(Self.pendingDisplayNamePrefix) }
+        persist(devices)
+    }
+
+    func isPendingDeviceToken(_ token: String) -> Bool {
+        loadDevices().contains {
+            $0.token == token && $0.displayName.hasPrefix(Self.pendingDisplayNamePrefix)
+        }
     }
 
     func generateToken() -> String {

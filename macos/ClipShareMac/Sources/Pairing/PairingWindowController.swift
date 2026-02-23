@@ -4,6 +4,7 @@ import CoreImage
 final class PairingWindowController {
     private var window: NSWindow?
     private var windowDelegate: WindowCloseHandler?
+    var onDidClose: (() -> Void)?
 
     var isShowing: Bool {
         window?.isVisible == true
@@ -34,6 +35,7 @@ final class PairingWindowController {
         let delegate = WindowCloseHandler { [weak self] in
             self?.window = nil
             self?.windowDelegate = nil
+            self?.onDidClose?()
         }
         windowDelegate = delegate
         w.delegate = delegate
@@ -45,7 +47,6 @@ final class PairingWindowController {
 
     func close() {
         window?.close()
-        window = nil
     }
 
     private func generateQRCode(from string: String) -> NSImage? {
