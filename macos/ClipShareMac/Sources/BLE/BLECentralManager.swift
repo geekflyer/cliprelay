@@ -47,7 +47,12 @@ final class BLECentralManager: NSObject {
     private var reconnectDelay: TimeInterval = 1
     private let connectionAttemptTimeout: TimeInterval = 60
     private var connectionWatchdogTimer: Timer?
+    private var keepaliveTimer: Timer?
+    private var scanCycleTimer: Timer?
     private var connectingSinceByPeerID: [UUID: Date] = [:]
+    private var lastRSSIByPeerID: [UUID: Date] = [:]
+    /// Peers that failed to respond to an RSSI read within the timeout window.
+    private var rssiMissCountByPeerID: [UUID: Int] = [:]
     private var pendingPairingToken: String?
     private var lastInboundHash: String?
     private var pendingInboundHashByPeer: [UUID: String] = [:]
@@ -65,6 +70,8 @@ final class BLECentralManager: NSObject {
         if centralManager.state == .poweredOn {
             scan()
             startConnectionWatchdogIfNeeded()
+            startKeepaliveTimer()
+            startScanCycleTimer()
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -92,6 +99,8 @@ final class BLECentralManager: NSObject {
         assemblerByPeer.removeAll()
         centralManager.stopScan()
         stopConnectionWatchdog()
+        stopKeepaliveTimer()
+        stopScanCycleTimer()
         notifyAllState()
     }
 
@@ -121,6 +130,8 @@ final class BLECentralManager: NSObject {
         connectedPeers.removeAll()
         pendingInboundHashByPeer.removeAll()
         assemblerByPeer.removeAll()
+        rssiMissCountByPeerID.removeAll()
+        lastRSSIByPeerID.removeAll()
         notifyAllState()
 
         // Reset backoff and restart scanning + direct connection attempts.
@@ -128,6 +139,8 @@ final class BLECentralManager: NSObject {
         centralManager.stopScan()
         scan()
         startConnectionWatchdogIfNeeded()
+        startKeepaliveTimer()
+        startScanCycleTimer()
 
         // Re-queue direct connection attempts for all known paired peripherals.
         for (peripheralID, _) in peripheralTokenMap {
@@ -151,6 +164,8 @@ final class BLECentralManager: NSObject {
             connectedPeers.removeValue(forKey: id)
             pendingInboundHashByPeer.removeValue(forKey: id)
             assemblerByPeer.removeValue(forKey: id)
+            rssiMissCountByPeerID.removeValue(forKey: id)
+            lastRSSIByPeerID.removeValue(forKey: id)
             peripheralTokenMap.removeValue(forKey: id)
         }
 
@@ -322,6 +337,86 @@ final class BLECentralManager: NSObject {
         scheduleReconnect()
     }
 
+    // MARK: - Keepalive (RSSI probe)
+
+    /// Periodically read RSSI on connected peripherals to detect dead BLE links.
+    /// If a peripheral fails to respond to two consecutive probes, force-disconnect it
+    /// so the normal reconnection logic can kick in.
+    private func startKeepaliveTimer() {
+        guard keepaliveTimer == nil else { return }
+        let timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.probeConnectedPeers()
+        }
+        keepaliveTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func stopKeepaliveTimer() {
+        keepaliveTimer?.invalidate()
+        keepaliveTimer = nil
+        rssiMissCountByPeerID.removeAll()
+        lastRSSIByPeerID.removeAll()
+    }
+
+    private func probeConnectedPeers() {
+        guard !connectedPeers.isEmpty else { return }
+        let now = Date()
+        for (id, peer) in connectedPeers {
+            // Check if the previous RSSI probe was answered
+            if let lastProbe = lastRSSIByPeerID[id], now.timeIntervalSince(lastProbe) > 45 {
+                // Previous probe wasn't answered within the expected window
+                let missCount = (rssiMissCountByPeerID[id] ?? 0) + 1
+                rssiMissCountByPeerID[id] = missCount
+                print("[BLE] RSSI probe timeout for \(peer.displayName) (miss #\(missCount))")
+                if missCount >= 2 {
+                    print("[BLE] Forcing disconnect of unresponsive peer \(peer.displayName)")
+                    centralManager.cancelPeripheralConnection(peer.peripheral)
+                    rssiMissCountByPeerID.removeValue(forKey: id)
+                    lastRSSIByPeerID.removeValue(forKey: id)
+                    continue
+                }
+            }
+            lastRSSIByPeerID[id] = now
+            peer.peripheral.readRSSI()
+        }
+    }
+
+    // MARK: - Periodic scan cycle
+
+    /// Periodically restart scanning to work around CoreBluetooth's duplicate
+    /// advertisement filter and to recover from cases where the Android side
+    /// silently restarted its advertisement (getting a new advertising set ID).
+    private func startScanCycleTimer() {
+        guard scanCycleTimer == nil else { return }
+        let timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
+            self?.cycleScan()
+        }
+        scanCycleTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func stopScanCycleTimer() {
+        scanCycleTimer?.invalidate()
+        scanCycleTimer = nil
+    }
+
+    private func cycleScan() {
+        guard centralManager.state == .poweredOn else { return }
+        // If we have no connected peers, reset backoff and aggressively re-scan
+        if connectedPeers.isEmpty {
+            reconnectDelay = 1
+            print("[BLE] Scan cycle: no connected peers — resetting backoff and restarting scan")
+        }
+        centralManager.stopScan()
+        scan()
+
+        // Also re-attempt direct connections for any known paired peripherals
+        // that aren't currently connected or connecting.
+        for (peripheralID, _) in peripheralTokenMap {
+            connectToPairedPeerIfNeeded(peripheralID: peripheralID)
+        }
+    }
+
     // MARK: - Crypto helpers
 
     private func encryptionKeyForPeer(_ peripheralID: UUID) -> SymmetricKey? {
@@ -428,6 +523,8 @@ extension BLECentralManager: CBCentralManagerDelegate {
             reconnectDelay = 1
             scan()
             startConnectionWatchdogIfNeeded()
+            startKeepaliveTimer()
+            startScanCycleTimer()
         } else {
             // Bluetooth turned off — all peripherals are invalidated by CoreBluetooth
             knownPeripherals.removeAll()
@@ -437,7 +534,11 @@ extension BLECentralManager: CBCentralManagerDelegate {
             peripheralTokenMap.removeAll()
             pendingInboundHashByPeer.removeAll()
             assemblerByPeer.removeAll()
+            rssiMissCountByPeerID.removeAll()
+            lastRSSIByPeerID.removeAll()
             stopConnectionWatchdog()
+            stopKeepaliveTimer()
+            stopScanCycleTimer()
             notifyAllState()
         }
     }
@@ -545,6 +646,8 @@ extension BLECentralManager: CBCentralManagerDelegate {
         connectedPeers.removeValue(forKey: peripheralID)
         pendingInboundHashByPeer.removeValue(forKey: peripheralID)
         assemblerByPeer.removeValue(forKey: peripheralID)
+        rssiMissCountByPeerID.removeValue(forKey: peripheralID)
+        lastRSSIByPeerID.removeValue(forKey: peripheralID)
         notifyAllState()
 
         // Re-queue a connect on the same peripheral object. CoreBluetooth holds this as a
@@ -630,5 +733,17 @@ extension BLECentralManager: CBPeripheralDelegate {
         lastInboundHash = outputHash
         clipboardWriter.writeText(output)
         onClipboardReceived?(output)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
+        let peripheralID = peripheral.identifier
+        if error != nil {
+            print("[BLE] RSSI read failed for \(peripheral.name ?? "nil"): \(error!.localizedDescription)")
+            // Don't reset miss counter — let the timeout logic handle it
+            return
+        }
+        // Successful RSSI response — peer is alive
+        rssiMissCountByPeerID.removeValue(forKey: peripheralID)
+        lastRSSIByPeerID[peripheralID] = Date()
     }
 }

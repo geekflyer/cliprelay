@@ -15,6 +15,10 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
         private const val TAG = "Advertiser"
         private const val RETRY_BASE_DELAY_MS = 1_000L
         private const val RETRY_MAX_DELAY_MS = 30_000L
+        // Periodic restart interval: Android can silently kill advertisements
+        // (Doze, battery optimization, BLE stack resets) without any callback.
+        // Cycling the advertisement every 4 minutes ensures recovery.
+        private const val HEALTH_CHECK_INTERVAL_MS = 4 * 60 * 1_000L
     }
 
     private var callback: AdvertiseCallback? = null
@@ -27,6 +31,13 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
             startInternal()
         }
     }
+    private val healthCheckRunnable = Runnable {
+        if (shouldAdvertise) {
+            Log.d(TAG, "Periodic advertising health-check — cycling advertisement")
+            cycleAdvertisement()
+            scheduleHealthCheck()
+        }
+    }
 
     var deviceTag: ByteArray? = null
 
@@ -34,6 +45,7 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
         shouldAdvertise = true
         handler.removeCallbacks(retryRunnable)
         startInternal()
+        scheduleHealthCheck()
     }
 
     private fun startInternal() {
@@ -111,14 +123,34 @@ class Advertiser(private val serviceUuid: ParcelUuid) {
         retryAttempt = 0
         includeDeviceName = true
         handler.removeCallbacks(retryRunnable)
-        val instance = BluetoothAdapter.getDefaultAdapter()?.bluetoothLeAdvertiser
-        callback?.let { instance?.stopAdvertising(it) }
-        callback = null
+        handler.removeCallbacks(healthCheckRunnable)
+        stopAdvertisingInternal()
     }
 
     fun restart() {
         stop()
         start()
+    }
+
+    /**
+     * Stop and re-start the advertisement without changing [shouldAdvertise].
+     * Used by the periodic health-check to recover from silently killed ads.
+     */
+    private fun cycleAdvertisement() {
+        stopAdvertisingInternal()
+        retryAttempt = 0
+        startInternal()
+    }
+
+    private fun stopAdvertisingInternal() {
+        val instance = BluetoothAdapter.getDefaultAdapter()?.bluetoothLeAdvertiser
+        callback?.let { instance?.stopAdvertising(it) }
+        callback = null
+    }
+
+    private fun scheduleHealthCheck() {
+        handler.removeCallbacks(healthCheckRunnable)
+        handler.postDelayed(healthCheckRunnable, HEALTH_CHECK_INTERVAL_MS)
     }
 
     private fun scheduleRetry(reason: String) {
