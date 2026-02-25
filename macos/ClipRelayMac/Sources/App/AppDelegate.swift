@@ -1,5 +1,24 @@
 import AppKit
 
+enum PairingProgressAction: Equatable {
+    case none
+    case cancelPending
+    case completePairing
+}
+
+func pairingProgressAction(
+    awaitingNewPairingConnection: Bool,
+    isPairingWindowShowing: Bool,
+    connectedPeerIDs: Set<UUID>,
+    pairingBaselineConnectedPeerIDs: Set<UUID>
+) -> PairingProgressAction {
+    guard awaitingNewPairingConnection else { return .none }
+    guard isPairingWindowShowing else { return .cancelPending }
+
+    let newlyConnectedPeers = connectedPeerIDs.subtracting(pairingBaselineConnectedPeerIDs)
+    return newlyConnectedPeers.isEmpty ? .none : .completePairing
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let pairingManager = PairingManager()
     private let statusBarController = StatusBarController()
@@ -51,14 +70,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.lastConnectedPeerIDs = connectedPeerIDs
                 self.statusBarController.setConnectedPeers(peers)
 
-                guard self.awaitingNewPairingConnection else { return }
-                guard self.pairingWindowController.isShowing else {
-                    self.cancelPendingPairingFlow(removePendingDevice: true)
-                    return
-                }
+                let action = pairingProgressAction(
+                    awaitingNewPairingConnection: self.awaitingNewPairingConnection,
+                    isPairingWindowShowing: self.pairingWindowController.isShowing,
+                    connectedPeerIDs: connectedPeerIDs,
+                    pairingBaselineConnectedPeerIDs: self.pairingBaselineConnectedPeerIDs
+                )
 
-                let newlyConnectedPeers = connectedPeerIDs.subtracting(self.pairingBaselineConnectedPeerIDs)
-                if !newlyConnectedPeers.isEmpty {
+                switch action {
+                case .none:
+                    return
+                case .cancelPending:
+                    self.cancelPendingPairingFlow(removePendingDevice: true)
+                case .completePairing:
                     self.awaitingNewPairingConnection = false
                     self.bleManager?.setPendingPairingToken(nil)
                     self.pairingWindowController.close()
