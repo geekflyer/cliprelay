@@ -58,6 +58,7 @@ final class BLECentralManager: NSObject {
     private var isStopped = false
     private var pendingPairingToken: String?
     private var lastInboundHash: String?
+    private var lastInboundPeerID: UUID?
     private var pendingInboundHashByPeer: [UUID: String] = [:]
     private var assemblerByPeer: [UUID: ChunkAssembler] = [:]
     private var pendingOutboundFrames: [UUID: (peripheral: CBPeripheral, frames: [Data], nextIndex: Int)] = [:]
@@ -189,10 +190,14 @@ final class BLECentralManager: NSObject {
         let plaintext = Data(text.utf8)
         guard plaintext.count <= 102_400 else { return }
 
-        let readyPeers = connectedPeers.values.filter { peer in
-            peer.availableCharacteristic != nil && peer.dataCharacteristic != nil
-        }
-        print("[BLE] sendClipboardText: connectedPeers=\(connectedPeers.count) readyPeers=\(readyPeers.count) textLen=\(text.count)")
+        // Skip the peer that just sent us this exact content to avoid echo.
+        let echoHash = sha256Hex(plaintext)
+        let skipPeerID: UUID? = (echoHash == lastInboundHash) ? lastInboundPeerID : nil
+
+        let readyPeers = connectedPeers.filter { (id, peer) in
+            peer.availableCharacteristic != nil && peer.dataCharacteristic != nil && id != skipPeerID
+        }.map(\.value)
+        print("[BLE] sendClipboardText: connectedPeers=\(connectedPeers.count) readyPeers=\(readyPeers.count) textLen=\(text.count) skipEcho=\(skipPeerID?.uuidString ?? "none")")
         guard !readyPeers.isEmpty else { return }
 
         for peer in readyPeers {
@@ -824,6 +829,7 @@ extension BLECentralManager: CBPeripheralDelegate {
         guard outputHash != lastInboundHash else { return }
 
         lastInboundHash = outputHash
+        lastInboundPeerID = peripheralID
         clipboardWriter.writeText(output)
         onClipboardReceived?(output)
     }
