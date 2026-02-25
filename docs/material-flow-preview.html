@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClipRelay - Material Flow Preview</title>
+  <style>
+    :root {
+      --bg: linear-gradient(180deg, #edf1f7 0%, #e7ecf4 100%);
+      --ink: #1d2229;
+      --muted: #5e6671;
+      --accent: #2f985f;
+      --accent-soft: #d7f1e1;
+      --card: #ffffff;
+      --stroke: #d2d8e1;
+      --chip: #dce7f3;
+      --blue: #347de5;
+      --blue-soft: #dbe7f9;
+      --radius-xl: 34px;
+      --radius-lg: 26px;
+      --radius-md: 18px;
+      --shadow-lg: 0 26px 56px rgba(35, 49, 72, 0.16);
+      --shadow-md: 0 12px 28px rgba(26, 36, 58, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Avenir Next", "Nunito Sans", "Trebuchet MS", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      padding: 26px 14px;
+    }
+
+    .phone {
+      width: min(430px, 100%);
+      aspect-ratio: 9 / 16;
+      border-radius: 44px;
+      border: 2px solid #202833;
+      background: #0f141d;
+      box-shadow: 0 34px 72px rgba(17, 27, 44, 0.35);
+      padding: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .notch {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 116px;
+      height: 26px;
+      border-radius: 0 0 16px 16px;
+      background: #090f16;
+      z-index: 5;
+    }
+
+    .screen {
+      width: 100%;
+      height: 100%;
+      border-radius: 36px;
+      background: var(--bg);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .screen::before,
+    .screen::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      pointer-events: none;
+    }
+
+    .screen::before {
+      width: 220px;
+      height: 220px;
+      background: radial-gradient(circle, rgba(182, 214, 255, 0.28), rgba(182, 214, 255, 0));
+      top: -70px;
+      right: -30px;
+    }
+
+    .screen::after {
+      width: 240px;
+      height: 240px;
+      background: radial-gradient(circle, rgba(173, 236, 198, 0.2), rgba(173, 236, 198, 0));
+      bottom: -120px;
+      left: -80px;
+    }
+
+    .content {
+      position: absolute;
+      inset: 28px 24px 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .status-pill {
+      margin-top: 10px;
+      padding: 10px 22px;
+      border-radius: 999px;
+      background: rgba(190, 226, 207, 0.95);
+      color: #148042;
+      font-size: 1.04rem;
+      letter-spacing: 0.01em;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 6px 20px rgba(27, 143, 80, 0.14);
+      animation: pill-breathe 2.2s ease-in-out infinite;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: #2ba156;
+      box-shadow: 0 0 0 0 rgba(43, 161, 86, 0.35);
+      animation: dot-ping 2s infinite;
+    }
+
+    h1 {
+      margin: 6px 0 0;
+      font-size: clamp(2rem, 7vw, 3.1rem);
+      font-weight: 720;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin-top: -8px;
+      color: var(--muted);
+      font-size: clamp(1rem, 2.7vw, 1.32rem);
+      text-align: center;
+    }
+
+    .card {
+      width: 100%;
+      margin-top: 8px;
+      background: var(--card);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
+      border: 1px solid rgba(200, 207, 217, 0.6);
+      padding: 20px 18px 16px;
+      display: grid;
+      gap: 18px;
+      animation: card-rise 600ms ease both;
+    }
+
+    .devices {
+      display: grid;
+      grid-template-columns: 1fr 1.5fr 1fr;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .device {
+      text-align: center;
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+    }
+
+    .icon-wrap {
+      width: min(32vw, 116px);
+      max-width: 116px;
+      aspect-ratio: 1;
+      border-radius: 30px;
+      background: var(--chip);
+      display: grid;
+      place-items: center;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+      animation: morph 3.4s ease-in-out infinite;
+    }
+
+    .device:nth-child(3) .icon-wrap {
+      animation-delay: 170ms;
+    }
+
+    .device-label {
+      font-size: clamp(0.95rem, 2.6vw, 1.05rem);
+      color: #575f6a;
+    }
+
+    .line-wrap {
+      position: relative;
+      height: 46px;
+      display: grid;
+      place-items: center;
+    }
+
+    .line {
+      width: 100%;
+      height: 4px;
+      border-radius: 999px;
+      background: repeating-linear-gradient(
+        90deg,
+        #8cb5eb 0,
+        #8cb5eb 18px,
+        transparent 18px,
+        transparent 28px
+      );
+      background-size: 180% 100%;
+      animation: dash-flow 1.8s linear infinite;
+      opacity: 0.92;
+    }
+
+    .token {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translate(-8px, -50%);
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      background: #ffffff;
+      border: 1px solid #9fc0ea;
+      box-shadow: 0 8px 14px rgba(56, 115, 199, 0.26);
+      display: grid;
+      place-items: center;
+      animation: send-token 2.8s cubic-bezier(0.49, 0.05, 0.23, 0.98) infinite;
+      z-index: 2;
+    }
+
+    .token svg {
+      width: 14px;
+      height: 14px;
+      stroke: var(--blue);
+    }
+
+    .unpair {
+      margin-top: 2px;
+      border: 0;
+      width: 100%;
+      border-radius: 20px;
+      background: #eceff4;
+      color: #252a32;
+      font-size: clamp(1.15rem, 4vw, 1.32rem);
+      padding: 18px 14px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    }
+
+    .footnote {
+      margin-top: auto;
+      text-align: center;
+      color: #8b95a2;
+      font-size: clamp(0.9rem, 2.7vw, 1.02rem);
+    }
+
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 28px;
+      transform: translate(-50%, 16px);
+      background: #151c25;
+      color: #eff4ff;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: 0.9rem;
+      opacity: 0;
+      box-shadow: 0 10px 24px rgba(16, 26, 42, 0.35);
+      transition: transform 260ms ease, opacity 260ms ease;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    svg {
+      display: block;
+    }
+
+    .stroke {
+      stroke: var(--blue);
+      stroke-width: 2.2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    @keyframes dash-flow {
+      from {
+        background-position: 0 0;
+      }
+      to {
+        background-position: -200px 0;
+      }
+    }
+
+    @keyframes send-token {
+      0% {
+        left: 2%;
+        opacity: 0;
+        transform: translate(-8px, -50%) scale(0.85);
+      }
+      12% {
+        opacity: 1;
+      }
+      78% {
+        left: 95%;
+        opacity: 1;
+        transform: translate(-8px, -50%) scale(1);
+      }
+      100% {
+        left: 99%;
+        opacity: 0;
+        transform: translate(-8px, -50%) scale(0.86);
+      }
+    }
+
+    @keyframes dot-ping {
+      0% {
+        box-shadow: 0 0 0 0 rgba(43, 161, 86, 0.34);
+      }
+      70% {
+        box-shadow: 0 0 0 8px rgba(43, 161, 86, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(43, 161, 86, 0);
+      }
+    }
+
+    @keyframes pill-breathe {
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(-1px);
+      }
+    }
+
+    @keyframes morph {
+      0%,
+      100% {
+        border-radius: 30px;
+      }
+      50% {
+        border-radius: 26px;
+      }
+    }
+
+    @keyframes card-rise {
+      from {
+        opacity: 0;
+        transform: translateY(14px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 420px) {
+      .content {
+        inset: 24px 16px 18px;
+      }
+
+      .card {
+        padding: 16px 14px 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="screen">
+      <div class="content">
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span>Connected</span>
+        </div>
+
+        <h1>ClipRelay</h1>
+        <p class="subtitle">Your clipboard, everywhere</p>
+
+        <section class="card">
+          <div class="devices">
+            <div class="device">
+              <div class="icon-wrap">
+                <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
+                  <rect x="13" y="6" width="20" height="34" rx="5" class="stroke"></rect>
+                  <line x1="19" y1="11" x2="27" y2="11" class="stroke"></line>
+                  <circle cx="23" cy="34" r="1.5" fill="#347de5"></circle>
+                </svg>
+              </div>
+              <div class="device-label">This device</div>
+            </div>
+
+            <div class="line-wrap" aria-label="Transfer path animation">
+              <div class="line"></div>
+              <div class="token">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="7" y="5" width="10" height="13" rx="2" stroke-width="2"></rect>
+                  <path d="M9 5.5h6" stroke-width="2"></path>
+                </svg>
+              </div>
+            </div>
+
+            <div class="device">
+              <div class="icon-wrap">
+                <svg width="48" height="48" viewBox="0 0 48 48" aria-hidden="true">
+                  <rect x="8" y="9" width="32" height="22" rx="3" class="stroke"></rect>
+                  <line x1="24" y1="31" x2="19" y2="38" class="stroke"></line>
+                  <line x1="24" y1="31" x2="29" y2="38" class="stroke"></line>
+                  <line x1="16" y1="38" x2="32" y2="38" class="stroke"></line>
+                </svg>
+              </div>
+              <div class="device-label">Mac</div>
+            </div>
+          </div>
+
+          <button class="unpair" type="button">Unpair</button>
+        </section>
+
+        <p class="footnote">Clipboard syncs automatically in the background</p>
+      </div>
+
+      <div class="toast" id="transferToast">Clipboard sent to Mac</div>
+    </div>
+  </div>
+
+  <script>
+    const toast = document.getElementById("transferToast");
+    const transferCycleMs = 2800;
+    const toastDelayMs = 1960;
+    const toastDurationMs = 1050;
+
+    function triggerToast() {
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), toastDurationMs);
+    }
+
+    setTimeout(triggerToast, toastDelayMs);
+    setInterval(() => {
+      setTimeout(triggerToast, toastDelayMs);
+    }, transferCycleMs);
+  </script>
+</body>
+</html>
