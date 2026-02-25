@@ -22,6 +22,7 @@ class GattServerCallback(
 
     @Volatile var server: BluetoothGattServer? = null
     val notificationSent = Semaphore(0)
+    @Volatile var lastNotificationStatus: Int = BluetoothGatt.GATT_SUCCESS
     private val connectedDevicesById = linkedMapOf<String, BluetoothDevice>()
     private val connectionStateMachine = BleConnectionStateMachine()
 
@@ -111,6 +112,7 @@ class GattServerCallback(
     }
 
     override fun onNotificationSent(device: BluetoothDevice?, status: Int) {
+        lastNotificationStatus = status
         notificationSent.release()
     }
 

@@ -1,6 +1,7 @@
 package com.clipshare.ble
 
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattServer
@@ -18,6 +19,8 @@ class GattServerManager(
 ) {
     companion object {
         private const val TAG = "GattServerManager"
+        private const val NOTIFICATION_SEND_TIMEOUT_MS = 500L
+        private const val NOTIFICATION_RETRY_LIMIT = 3
         val SERVICE_UUID: UUID = UUID.fromString("c10b0001-1234-5678-9abc-def012345678")
         val AVAILABLE_UUID: UUID = UUID.fromString("c10b0002-1234-5678-9abc-def012345678")
         val DATA_UUID: UUID = UUID.fromString("c10b0003-1234-5678-9abc-def012345678")
@@ -102,18 +105,20 @@ class GattServerManager(
 
         // Drain any stale permits before starting
         callback.notificationSent.drainPermits()
+        callback.lastNotificationStatus = BluetoothGatt.GATT_SUCCESS
 
         connectedDevices.forEach { device ->
-            notifyCharacteristicChanged(server, device, available, availablePayload)
+            if (!sendNotificationWithFlowControl(server, device, available, availablePayload)) {
+                Log.w(TAG, "Failed to deliver Available metadata to ${device.address}")
+                return false
+            }
         }
 
         dataFrames.forEach { frame ->
             connectedDevices.forEach { device ->
-                notifyCharacteristicChanged(server, device, data, frame)
-                // Wait for onNotificationSent before sending the next chunk;
-                // timeout prevents hanging if the callback never fires.
-                if (!callback.notificationSent.tryAcquire(500, TimeUnit.MILLISECONDS)) {
-                    Log.w(TAG, "onNotificationSent timeout — BLE congestion or disconnected peer")
+                if (!sendNotificationWithFlowControl(server, device, data, frame)) {
+                    Log.w(TAG, "Failed to deliver data frame to ${device.address}")
+                    return false
                 }
             }
         }
@@ -130,19 +135,55 @@ class GattServerManager(
         dataCharacteristic = null
     }
 
+    private fun sendNotificationWithFlowControl(
+        server: BluetoothGattServer,
+        device: BluetoothDevice,
+        characteristic: BluetoothGattCharacteristic,
+        value: ByteArray
+    ): Boolean {
+        repeat(NOTIFICATION_RETRY_LIMIT) { attempt ->
+            val queued = notifyCharacteristicChanged(server, device, characteristic, value)
+            if (!queued) {
+                Log.w(
+                    TAG,
+                    "notifyCharacteristicChanged not queued (char=${characteristic.uuid}, attempt=${attempt + 1}/$NOTIFICATION_RETRY_LIMIT)"
+                )
+                callback.notificationSent.tryAcquire(50, TimeUnit.MILLISECONDS)
+                return@repeat
+            }
+
+            if (callback.notificationSent.tryAcquire(NOTIFICATION_SEND_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                if (callback.lastNotificationStatus == BluetoothGatt.GATT_SUCCESS) {
+                    return true
+                }
+                Log.w(
+                    TAG,
+                    "onNotificationSent returned failure status=${callback.lastNotificationStatus} (char=${characteristic.uuid}, attempt=${attempt + 1}/$NOTIFICATION_RETRY_LIMIT)"
+                )
+                return@repeat
+            }
+
+            Log.w(
+                TAG,
+                "onNotificationSent timeout (char=${characteristic.uuid}, attempt=${attempt + 1}/$NOTIFICATION_RETRY_LIMIT)"
+            )
+        }
+
+        return false
+    }
+
     private fun notifyCharacteristicChanged(
         server: BluetoothGattServer,
         device: BluetoothDevice,
         characteristic: BluetoothGattCharacteristic,
         value: ByteArray
-    ) {
+    ): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            server.notifyCharacteristicChanged(device, characteristic, false, value)
-            return
+            return server.notifyCharacteristicChanged(device, characteristic, false, value) == BluetoothGatt.GATT_SUCCESS
         }
 
         @Suppress("DEPRECATION")
-        run {
+        return run {
             characteristic.value = value
             server.notifyCharacteristicChanged(device, characteristic, false)
         }
