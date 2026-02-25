@@ -1,11 +1,11 @@
-# GreenPaste (clipboard-sync)
+# ClipRelay (clipboard-sync)
 
 Cross-platform clipboard sync between macOS and Android over BLE only.
 
 ## What this repo builds
 
-- macOS menu bar app bundle: `dist/GreenPaste.app`
-- Android debug APK: `dist/greenpaste-debug.apk`
+- macOS menu bar app bundle: `dist/ClipRelay.app`
+- Android debug APK: `dist/cliprelay-debug.apk`
 
 Both are produced by one script: `scripts/build-all.sh`.
 
@@ -82,13 +82,13 @@ Use `--keep-pairing` if you want to retain that pairing.
 After build, copy app bundle:
 
 ```bash
-cp -R dist/GreenPaste.app /Applications/
+cp -R dist/ClipRelay.app /Applications/
 ```
 
 Launch:
 
 ```bash
-open /Applications/GreenPaste.app
+open /Applications/ClipRelay.app
 ```
 
 On first run, macOS may block unsigned app launch. If so:
@@ -101,27 +101,27 @@ On first run, macOS may block unsigned app launch. If so:
 Connect device with USB debugging enabled, then:
 
 ```bash
-adb install -r dist/greenpaste-debug.apk
+adb install -r dist/cliprelay-debug.apk
 ```
 
 If ADB is not found, add Android platform-tools to PATH.
 
 ### 3) Pair devices
 
-1. Launch GreenPaste on macOS (menu bar icon appears).
+1. Launch ClipRelay on macOS (menu bar icon appears).
 2. Click the menu bar icon and select "Pair New Device" to display a QR code.
-3. Launch GreenPaste on Android and tap "Pair with Mac".
+3. Launch ClipRelay on Android and tap "Pair with Mac".
 4. Scan the QR code with the Android app to complete pairing.
 
 ## Daily usage
 
 - Mac -> Android: copy text on Mac, it syncs automatically.
-- Android -> Mac: select text on Android, Share -> GreenPaste.
+- Android -> Mac: select text on Android, Share -> ClipRelay.
 
 ## Artifact paths
 
-- mac app: `dist/GreenPaste.app`
-- android apk: `dist/greenpaste-debug.apk`
+- mac app: `dist/ClipRelay.app`
+- android apk: `dist/cliprelay-debug.apk`
 
 ## Notes
 

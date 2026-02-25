@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-ANDROID_APP_ID="com.clipshare"
-MAC_APP_PATH="$DIST_DIR/GreenPaste.app"
-MAC_BIN="$MAC_APP_PATH/Contents/MacOS/GreenPaste"
+ANDROID_APP_ID="com.cliprelay"
+MAC_APP_PATH="$DIST_DIR/ClipRelay.app"
+MAC_BIN="$MAC_APP_PATH/Contents/MacOS/ClipRelay"
 
 ANDROID_SERIAL=""
 WIRELESS_DEBUG=false
@@ -202,8 +202,8 @@ cleanup_smoke_pairing() {
   echo "- Cleaning up smoke pairing token"
   "$MAC_BIN" --smoke-remove-pairing --token "$PAIR_TOKEN" >/dev/null 2>&1 || true
   ${ADB[@]} shell am broadcast \
-    -n com.clipshare/.debug.DebugSmokeReceiver \
-    -a com.clipshare.debug.CLEAR_PAIRING \
+    -n com.cliprelay/.debug.DebugSmokeReceiver \
+    -a com.cliprelay.debug.CLEAR_PAIRING \
     --receiver-foreground >/dev/null 2>&1 || true
 }
 
@@ -335,7 +335,7 @@ wait_for_mac_clipboard() {
 send_android_share_text() {
   local text="$1"
   ${ADB[@]} shell am start \
-    -n com.clipshare/.ui.ShareReceiverActivity \
+    -n com.cliprelay/.ui.ShareReceiverActivity \
     -a android.intent.action.SEND \
     -t text/plain \
     --es android.intent.extra.TEXT "$text" >/dev/null
@@ -413,7 +413,7 @@ broadcast_debug_action() {
   local output
   output="$(
     ${ADB[@]} shell am broadcast \
-      -n com.clipshare/.debug.DebugSmokeReceiver \
+      -n com.cliprelay/.debug.DebugSmokeReceiver \
       -a "$action" \
       --receiver-foreground \
       "$@" 2>&1 | tr -d '\r'
@@ -426,22 +426,22 @@ broadcast_debug_action() {
 }
 
 start_android_app() {
-  ${ADB[@]} shell am start -W -n com.clipshare/.ui.MainActivity >/dev/null 2>&1 || true
+  ${ADB[@]} shell am start -W -n com.cliprelay/.ui.MainActivity >/dev/null 2>&1 || true
 }
 
 start_mac_app() {
-  if pgrep -f "GreenPaste.app/Contents/MacOS/GreenPaste" >/dev/null 2>&1; then
+  if pgrep -f "ClipRelay.app/Contents/MacOS/ClipRelay" >/dev/null 2>&1; then
     return
   fi
 
   open "$MAC_APP_PATH"
 
   local attempts=0
-  until pgrep -f "GreenPaste.app/Contents/MacOS/GreenPaste" >/dev/null 2>&1; do
+  until pgrep -f "ClipRelay.app/Contents/MacOS/ClipRelay" >/dev/null 2>&1; do
     attempts=$((attempts + 1))
     if (( attempts >= 20 )); then
-      echo "GreenPaste app did not stay running after launch." >&2
-      echo "Check macOS logs: /usr/bin/log show --last 5m --style compact --predicate 'process == \"GreenPaste\"'" >&2
+      echo "ClipRelay app did not stay running after launch." >&2
+      echo "Check macOS logs: /usr/bin/log show --last 5m --style compact --predicate 'process == \"ClipRelay\"'" >&2
       exit 1
     fi
     sleep 1
@@ -508,14 +508,14 @@ if [[ ! -x "$MAC_BIN" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$DIST_DIR/greenpaste-debug.apk" ]]; then
-  echo "Missing Android APK: $DIST_DIR/greenpaste-debug.apk" >&2
+if [[ ! -f "$DIST_DIR/cliprelay-debug.apk" ]]; then
+  echo "Missing Android APK: $DIST_DIR/cliprelay-debug.apk" >&2
   echo "Build first: ./scripts/build-all.sh" >&2
   exit 1
 fi
 
 echo "- Installing latest debug APK"
-${ADB[@]} install -r "$DIST_DIR/greenpaste-debug.apk" >/dev/null
+${ADB[@]} install -r "$DIST_DIR/cliprelay-debug.apk" >/dev/null
 
 for permission in \
   android.permission.BLUETOOTH_SCAN \
@@ -534,15 +534,15 @@ PAIR_TOKEN="$(openssl rand -hex 32)"
 echo "- Android device: ${ANDROID_MODEL}"
 echo "- Importing fresh pairing token"
 
-pkill -f "GreenPaste.app/Contents/MacOS/GreenPaste" >/dev/null 2>&1 || true
+pkill -f "ClipRelay.app/Contents/MacOS/ClipRelay" >/dev/null 2>&1 || true
 "$MAC_BIN" --smoke-import-pairing --token "$PAIR_TOKEN" --name "$ANDROID_MODEL" >/dev/null
 
 ${ADB[@]} shell am force-stop "$ANDROID_APP_ID" >/dev/null 2>&1 || true
 start_android_app
 sleep 2
 
-broadcast_debug_action "com.clipshare.debug.IMPORT_PAIRING" --es token "$PAIR_TOKEN" --es device_name "$MAC_NAME"
-broadcast_debug_action "com.clipshare.debug.RESET_PROBE"
+broadcast_debug_action "com.cliprelay.debug.IMPORT_PAIRING" --es token "$PAIR_TOKEN" --es device_name "$MAC_NAME"
+broadcast_debug_action "com.cliprelay.debug.RESET_PROBE"
 
 start_mac_app
 

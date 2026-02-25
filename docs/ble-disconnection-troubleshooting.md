@@ -6,7 +6,7 @@ After some time (hours), the macOS desktop app loses BLE connection to the Andro
 ## Root Causes Identified
 
 ### 1. Android silently kills BLE advertisements (CONFIRMED - 2026-02-24)
-**Evidence:** Running `adb shell "dumpsys bluetooth_manager"` showed that `com.clipshare` was registered as a GATT Server (`app_if: 61`) but was **NOT present in the GATT Advertiser Map**. The advertisement had been silently stopped by Android OS without any callback to the app.
+**Evidence:** Running `adb shell "dumpsys bluetooth_manager"` showed that `com.cliprelay` was registered as a GATT Server (`app_if: 61`) but was **NOT present in the GATT Advertiser Map**. The advertisement had been silently stopped by Android OS without any callback to the app.
 
 **Why it happens:** Android can silently stop BLE advertisements due to:
 - Doze mode / battery optimization
@@ -40,13 +40,13 @@ After some time (hours), the macOS desktop app loses BLE connection to the Andro
 
 ### Check if Android is advertising
 ```bash
-adb shell "dumpsys bluetooth_manager" | grep -B5 -A30 "clipshare"
+adb shell "dumpsys bluetooth_manager" | grep -B5 -A30 "cliprelay"
 ```
-Look for `com.clipshare` in both the GATT Server Map AND the GATT Advertiser Map. If it's only in the server map but not the advertiser map, advertising has been silently killed.
+Look for `com.cliprelay` in both the GATT Server Map AND the GATT Advertiser Map. If it's only in the server map but not the advertiser map, advertising has been silently killed.
 
 ### Check Android app service status
 ```bash
-adb shell "dumpsys activity services com.clipshare"
+adb shell "dumpsys activity services com.cliprelay"
 ```
 Should show `isForeground=true`.
 
@@ -59,7 +59,7 @@ The Mac app logs to stdout with `[BLE]` prefix. Look for:
 
 ### Check Android logs
 ```bash
-adb logcat -s Advertiser:* GattServerManager:* ClipShareService:*
+adb logcat -s Advertiser:* GattServerManager:* ClipRelayService:*
 ```
 
 ## Things NOT Yet Tried (Future Investigation)

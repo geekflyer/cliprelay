@@ -1,4 +1,4 @@
-# GreenPaste Publishing Checklist
+# ClipRelay Publishing Checklist
 
 ## Overview
 Distribution channels:
@@ -17,7 +17,7 @@ Mac App Store is deferred to a later phase. Pricing is free for now; Android may
 - [ ] Set up a developer profile (name, email, website, privacy policy URL)
 
 ### 1.2 Release Signing
-- [ ] Generate a production keystore (`greenpaste-release.keystore`) — **back up securely, losing this = can never update the app**
+- [ ] Generate a production keystore (`cliprelay-release.keystore`) — **back up securely, losing this = can never update the app**
 - [ ] Add `signingConfigs` block to `android/app/build.gradle.kts` for the `release` build type
 - [ ] Configure ProGuard/R8 minification for release builds
 - [ ] Update `build-all.sh` to support `--release` flag producing a signed AAB (Android App Bundle, required by Play Store)
@@ -74,14 +74,14 @@ Mac App Store is deferred to a later phase. Pricing is free for now; Android may
 - [ ] Verify the notarized app launches without Gatekeeper warnings on a clean Mac
 
 ### 2.3 Distribution Packaging
-- [ ] Create a `.dmg` installer (drag GreenPaste.app to Applications)
+- [ ] Create a `.dmg` installer (drag ClipRelay.app to Applications)
 - [ ] Sign and notarize the `.dmg` itself
 - [ ] Consider adding a "Login Items" helper or prompt for launch-at-login setup
 - [ ] Set up Sparkle (or similar) for auto-updates — include an `appcast.xml` feed URL
 - [ ] Determine version numbering scheme (semver, build numbers for each release)
 
 ### 2.4 Website
-- [ ] Register a domain (e.g., `greenpaste.app` or similar)
+- [ ] Register a domain (e.g., `cliprelay.app` or similar)
 - [ ] Create a simple landing page with:
   - App description and key features
   - Download button for macOS `.dmg`
@@ -102,7 +102,7 @@ Mac App Store is deferred to a later phase. Pricing is free for now; Android may
 
 ### 3.2 Privacy Policy & Legal
 - [ ] Write a single privacy policy covering both platforms
-- [ ] Host at a stable URL (e.g., `greenpaste.app/privacy`)
+- [ ] Host at a stable URL (e.g., `cliprelay.app/privacy`)
 - [ ] Consider adding a simple Terms of Service
 
 ### 3.3 Version & Release Management

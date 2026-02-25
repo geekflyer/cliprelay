@@ -5,7 +5,7 @@
 .vscode/
 build/
 **/build/
-macos/ClipShareMac/.build/
+macos/ClipRelayMac/.build/
 DerivedData/
 *.xcworkspace
 *.xcodeproj/xcuserdata/

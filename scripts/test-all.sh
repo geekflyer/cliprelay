@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID_PROJECT_DIR="$ROOT_DIR/android"
-MAC_PROJECT_DIR="$ROOT_DIR/macos/ClipShareMac"
+MAC_PROJECT_DIR="$ROOT_DIR/macos/ClipRelayMac"
 
 if [[ ! -x "$ANDROID_PROJECT_DIR/gradlew" ]]; then
   echo "Gradle wrapper missing at android/gradlew" >&2

@@ -5,9 +5,9 @@
             android:name=".debug.DebugSmokeReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.clipshare.debug.IMPORT_PAIRING" />
-                <action android:name="com.clipshare.debug.CLEAR_PAIRING" />
-                <action android:name="com.clipshare.debug.RESET_PROBE" />
+                <action android:name="com.cliprelay.debug.IMPORT_PAIRING" />
+                <action android:name="com.cliprelay.debug.CLEAR_PAIRING" />
+                <action android:name="com.cliprelay.debug.RESET_PROBE" />
             </intent-filter>
         </receiver>
     </application>

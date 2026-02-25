@@ -30,10 +30,10 @@ Maximum payload: 100 KiB UTF-8 text.
 
 ## Security model (MVP)
 
-- Pairing is QR-based using a shared 64-char hex token (`greenpaste://pair?t=<token>&n=<name>`).
+- Pairing is QR-based using a shared 64-char hex token (`cliprelay://pair?t=<token>&n=<name>`).
 - Application-layer encryption is always enabled with AES-256-GCM.
 - Key derivation uses HKDF-SHA256 with the token bytes as input key material:
-  - Encryption key: `HKDF(ikm=token, info="greenpaste-enc-v1", len=32)`
-  - Device tag: `HKDF(ikm=token, info="greenpaste-tag-v1", len=8)`
-- AAD is fixed to `greenpaste-v1`.
+  - Encryption key: `HKDF(ikm=token, info="cliprelay-enc-v1", len=32)`
+  - Device tag: `HKDF(ikm=token, info="cliprelay-tag-v1", len=8)`
+- AAD is fixed to `cliprelay-v1`.
 - Ciphertext wire format is `[12-byte nonce][ciphertext + 16-byte GCM tag]`.

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-MAC_PROJECT_DIR="$ROOT_DIR/macos/ClipShareMac"
+MAC_PROJECT_DIR="$ROOT_DIR/macos/ClipRelayMac"
 ANDROID_PROJECT_DIR="$ROOT_DIR/android"
 
 BUILD_MAC=true
@@ -60,23 +60,23 @@ build_mac() {
   echo "==> Building macOS app"
   swift build --configuration release --package-path "$MAC_PROJECT_DIR"
 
-  local binary_path="$MAC_PROJECT_DIR/.build/release/GreenPaste"
+  local binary_path="$MAC_PROJECT_DIR/.build/release/ClipRelay"
   if [[ ! -x "$binary_path" ]]; then
-    if [[ -x "$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/GreenPaste" ]]; then
-      binary_path="$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/GreenPaste"
-    elif [[ -x "$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/GreenPaste" ]]; then
-      binary_path="$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/GreenPaste"
+    if [[ -x "$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/ClipRelay" ]]; then
+      binary_path="$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/ClipRelay"
+    elif [[ -x "$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/ClipRelay" ]]; then
+      binary_path="$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/ClipRelay"
     else
       echo "Could not locate built macOS binary." >&2
       exit 1
     fi
   fi
 
-  local app_dir="$DIST_DIR/GreenPaste.app"
+  local app_dir="$DIST_DIR/ClipRelay.app"
   rm -rf "$app_dir"
   mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 
-  cp "$binary_path" "$app_dir/Contents/MacOS/GreenPaste"
+  cp "$binary_path" "$app_dir/Contents/MacOS/ClipRelay"
 
   # Copy app icon and menu bar icon into Resources
   local resources_src="$MAC_PROJECT_DIR/Resources"
@@ -95,13 +95,13 @@ build_mac() {
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>GreenPaste</string>
+  <string>ClipRelay</string>
   <key>CFBundleDisplayName</key>
-  <string>GreenPaste</string>
+  <string>ClipRelay</string>
   <key>CFBundleIdentifier</key>
-  <string>com.greenpaste.mac</string>
+  <string>com.cliprelay.mac</string>
   <key>CFBundleExecutable</key>
-  <string>GreenPaste</string>
+  <string>ClipRelay</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>
@@ -111,7 +111,7 @@ build_mac() {
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>NSBluetoothAlwaysUsageDescription</key>
-  <string>GreenPaste uses Bluetooth Low Energy to discover and sync clipboard text with your paired Android devices.</string>
+  <string>ClipRelay uses Bluetooth Low Energy to discover and sync clipboard text with your paired Android devices.</string>
   <key>LSUIElement</key>
   <true/>
 </dict>
@@ -144,8 +144,8 @@ build_android() {
     exit 1
   fi
 
-  cp "$apk_path" "$DIST_DIR/greenpaste-debug.apk"
-  echo "Android APK copied to: $DIST_DIR/greenpaste-debug.apk"
+  cp "$apk_path" "$DIST_DIR/cliprelay-debug.apk"
+  echo "Android APK copied to: $DIST_DIR/cliprelay-debug.apk"
 }
 
 if [[ "$BUILD_MAC" == true ]]; then

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.clipshare"
+    namespace = "com.cliprelay"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.clipshare"
+        applicationId = "com.cliprelay"
         minSdk = 29
         targetSdk = 35
         versionCode = 1
