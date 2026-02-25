@@ -35,9 +35,11 @@ class ClipRelayService : Service() {
         const val ACTION_RELOAD_PAIRING = "com.cliprelay.action.RELOAD_PAIRING"
         const val ACTION_CONNECTION_STATE = "com.cliprelay.action.CONNECTION_STATE"
         const val ACTION_QUERY_CONNECTION = "com.cliprelay.action.QUERY_CONNECTION"
+        const val ACTION_CLIPBOARD_TRANSFER = "com.cliprelay.action.CLIPBOARD_TRANSFER"
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_CONNECTED = "extra_connected"
         const val EXTRA_DEVICE_NAME = "extra_device_name"
+        const val EXTRA_FROM_MAC = "extra_from_mac"
 
         const val PREFS_NAME = "cliprelay_state"
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
@@ -259,6 +261,7 @@ class ClipRelayService : Service() {
 
         lastInboundHash = hash
         clipboardWriter.writeText(decodedText)
+        sendClipboardTransferBroadcast(fromMac = true)
         DebugSmokeProbe.onInboundClipboardApplied(this, decodedText)
     }
 
@@ -319,6 +322,7 @@ class ClipRelayService : Service() {
         if (!published) {
             Log.d(TAG, "No subscribers for Android->Mac push")
         } else {
+            sendClipboardTransferBroadcast(fromMac = false)
             DebugSmokeProbe.onOutboundClipboardPublished(this, text)
         }
     }
@@ -326,6 +330,13 @@ class ClipRelayService : Service() {
     private fun sha256Hex(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return digest.joinToString(separator = "") { "%02x".format(it) }
+    }
+
+    private fun sendClipboardTransferBroadcast(fromMac: Boolean) {
+        val intent = Intent(ACTION_CLIPBOARD_TRANSFER)
+        intent.setPackage(packageName)
+        intent.putExtra(EXTRA_FROM_MAC, fromMac)
+        sendBroadcast(intent)
     }
 
     private fun sendConnectionBroadcast(connected: Boolean, deviceName: String? = null) {

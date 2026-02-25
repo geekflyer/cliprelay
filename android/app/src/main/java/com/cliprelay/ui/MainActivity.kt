@@ -26,10 +26,16 @@ class MainActivity : AppCompatActivity() {
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ClipRelayService.ACTION_CONNECTION_STATE) {
-                val connected = intent.getBooleanExtra(ClipRelayService.EXTRA_CONNECTED, false)
-                val name = intent.getStringExtra(ClipRelayService.EXTRA_DEVICE_NAME)
-                viewModel.onConnectionChanged(connected, name)
+            when (intent?.action) {
+                ClipRelayService.ACTION_CONNECTION_STATE -> {
+                    val connected = intent.getBooleanExtra(ClipRelayService.EXTRA_CONNECTED, false)
+                    val name = intent.getStringExtra(ClipRelayService.EXTRA_DEVICE_NAME)
+                    viewModel.onConnectionChanged(connected, name)
+                }
+                ClipRelayService.ACTION_CLIPBOARD_TRANSFER -> {
+                    val fromMac = intent.getBooleanExtra(ClipRelayService.EXTRA_FROM_MAC, true)
+                    viewModel.onClipboardTransfer(fromMac)
+                }
             }
         }
     }
@@ -70,6 +76,7 @@ class MainActivity : AppCompatActivity() {
             ClipRelayScreen(
                 state = state,
                 showBurst = showBurst,
+                clipboardTransferFlow = viewModel.clipboardTransfer,
                 onPairClick = {
                     scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
                 },
@@ -89,7 +96,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        val filter = IntentFilter(ClipRelayService.ACTION_CONNECTION_STATE)
+        val filter = IntentFilter(ClipRelayService.ACTION_CONNECTION_STATE).also {
+            it.addAction(ClipRelayService.ACTION_CLIPBOARD_TRANSFER)
+        }
         ContextCompat.registerReceiver(
             this,
             connectionReceiver,

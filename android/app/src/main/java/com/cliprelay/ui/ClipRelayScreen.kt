@@ -50,6 +50,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 // ─── Color constants ─────────────────────────────────────────────────────────
 private val NeonGreen = Color(0xFF39FF14)
@@ -68,6 +70,7 @@ private val BgBottomConnected = Color(0xFFF0F7F0)
 fun ClipRelayScreen(
     state: AppState,
     showBurst: Boolean,
+    clipboardTransferFlow: Flow<Boolean> = emptyFlow(),
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
     onBurstShown: () -> Unit,
@@ -154,6 +157,7 @@ fun ClipRelayScreen(
             Spacer(modifier = Modifier.weight(1f))
             MainCard(
                 state = state,
+                clipboardTransferFlow = clipboardTransferFlow,
                 onPairClick = onPairClick,
                 onUnpairClick = onUnpairClick
             )
@@ -285,6 +289,7 @@ private fun BlinkingDot(color: Color) {
 @Composable
 private fun MainCard(
     state: AppState,
+    clipboardTransferFlow: Flow<Boolean>,
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit
 ) {
@@ -370,6 +375,7 @@ private fun MainCard(
                 )
                 BeamCanvas(
                     state = state,
+                    clipboardTransferFlow = clipboardTransferFlow,
                     modifier = Modifier
                         .weight(1f)
                         .height(40.dp)

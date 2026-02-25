@@ -10,25 +10,30 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 
 @Composable
-fun BeamCanvas(state: AppState, modifier: Modifier = Modifier) {
+fun BeamCanvas(
+    state: AppState,
+    clipboardTransferFlow: Flow<Boolean> = kotlinx.coroutines.flow.emptyFlow(),
+    modifier: Modifier = Modifier
+) {
     when (state) {
         is AppState.Unpaired -> UnpairedBeam(modifier)
         is AppState.Searching -> SearchingBeam(modifier)
-        is AppState.Connected -> ConnectedBeam(modifier)
+        is AppState.Connected -> ConnectedBeam(clipboardTransferFlow, modifier)
     }
 }
 
@@ -48,13 +53,10 @@ private fun UnpairedBeam(modifier: Modifier = Modifier) {
     }
 }
 
-private data class PacketState(var progress: Float, val phase: Float)
-
 @Composable
 private fun SearchingBeam(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "search")
 
-    // Animate dash phase to scroll dashes left-to-right (phase decreasing = dashes move right)
     val dashPhase by transition.animateFloat(
         initialValue = 14f,
         targetValue = 0f,
@@ -62,13 +64,15 @@ private fun SearchingBeam(modifier: Modifier = Modifier) {
         label = "dashPhase"
     )
 
+    // Slower: was 2400ms, now 4000ms
     val masterTime by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing)),
         label = "masterTime"
     )
 
+    @Suppress("UNUSED_VARIABLE")
     val labelAlpha by transition.animateFloat(
         initialValue = 1f,
         targetValue = 0.3f,
@@ -108,7 +112,6 @@ private fun SearchingBeam(modifier: Modifier = Modifier) {
         for (i in 0 until 3) {
             val phase = i / 3f
             val progress = (masterTime + phase) % 1f
-            // Only draw when in the 0..0.75 range (0.25 is reset/invisible window)
             if (progress > 0.75f) continue
             val px = progress / 0.75f * (size.width * 0.75f)
             val alpha = when {
@@ -126,10 +129,12 @@ private fun SearchingBeam(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ConnectedBeam(modifier: Modifier = Modifier) {
+private fun ConnectedBeam(
+    clipboardTransferFlow: Flow<Boolean>,
+    modifier: Modifier = Modifier
+) {
     val transition = rememberInfiniteTransition(label = "connected")
 
-    // Top track dashes scroll left-to-right (phase decreasing)
     val dashPhaseFwd by transition.animateFloat(
         initialValue = 12f,
         targetValue = 0f,
@@ -137,7 +142,6 @@ private fun ConnectedBeam(modifier: Modifier = Modifier) {
         label = "dashFwd"
     )
 
-    // Bottom track dashes scroll right-to-left (phase increasing)
     val dashPhaseBwd by transition.animateFloat(
         initialValue = 0f,
         targetValue = 12f,
@@ -145,22 +149,24 @@ private fun ConnectedBeam(modifier: Modifier = Modifier) {
         label = "dashBwd"
     )
 
+    // Slower: was 1800ms, now 3200ms
     val masterTime by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(3200, easing = LinearEasing)),
         label = "masterTime"
     )
 
-    // Clipboard icon flash: progress -1 means inactive, 0..1 means animating
+    // Clipboard icon: -1f = inactive, 0..1 = animating
     var clipProgress by remember { mutableStateOf(-1f) }
     var clipGoesRight by remember { mutableStateOf(true) }
-    var frameTime by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(5000)
-            clipGoesRight = true
+    // Trigger animation only on real clipboard transfer events
+    LaunchedEffect(clipboardTransferFlow) {
+        clipboardTransferFlow.collect { fromMac ->
+            // fromMac=true → Mac→Android → right-to-left (bottom track, clipGoesRight=false)
+            // fromMac=false → Android→Mac → left-to-right (top track, clipGoesRight=true)
+            clipGoesRight = !fromMac
             val startTime = withFrameMillis { it }
             val duration = 1200L
             while (true) {
@@ -168,19 +174,6 @@ private fun ConnectedBeam(modifier: Modifier = Modifier) {
                 val elapsed = t - startTime
                 if (elapsed >= duration) break
                 clipProgress = elapsed.toFloat() / duration
-                frameTime = t
-            }
-            clipProgress = -1f
-
-            delay(3000)
-            clipGoesRight = false
-            val startTime2 = withFrameMillis { it }
-            while (true) {
-                val t = withFrameMillis { it }
-                val elapsed = t - startTime2
-                if (elapsed >= duration) break
-                clipProgress = elapsed.toFloat() / duration
-                frameTime = t
             }
             clipProgress = -1f
         }
@@ -254,7 +247,7 @@ private fun ConnectedBeam(modifier: Modifier = Modifier) {
             )
         }
 
-        // Clipboard icon: simple rounded square with a clip mark
+        // Clipboard icon — only visible during an actual transfer event
         if (clipProgressSnapshot >= 0f) {
             val iconSize = 14f.dp.toPx()
             val cx = if (clipRightSnapshot) clipProgressSnapshot * size.width
@@ -268,17 +261,16 @@ private fun ConnectedBeam(modifier: Modifier = Modifier) {
             drawRoundRect(
                 color = Color(0xFF2E7D32).copy(alpha = iconAlpha),
                 topLeft = Offset(cx - iconSize / 2f, trackY - iconSize / 2f),
-                size = androidx.compose.ui.geometry.Size(iconSize, iconSize),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f.dp.toPx())
+                size = Size(iconSize, iconSize),
+                cornerRadius = CornerRadius(3f.dp.toPx())
             )
-            // Small clip tab at top
             val tabW = iconSize * 0.4f
             val tabH = iconSize * 0.18f
             drawRoundRect(
                 color = Color(0xFF2E7D32).copy(alpha = iconAlpha),
                 topLeft = Offset(cx - tabW / 2f, trackY - iconSize / 2f - tabH * 0.5f),
-                size = androidx.compose.ui.geometry.Size(tabW, tabH),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f.dp.toPx())
+                size = Size(tabW, tabH),
+                cornerRadius = CornerRadius(2f.dp.toPx())
             )
         }
     }
