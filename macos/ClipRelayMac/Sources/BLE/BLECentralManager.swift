@@ -57,6 +57,9 @@ final class BLECentralManager: NSObject {
     /// Peers that failed to respond to an RSSI read within the timeout window.
     private var rssiMissCountByPeerID: [UUID: Int] = [:]
     private var isStopped = false
+    /// Peripheral IDs whose pairings were explicitly deleted. Blocks re-discovery
+    /// from matching them to a pending pairing token during the same app session.
+    private var forgottenPeripheralIDs: Set<UUID> = []
     private var pendingPairingToken: String?
     private var lastInboundHash: String?
     private var lastInboundPeerID: UUID?
@@ -178,6 +181,10 @@ final class BLECentralManager: NSObject {
             rssiMissCountByPeerID.removeValue(forKey: id)
             pendingRSSIProbeByPeerID.removeValue(forKey: id)
             peripheralTokenMap.removeValue(forKey: id)
+            // Prevent this peripheral from being re-matched on future scans
+            // (e.g. via pending-pairing fallback or stale CoreBluetooth callbacks).
+            knownPeripherals.removeValue(forKey: id)
+            forgottenPeripheralIDs.insert(id)
         }
 
         notifyAllState()
@@ -602,12 +609,14 @@ extension BLECentralManager: CBCentralManagerDelegate {
             startKeepaliveTimer()
             startScanCycleTimer()
         } else {
-            // Bluetooth turned off — all peripherals are invalidated by CoreBluetooth
+            // Bluetooth turned off — all peripherals are invalidated by CoreBluetooth.
+            // Also clear the forgotten set since the old peripheral UUIDs are no longer valid.
             knownPeripherals.removeAll()
             connectingPeerIDs.removeAll()
             connectingSinceByPeerID.removeAll()
             connectedPeers.removeAll()
             peripheralTokenMap.removeAll()
+            forgottenPeripheralIDs.removeAll()
             pendingInboundHashByPeer.removeAll()
             assemblerByPeer.removeAll()
             pendingOutboundFrames.removeAll()
@@ -627,6 +636,12 @@ extension BLECentralManager: CBCentralManagerDelegate {
         rssi RSSI: NSNumber
     ) {
         let peripheralID = peripheral.identifier
+
+        // Skip peripherals whose pairing was explicitly deleted this session.
+        if forgottenPeripheralIDs.contains(peripheralID) {
+            return
+        }
+
         knownPeripherals[peripheralID] = peripheral
 
         let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
