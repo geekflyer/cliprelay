@@ -2,6 +2,14 @@ import AppKit
 import CoreBluetooth
 import CryptoKit
 import Foundation
+import os
+
+private let bleOSLog = OSLog(subsystem: "com.cliprelay", category: "BLE")
+
+private func bleLog(_ message: String) {
+    print(message)
+    os_log("%{public}@", log: bleOSLog, type: .default, message)
+}
 
 enum BLEProtocol {
     static let serviceUUID = CBUUID(string: "C10B0001-1234-5678-9ABC-DEF012345678")
@@ -117,7 +125,7 @@ final class BLECentralManager: NSObject {
     }
 
     @objc private func handleSystemWake() {
-        print("[BLE] System wake detected – forcing BLE reconnection cycle")
+        bleLog("System wake detected – forcing BLE reconnection cycle")
         guard centralManager.state == .poweredOn else {
             // Bluetooth not ready yet; centralManagerDidUpdateState will
             // trigger scanning once it transitions to poweredOn.
@@ -211,7 +219,7 @@ final class BLECentralManager: NSObject {
         let readyPeers = connectedPeers.filter { (id, peer) in
             peer.availableCharacteristic != nil && peer.dataCharacteristic != nil && id != skipPeerID
         }.map(\.value)
-        print("[BLE] sendClipboardText: connectedPeers=\(connectedPeers.count) readyPeers=\(readyPeers.count) textLen=\(text.count) skipEcho=\(skipPeerID?.uuidString ?? "none")")
+        bleLog("[BLE] sendClipboardText: connectedPeers=\(connectedPeers.count) readyPeers=\(readyPeers.count) textLen=\(text.count) skipEcho=\(skipPeerID?.uuidString ?? "none")")
         guard !readyPeers.isEmpty else { return }
 
         for peer in readyPeers {
@@ -368,7 +376,7 @@ final class BLECentralManager: NSObject {
 
         for id in staleDiscoveryIDs {
             if let peer = connectedPeers[id] {
-                print("[BLE] Service discovery timeout for \(peer.displayName) — disconnecting")
+                bleLog("[BLE] Service discovery timeout for \(peer.displayName) — disconnecting")
                 centralManager.cancelPeripheralConnection(peer.peripheral)
             }
         }
@@ -408,6 +416,7 @@ final class BLECentralManager: NSObject {
 
     private func probeConnectedPeers() {
         guard !connectedPeers.isEmpty else { return }
+        bleLog("[BLE] Keepalive probe: \(connectedPeers.count) connected peer(s)")
         let now = Date()
         for (id, peer) in connectedPeers {
             // Check if the previous RSSI probe was answered
@@ -420,9 +429,9 @@ final class BLECentralManager: NSObject {
 
                 let missCount = (rssiMissCountByPeerID[id] ?? 0) + 1
                 rssiMissCountByPeerID[id] = missCount
-                print("[BLE] RSSI probe timeout for \(peer.displayName) (miss #\(missCount))")
+                bleLog("[BLE] RSSI probe timeout for \(peer.displayName) (miss #\(missCount))")
                 if missCount >= 2 {
-                    print("[BLE] Forcing disconnect of unresponsive peer \(peer.displayName)")
+                    bleLog("[BLE] Forcing disconnect of unresponsive peer \(peer.displayName)")
                     centralManager.cancelPeripheralConnection(peer.peripheral)
                     rssiMissCountByPeerID.removeValue(forKey: id)
                     pendingRSSIProbeByPeerID.removeValue(forKey: id)
@@ -462,10 +471,11 @@ final class BLECentralManager: NSObject {
 
     private func cycleScan() {
         guard centralManager.state == .poweredOn else { return }
+        bleLog("[BLE] Scan cycle tick: connectedPeers=\(connectedPeers.count) connecting=\(connectingPeerIDs.count) tokenMap=\(peripheralTokenMap.count)")
         // If we have no connected peers, reset backoff and aggressively re-scan
         if connectedPeers.isEmpty {
             reconnectDelay = 1
-            print("[BLE] Scan cycle: no connected peers — resetting backoff and restarting scan")
+            bleLog("[BLE] Scan cycle: no connected peers — resetting backoff and restarting scan")
         }
         centralManager.stopScan()
         scan()
@@ -596,7 +606,7 @@ final class BLECentralManager: NSObject {
         guard peripheralTokenMap[peripheralID] == nil else { return false }
         guard let token = pendingPairingFallbackToken() else { return false }
 
-        print("[BLE]   -> Falling back to pending pairing token for discovered peripheral")
+        bleLog("[BLE]   -> Falling back to pending pairing token for discovered peripheral")
         peripheralTokenMap[peripheralID] = token
         connectToPairedPeerIfNeeded(peripheralID: peripheralID)
         return true
@@ -607,7 +617,7 @@ final class BLECentralManager: NSObject {
 
 extension BLECentralManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        print("[BLE] Central state: \(central.state.rawValue) (4=poweredOn)")
+        bleLog("[BLE] Central state: \(central.state.rawValue) (5=poweredOn) knownPeripherals=\(knownPeripherals.count) connectedPeers=\(connectedPeers.count) connecting=\(connectingPeerIDs.count)")
         if central.state == .poweredOn {
             reconnectDelay = 1
             scan()
@@ -615,6 +625,7 @@ extension BLECentralManager: CBCentralManagerDelegate {
             startKeepaliveTimer()
             startScanCycleTimer()
         } else {
+            bleLog("[BLE] BT state not poweredOn — clearing all BLE state")
             // Bluetooth turned off — all peripherals are invalidated by CoreBluetooth.
             // Also clear the forgotten set since the old peripheral UUIDs are no longer valid.
             knownPeripherals.removeAll()
@@ -651,25 +662,25 @@ extension BLECentralManager: CBCentralManagerDelegate {
         knownPeripherals[peripheralID] = peripheral
 
         let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
-        print("[BLE] Discovered \(peripheral.name ?? "nil") mfgData=\(mfgData?.map { String(format: "%02x", $0) }.joined() ?? "nil") rssi=\(RSSI)")
+        bleLog("[BLE] Discovered \(peripheral.name ?? "nil") mfgData=\(mfgData?.map { String(format: "%02x", $0) }.joined() ?? "nil") rssi=\(RSSI)")
 
         guard let tag = extractDeviceTag(from: advertisementData) else {
-            print("[BLE]   -> No device tag in advertisement")
+            bleLog("[BLE]   -> No device tag in advertisement")
             _ = connectUsingPendingPairingFallbackIfAvailable(peripheralID: peripheralID)
             return
         }
-        print("[BLE]   -> Tag: \(tag.map { String(format: "%02x", $0) }.joined())")
+        bleLog("[BLE]   -> Tag: \(tag.map { String(format: "%02x", $0) }.joined())")
         guard let device = pairingManager.findDevice(byTag: tag) else {
-            print("[BLE]   -> No paired device matches this tag")
+            bleLog("[BLE]   -> No paired device matches this tag")
             let allDevices = pairingManager.loadDevices()
             for d in allDevices {
                 let dt = pairingManager.deviceTag(for: d.token)
-                print("[BLE]      stored tag: \(dt?.map { String(format: "%02x", $0) }.joined() ?? "nil") name=\(d.displayName)")
+                bleLog("[BLE]      stored tag: \(dt?.map { String(format: "%02x", $0) }.joined() ?? "nil") name=\(d.displayName)")
             }
             _ = connectUsingPendingPairingFallbackIfAvailable(peripheralID: peripheralID)
             return
         }
-        print("[BLE]   -> Matched paired device: \(device.displayName)")
+        bleLog("[BLE]   -> Matched paired device: \(device.displayName)")
 
         peripheralTokenMap[peripheralID] = device.token
 
@@ -692,10 +703,10 @@ extension BLECentralManager: CBCentralManagerDelegate {
         let peripheralID = peripheral.identifier
         connectingPeerIDs.remove(peripheralID)
         connectingSinceByPeerID.removeValue(forKey: peripheralID)
-        print("[BLE] didConnect: \(peripheral.name ?? "nil") id=\(peripheralID)")
+        bleLog("[BLE] didConnect: \(peripheral.name ?? "nil") id=\(peripheralID)")
 
         guard let token = peripheralTokenMap[peripheralID] else {
-            print("[BLE]   -> No token mapped for this peripheral")
+            bleLog("[BLE]   -> No token mapped for this peripheral")
             return
         }
 
@@ -731,14 +742,14 @@ extension BLECentralManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        print("[BLE] didFailToConnect: \(peripheral.name ?? "nil") error=\(error?.localizedDescription ?? "nil")")
+        bleLog("[BLE] didFailToConnect: \(peripheral.name ?? "nil") error=\(error?.localizedDescription ?? "nil")")
         connectingPeerIDs.remove(peripheral.identifier)
         connectingSinceByPeerID.removeValue(forKey: peripheral.identifier)
         scheduleReconnect()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        print("[BLE] didDisconnect: \(peripheral.name ?? "nil") error=\(error?.localizedDescription ?? "nil")")
+        bleLog("[BLE] didDisconnect: \(peripheral.name ?? "nil") error=\(error?.localizedDescription ?? "nil")")
         let peripheralID = peripheral.identifier
         connectingPeerIDs.remove(peripheralID)
         connectingSinceByPeerID.removeValue(forKey: peripheralID)
@@ -773,14 +784,14 @@ extension BLECentralManager: CBCentralManagerDelegate {
 
 extension BLECentralManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        print("[BLE] didDiscoverServices: \(peripheral.services?.map(\.uuid.uuidString) ?? []) error=\(error?.localizedDescription ?? "nil")")
+        bleLog("[BLE] didDiscoverServices: \(peripheral.services?.map(\.uuid.uuidString) ?? []) error=\(error?.localizedDescription ?? "nil")")
         peripheral.services?.forEach {
             peripheral.discoverCharacteristics([BLEProtocol.availableUUID, BLEProtocol.dataUUID], for: $0)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        print("[BLE] didDiscoverCharacteristics: \(service.characteristics?.map(\.uuid.uuidString) ?? []) error=\(error?.localizedDescription ?? "nil")")
+        bleLog("[BLE] didDiscoverCharacteristics: \(service.characteristics?.map(\.uuid.uuidString) ?? []) error=\(error?.localizedDescription ?? "nil")")
         let peripheralID = peripheral.identifier
         guard var peer = connectedPeers[peripheralID] else { return }
 
@@ -806,16 +817,16 @@ extension BLECentralManager: CBPeripheralDelegate {
         // GATT heartbeat: a read error on any characteristic means the remote
         // GATT server is gone — force-disconnect to trigger reconnection.
         if let error {
-            print("[BLE] GATT read error for \(peripheral.name ?? "nil"): \(error.localizedDescription)")
+            bleLog("[BLE] GATT read error for \(peripheral.name ?? "nil"): \(error.localizedDescription)")
             if let peer = connectedPeers[peripheralID] {
-                print("[BLE] GATT heartbeat failure — disconnecting \(peer.displayName)")
+                bleLog("[BLE] GATT heartbeat failure — disconnecting \(peer.displayName)")
                 centralManager.cancelPeripheralConnection(peer.peripheral)
             }
             return
         }
 
         guard let data = characteristic.value else { return }
-        print("[BLE] didUpdateValue: char=\(characteristic.uuid.uuidString) bytes=\(data.count)")
+        bleLog("[BLE] didUpdateValue: char=\(characteristic.uuid.uuidString) bytes=\(data.count)")
 
         if characteristic.uuid == BLEProtocol.availableUUID {
             processAvailableMetadata(data, for: peripheralID)
@@ -835,12 +846,12 @@ extension BLECentralManager: CBPeripheralDelegate {
 
         // Verify hash against metadata — reject if metadata was never received
         guard let metadataHash = pendingInboundHashByPeer.removeValue(forKey: peripheralID) else {
-            print("[BLE] Rejecting assembled data: no metadata hash received for peer \(peripheralID)")
+            bleLog("[BLE] Rejecting assembled data: no metadata hash received for peer \(peripheralID)")
             return
         }
         let assembledHash = sha256Hex(assembledData)
         guard metadataHash == assembledHash else {
-            print("[BLE] Hash mismatch: expected=\(metadataHash) got=\(assembledHash)")
+            bleLog("[BLE] Hash mismatch: expected=\(metadataHash) got=\(assembledHash)")
             return
         }
 
@@ -865,13 +876,13 @@ extension BLECentralManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
         let peripheralID = peripheral.identifier
         if error != nil {
-            print("[BLE] RSSI read failed for \(peripheral.name ?? "nil"): \(error!.localizedDescription)")
+            bleLog("[BLE] RSSI read failed for \(peripheral.name ?? "nil"): \(error!.localizedDescription)")
             let missCount = (rssiMissCountByPeerID[peripheralID] ?? 0) + 1
             rssiMissCountByPeerID[peripheralID] = missCount
             pendingRSSIProbeByPeerID.removeValue(forKey: peripheralID)
             if missCount >= 2 {
                 if let peer = connectedPeers[peripheralID] {
-                    print("[BLE] Forcing disconnect after RSSI read failures for \(peer.displayName)")
+                    bleLog("[BLE] Forcing disconnect after RSSI read failures for \(peer.displayName)")
                 }
                 centralManager.cancelPeripheralConnection(peripheral)
                 rssiMissCountByPeerID.removeValue(forKey: peripheralID)
