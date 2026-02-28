@@ -9,7 +9,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -46,15 +48,19 @@ class ClipRelayService : Service() {
 
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
+        private const val STALE_CONNECTION_CHECK_INTERVAL_MS = 60_000L
+        private const val STALE_CONNECTION_TIMEOUT_SECONDS = 90
     }
 
     private lateinit var gattServer: GattServerManager
+    private lateinit var gattCallback: GattServerCallback
     private lateinit var advertiser: Advertiser
     private lateinit var clipboardWriter: ClipboardWriter
     private lateinit var pairingStore: PairingStore
 
     private val transferExecutor = Executors.newSingleThreadExecutor()
     private val inboundStateMachine = BleInboundStateMachine()
+    private val staleConnectionHandler = Handler(Looper.getMainLooper())
     @Volatile
     private var bleStarted = false
     @Volatile
@@ -89,31 +95,29 @@ class ClipRelayService : Service() {
         clipboardWriter = ClipboardWriter(this)
         pairingStore = PairingStore(this)
 
-        gattServer = GattServerManager(
-            this,
-            GattServerCallback(
-                onAvailableReceived = { deviceId, bytes ->
-                    transferExecutor.execute {
-                        handleAvailableMetadata(deviceId, bytes)
-                    }
-                },
-                onDataReceived = { deviceId, bytes ->
-                    transferExecutor.execute {
-                        handleIncomingDataFrame(deviceId, bytes)
-                    }
-                },
-                onDeviceConnectionChanged = { deviceId, isConnected, hasConnectedDevices ->
-                    if (!isConnected) {
-                        transferExecutor.execute {
-                            inboundStateMachine.onDisconnected(deviceId)
-                        }
-                    }
-                    DebugSmokeProbe.onConnectionChanged(this, hasConnectedDevices)
-                    val name = if (hasConnectedDevices) loadConnectedDeviceName() else null
-                    sendConnectionBroadcast(hasConnectedDevices, name)
+        gattCallback = GattServerCallback(
+            onAvailableReceived = { deviceId, bytes ->
+                transferExecutor.execute {
+                    handleAvailableMetadata(deviceId, bytes)
                 }
-            )
+            },
+            onDataReceived = { deviceId, bytes ->
+                transferExecutor.execute {
+                    handleIncomingDataFrame(deviceId, bytes)
+                }
+            },
+            onDeviceConnectionChanged = { deviceId, isConnected, hasConnectedDevices ->
+                if (!isConnected) {
+                    transferExecutor.execute {
+                        inboundStateMachine.onDisconnected(deviceId)
+                    }
+                }
+                DebugSmokeProbe.onConnectionChanged(this, hasConnectedDevices)
+                val name = if (hasConnectedDevices) loadConnectedDeviceName() else null
+                sendConnectionBroadcast(hasConnectedDevices, name)
+            }
         )
+        gattServer = GattServerManager(this, gattCallback)
 
         advertiser = Advertiser(this, ParcelUuid(GattServerManager.SERVICE_UUID))
         loadPairingState()
@@ -122,10 +126,12 @@ class ClipRelayService : Service() {
         startForeground(1001, buildNotification())
         registerReceiver(bluetoothStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         ensureBleComponentsState()
+        scheduleStaleConnectionCheck()
     }
 
     override fun onDestroy() {
         isDestroyed = true
+        staleConnectionHandler.removeCallbacksAndMessages(null)
         unregisterReceiver(bluetoothStateReceiver)
         transferExecutor.shutdownNow()
         stopBleComponents()
@@ -357,6 +363,21 @@ class ClipRelayService : Service() {
 
     private fun loadConnectedDeviceName(): String? =
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_CONNECTED_DEVICE, null)
+
+    private fun scheduleStaleConnectionCheck() {
+        staleConnectionHandler.postDelayed(object : Runnable {
+            override fun run() {
+                if (isDestroyed) return
+                if (bleStarted) {
+                    val reaped = gattCallback.reapStaleConnections(STALE_CONNECTION_TIMEOUT_SECONDS)
+                    if (reaped) {
+                        Log.d(TAG, "Reaped stale BLE connections")
+                    }
+                }
+                staleConnectionHandler.postDelayed(this, STALE_CONNECTION_CHECK_INTERVAL_MS)
+            }
+        }, STALE_CONNECTION_CHECK_INTERVAL_MS)
+    }
 
     private fun buildNotification(): Notification {
         val channelId = "cliprelay-service"

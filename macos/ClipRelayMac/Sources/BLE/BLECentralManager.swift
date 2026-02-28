@@ -238,6 +238,25 @@ final class BLECentralManager: NSObject {
             forgottenPeripheralIDs.insert(id)
         }
 
+        // Second pass: clean up any connectedPeers whose token matches but whose
+        // peripheral ID was not in peripheralTokenMap (e.g. after a sleep/wake cycle
+        // cleared peripheralTokenMap while the peer remained in connectedPeers).
+        let orphanedIDs = connectedPeers.filter { $0.value.token == token }.map(\.key)
+        for id in orphanedIDs {
+            bleLog("[BLE] forgetDevice: cleaning up orphaned connectedPeer \(id) for token")
+            centralManager.cancelPeripheralConnection(connectedPeers[id]!.peripheral)
+            connectedPeers.removeValue(forKey: id)
+            connectingPeerIDs.remove(id)
+            connectingSinceByPeerID.removeValue(forKey: id)
+            pendingInboundHashByPeer.removeValue(forKey: id)
+            assemblerByPeer.removeValue(forKey: id)
+            pendingOutboundFrames.removeValue(forKey: id)
+            rssiMissCountByPeerID.removeValue(forKey: id)
+            pendingRSSIProbeByPeerID.removeValue(forKey: id)
+            knownPeripherals.removeValue(forKey: id)
+            forgottenPeripheralIDs.insert(id)
+        }
+
         notifyAllState()
     }
 
