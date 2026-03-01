@@ -371,6 +371,61 @@ private fun MainCard(
                 )
             }
 
+            // Security indicator
+            AnimatedVisibility(
+                visible = isConnected,
+                enter = fadeIn(tween(800)),
+                exit = fadeOut(tween(300))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Canvas(modifier = Modifier.size(11.dp)) {
+                        val lockColor = Teal.copy(alpha = 0.4f)
+                        val w = size.width
+                        val h = size.height
+                        // Lock body
+                        val bodyW = w * 0.72f
+                        val bodyH = h * 0.45f
+                        val bodyTop = h * 0.50f
+                        drawRoundRect(
+                            color = lockColor,
+                            topLeft = Offset((w - bodyW) / 2f, bodyTop),
+                            size = Size(bodyW, bodyH),
+                            cornerRadius = CornerRadius(w * 0.08f)
+                        )
+                        // Shackle arc
+                        val sW = w * 0.46f
+                        val sH = h * 0.34f
+                        drawArc(
+                            color = lockColor,
+                            startAngle = 180f,
+                            sweepAngle = 180f,
+                            useCenter = false,
+                            topLeft = Offset((w - sW) / 2f, bodyTop - sH),
+                            size = Size(sW, sH),
+                            style = Stroke(w * 0.12f, cap = StrokeCap.Round)
+                        )
+                        // Shackle legs
+                        val legX1 = (w - sW) / 2f
+                        val legX2 = (w + sW) / 2f
+                        drawLine(lockColor, Offset(legX1, bodyTop - sH / 2f), Offset(legX1, bodyTop), w * 0.12f)
+                        drawLine(lockColor, Offset(legX2, bodyTop - sH / 2f), Offset(legX2, bodyTop), w * 0.12f)
+                    }
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "End-to-end encrypted",
+                        fontSize = 11.sp,
+                        color = Teal.copy(alpha = 0.4f),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(28.dp))
 
             // Action button

@@ -18,9 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.Flow
 
@@ -157,6 +160,13 @@ private fun ConnectedBeam(
         label = "masterTime"
     )
 
+    val shieldGlow by transition.animateFloat(
+        initialValue = 0.10f,
+        targetValue = 0.20f,
+        animationSpec = infiniteRepeatable(tween(2500), RepeatMode.Reverse),
+        label = "shieldGlow"
+    )
+
     // Clipboard icon: -1f = inactive, 0..1 = animating
     var clipProgress by remember { mutableStateOf(-1f) }
     var clipGoesRight by remember { mutableStateOf(true) }
@@ -246,6 +256,67 @@ private fun ConnectedBeam(
                 center = Offset((1f - progress) * size.width, cy + trackOffset)
             )
         }
+
+        // ── Security shield at beam center ──
+        val shieldW = 18f.dp.toPx()
+        val shieldH = 20f.dp.toPx()
+        val sCx = size.width / 2f
+        val sCy = cy
+        val sW2 = shieldW / 2f
+        val sH2 = shieldH / 2f
+
+        // Subtle pulsing glow behind shield
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(neonGreen.copy(alpha = shieldGlow), Color.Transparent),
+                center = Offset(sCx, sCy),
+                radius = sH2 * 1.4f
+            ),
+            radius = sH2 * 1.4f,
+            center = Offset(sCx, sCy)
+        )
+
+        // Shield path
+        val shieldPath = Path().apply {
+            moveTo(sCx - sW2, sCy - sH2 * 0.45f)
+            quadraticBezierTo(sCx, sCy - sH2, sCx + sW2, sCy - sH2 * 0.45f)
+            lineTo(sCx + sW2, sCy + sH2 * 0.1f)
+            quadraticBezierTo(sCx + sW2 * 0.15f, sCy + sH2 * 0.75f, sCx, sCy + sH2)
+            quadraticBezierTo(sCx - sW2 * 0.15f, sCy + sH2 * 0.75f, sCx - sW2, sCy + sH2 * 0.1f)
+            close()
+        }
+        drawPath(shieldPath, color = darkGreen)
+
+        // Lock body
+        val lockW = 5.5f.dp.toPx()
+        val lockH = 4f.dp.toPx()
+        val lockTop = sCy + 0.5f.dp.toPx()
+        val lockColor = Color.White.copy(alpha = 0.85f)
+        drawRoundRect(
+            color = lockColor,
+            topLeft = Offset(sCx - lockW / 2f, lockTop),
+            size = Size(lockW, lockH),
+            cornerRadius = CornerRadius(0.8f.dp.toPx())
+        )
+
+        // Lock shackle arc
+        val shackleW = 3.8f.dp.toPx()
+        val shackleH = 3.2f.dp.toPx()
+        val shackleStroke = 1.2f.dp.toPx()
+        drawArc(
+            color = lockColor,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = Offset(sCx - shackleW / 2f, lockTop - shackleH),
+            size = Size(shackleW, shackleH),
+            style = Stroke(width = shackleStroke, cap = StrokeCap.Round)
+        )
+
+        // Lock shackle legs
+        val legTop = lockTop - shackleH / 2f
+        drawLine(lockColor, Offset(sCx - shackleW / 2f, legTop), Offset(sCx - shackleW / 2f, lockTop), shackleStroke)
+        drawLine(lockColor, Offset(sCx + shackleW / 2f, legTop), Offset(sCx + shackleW / 2f, lockTop), shackleStroke)
 
         // Clipboard icon — only visible during an actual transfer event
         if (clipProgressSnapshot >= 0f) {
