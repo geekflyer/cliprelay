@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Regenerate raster icon assets from SVG sources.
-# Requires: rsvg-convert (from librsvg) or falls back to sips (macOS built-in).
+# Requires: rsvg-convert (from librsvg) or falls back to qlmanage (macOS).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
@@ -18,19 +18,17 @@ svg_to_png() {
   local svg="$1" out="$2" size="$3"
   if has_cmd rsvg-convert; then
     rsvg-convert -w "$size" -h "$size" "$svg" -o "$out"
-  elif has_cmd sips; then
-    # sips can't read SVG directly — need a temp conversion via qlmanage
-    local tmp="/tmp/cliprelay-icon-$size.png"
+  elif has_cmd qlmanage; then
     qlmanage -t -s "$size" -o /tmp "$svg" 2>/dev/null
     local ql_out="/tmp/$(basename "$svg").png"
     if [[ -f "$ql_out" ]]; then
       mv "$ql_out" "$out"
     else
-      echo "  SKIP: sips/qlmanage could not convert $svg at ${size}px" >&2
+      echo "  SKIP: qlmanage could not convert $svg at ${size}px" >&2
       return 1
     fi
   else
-    echo "  SKIP: no rsvg-convert or sips available" >&2
+    echo "  SKIP: no rsvg-convert or qlmanage available" >&2
     return 1
   fi
 }
@@ -39,35 +37,23 @@ svg_to_png() {
 
 echo "=== Android mipmap icons ==="
 
-declare -A DENSITIES=(
-  [mdpi]=48
-  [hdpi]=72
-  [xhdpi]=96
-  [xxhdpi]=144
-  [xxxhdpi]=192
-)
-
-declare -A FG_SIZES=(
-  [mdpi]=108
-  [hdpi]=162
-  [xhdpi]=216
-  [xxhdpi]=324
-  [xxxhdpi]=432
-)
-
-for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-  dir="$ANDROID_RES/mipmap-$density"
+gen_android_density() {
+  local density="$1" launcher_size="$2" fg_size="$3"
+  local dir="$ANDROID_RES/mipmap-$density"
   mkdir -p "$dir"
 
-  size="${DENSITIES[$density]}"
-  fg_size="${FG_SIZES[$density]}"
-
-  echo "  $density: ic_launcher.png (${size}px)"
-  svg_to_png "$DESIGN/logo-android-icon.svg" "$dir/ic_launcher.png" "$size" || true
+  echo "  $density: ic_launcher.png (${launcher_size}px)"
+  svg_to_png "$DESIGN/logo-android-icon.svg" "$dir/ic_launcher.png" "$launcher_size" || true
 
   echo "  $density: ic_launcher_foreground.png (${fg_size}px)"
   svg_to_png "$DESIGN/logo-android-icon.svg" "$dir/ic_launcher_foreground.png" "$fg_size" || true
-done
+}
+
+gen_android_density mdpi    48  108
+gen_android_density hdpi    72  162
+gen_android_density xhdpi   96  216
+gen_android_density xxhdpi  144 324
+gen_android_density xxxhdpi 192 432
 
 # ─── macOS StatusBar icons ───────────────────────────────────────────────────
 
