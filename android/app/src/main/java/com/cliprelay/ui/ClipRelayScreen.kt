@@ -357,7 +357,7 @@ private fun MainCard(
                 Canvas(
                     modifier = Modifier
                         .size(100.dp)
-                        .offset(y = (-20).dp)
+                        .offset(y = (-32).dp)
                 ) {
                     val c = lockAlpha
                     if (c != Color.Transparent) {
@@ -439,7 +439,7 @@ private fun MainCard(
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp),
+                        .offset(y = (-6).dp),
                     textAlign = TextAlign.Center
                 )
             }
