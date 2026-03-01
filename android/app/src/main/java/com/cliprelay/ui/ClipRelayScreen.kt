@@ -138,6 +138,8 @@ fun ClipRelayScreen(
             Spacer(modifier = Modifier.height(12.dp))
             StatusChip(state = state)
             Spacer(modifier = Modifier.weight(1f))
+            LogoIcon(modifier = Modifier.size(72.dp), tint = Aqua)
+            Spacer(modifier = Modifier.height(20.dp))
             MainCard(
                 state = state,
                 clipboardTransferFlow = clipboardTransferFlow,
@@ -145,7 +147,7 @@ fun ClipRelayScreen(
                 onUnpairClick = onUnpairClick
             )
             Spacer(modifier = Modifier.weight(1f))
-            FooterSection()
+            FooterSection(isConnected = isConnected)
         }
 
         // Pairing burst overlay
@@ -187,6 +189,11 @@ private fun StatusChip(state: AppState) {
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .background(bgColor)
+            .then(
+                if (state is AppState.Connected)
+                    Modifier.border(1.dp, Aqua.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                else Modifier
+            )
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -590,7 +597,7 @@ private fun LogoIcon(modifier: Modifier = Modifier, tint: Color = Aqua) {
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 @Composable
-private fun FooterSection() {
+private fun FooterSection(isConnected: Boolean = false) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
@@ -609,7 +616,7 @@ private fun FooterSection() {
                 .width(134.dp)
                 .height(5.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .background(Color(0x1F000000))
+                .background(if (isConnected) Aqua.copy(alpha = 0.25f) else Color(0x1F000000))
         )
     }
 }
