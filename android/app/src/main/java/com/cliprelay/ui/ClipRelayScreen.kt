@@ -152,7 +152,7 @@ fun ClipRelayScreen(
                 onUnpairClick = onUnpairClick
             )
             Spacer(modifier = Modifier.weight(1f))
-            FooterSection(isConnected = isConnected)
+            FooterSection()
         }
 
         // Pairing burst overlay
@@ -618,7 +618,7 @@ private fun LogoIcon(modifier: Modifier = Modifier, tint: Color = Aqua) {
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 @Composable
-private fun FooterSection(isConnected: Boolean = false) {
+private fun FooterSection() {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
@@ -665,14 +665,5 @@ private fun FooterSection(isConnected: Boolean = false) {
                 color = Color(0x99000000)
             )
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        // Nav bar hint
-        Box(
-            modifier = Modifier
-                .width(134.dp)
-                .height(5.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(if (isConnected) Aqua.copy(alpha = 0.25f) else Color(0x1F000000))
-        )
     }
 }
