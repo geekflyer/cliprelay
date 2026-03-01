@@ -67,7 +67,9 @@ class MainActivity : AppCompatActivity() {
         ensureServiceRunning()
 
         val isPaired = PairingStore(this).loadToken() != null
-        viewModel.initState(isPaired)
+        val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
+            .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
+        viewModel.initState(isPaired, deviceName)
 
         setContent {
             val state by viewModel.state.collectAsState()

@@ -278,7 +278,11 @@ private fun MainCard(
         label = "cardBorder"
     )
 
-    val deviceName = (state as? AppState.Connected)?.deviceName
+    val deviceName = when (state) {
+        is AppState.Connected -> state.deviceName
+        is AppState.Searching -> state.deviceName
+        else -> null
+    }
 
     Box(
         modifier = Modifier
@@ -325,7 +329,7 @@ private fun MainCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Seamless clipboard sync to your Mac",
+                text = "Seamless clipboard sharing with your Mac",
                 fontSize = 15.sp,
                 color = if (isPaired) Teal.copy(alpha = 0.45f) else Color(0x66000000),
                 modifier = Modifier.fillMaxWidth(),

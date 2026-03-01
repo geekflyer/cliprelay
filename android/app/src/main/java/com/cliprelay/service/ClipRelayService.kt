@@ -117,7 +117,7 @@ class ClipRelayService : Service() {
                     }
                 }
                 DebugSmokeProbe.onConnectionChanged(this, hasConnectedDevices)
-                val name = if (hasConnectedDevices) loadConnectedDeviceName() else null
+                val name = loadConnectedDeviceName()
                 sendConnectionBroadcast(hasConnectedDevices, name)
             }
         )

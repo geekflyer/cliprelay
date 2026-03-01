@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 sealed class AppState {
     object Unpaired : AppState()
-    object Searching : AppState()
+    data class Searching(val deviceName: String? = null) : AppState()
     data class Connected(val deviceName: String?) : AppState()
 }
 
@@ -24,12 +24,12 @@ class MainViewModel : ViewModel() {
     private val _clipboardTransfer = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val clipboardTransfer: SharedFlow<Boolean> = _clipboardTransfer
 
-    fun initState(isPaired: Boolean) {
-        _state.value = if (isPaired) AppState.Searching else AppState.Unpaired
+    fun initState(isPaired: Boolean, deviceName: String? = null) {
+        _state.value = if (isPaired) AppState.Searching(deviceName) else AppState.Unpaired
     }
 
     fun onPaired() {
-        _state.value = AppState.Searching
+        _state.value = AppState.Searching()
         _showBurst.value = true
     }
 
@@ -44,7 +44,7 @@ class MainViewModel : ViewModel() {
     fun onConnectionChanged(connected: Boolean, deviceName: String?) {
         // Don't let stale connection broadcasts override the Unpaired state.
         if (_state.value is AppState.Unpaired) return
-        _state.value = if (connected) AppState.Connected(deviceName) else AppState.Searching
+        _state.value = if (connected) AppState.Connected(deviceName) else AppState.Searching(deviceName)
     }
 
     fun onClipboardTransfer(fromMac: Boolean) {
