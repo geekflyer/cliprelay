@@ -353,11 +353,13 @@ private fun MainCard(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                // Big lock watermark behind device row
+                // Big lock watermark + label behind device row
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.offset(y = (-28).dp)
+                ) {
                 Canvas(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .offset(y = (-32).dp)
+                    modifier = Modifier.size(100.dp)
                 ) {
                     val c = lockAlpha
                     if (c != Color.Transparent) {
@@ -396,6 +398,15 @@ private fun MainCard(
                         drawLine(c, Offset(cx + sW / 2f, legTop), Offset(cx + sW / 2f, bodyTop), shackleStroke)
                     }
                 }
+                if (isConnected) {
+                    Text(
+                        text = "End-to-end encrypted",
+                        fontSize = 11.sp,
+                        color = Teal.copy(alpha = 0.4f),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                }
 
                 // Device row on top
                 Row(
@@ -424,24 +435,6 @@ private fun MainCard(
                         label = deviceName ?: "Mac"
                     )
                 }
-            }
-
-            // Security label
-            AnimatedVisibility(
-                visible = isConnected,
-                enter = fadeIn(tween(800)),
-                exit = fadeOut(tween(300))
-            ) {
-                Text(
-                    text = "End-to-end encrypted",
-                    fontSize = 11.sp,
-                    color = Teal.copy(alpha = 0.4f),
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .offset(y = (-6).dp),
-                    textAlign = TextAlign.Center
-                )
             }
 
             Spacer(modifier = Modifier.height(28.dp))
