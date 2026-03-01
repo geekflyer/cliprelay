@@ -42,6 +42,8 @@ class MainViewModel : ViewModel() {
     }
 
     fun onConnectionChanged(connected: Boolean, deviceName: String?) {
+        // Don't let stale connection broadcasts override the Unpaired state.
+        if (_state.value is AppState.Unpaired) return
         _state.value = if (connected) AppState.Connected(deviceName) else AppState.Searching
     }
 
