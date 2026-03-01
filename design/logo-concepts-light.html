@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipRelay — Logo Variants (Light Background)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&family=Instrument+Serif:ital@0;1&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #F7FAFA;
+    --surface: #FFFFFF;
+    --border: #D8E8E5;
+    --text: #1A2E2A;
+    --text-dim: #6B8A82;
+    --aqua: #00FFD5;
+    --teal: #00897B;
+    --teal-dark: #00796B;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 60px 40px;
+  }
+
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 3.5rem;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #1A2E2A 30%, #00897B);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    font-size: 1.1rem;
+    color: var(--text-dim);
+    margin-bottom: 80px;
+    font-weight: 300;
+  }
+
+  .section-title {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.8rem;
+    font-weight: 400;
+    margin-bottom: 32px;
+    color: var(--text);
+  }
+
+  .section-title + .section-note {
+    margin-top: -24px;
+    margin-bottom: 32px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+
+  /* ── Side-by-side dark vs light ── */
+  .compare-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-bottom: 64px;
+  }
+
+  .compare-card {
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .compare-card.light-bg {
+    background: var(--surface);
+  }
+
+  .compare-card.dark-bg {
+    background: #0A0A0F;
+    border-color: #1E1E2A;
+  }
+
+  .compare-card.dark-bg .card-label {
+    color: #6B6B7B;
+  }
+
+  .compare-card.dark-bg .card-title {
+    color: #E8E8ED;
+  }
+
+  .card-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+
+  .card-title {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.2rem;
+    font-weight: 400;
+    margin-top: -12px;
+  }
+
+  /* ── Icon grid ── */
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px;
+    margin-bottom: 64px;
+  }
+
+  .icon-card {
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .icon-card .card-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+
+  .icon-card .card-note {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-align: center;
+    max-width: 180px;
+    line-height: 1.4;
+  }
+
+  .icon-frame {
+    width: 160px;
+    height: 160px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .icon-frame.checkerboard {
+    background: repeating-conic-gradient(#E8E8E8 0% 25%, #F5F5F5 0% 50%) 50% / 16px 16px;
+    border: 1px solid var(--border);
+  }
+
+  .icon-frame.menubar-light {
+    background: linear-gradient(180deg, #E8E8E8, #D8D8D8);
+    border-radius: 8px;
+    width: 160px;
+    height: 40px;
+    flex-direction: row;
+    gap: 16px;
+    padding: 0 12px;
+  }
+
+  .menubar-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #AAA;
+  }
+
+  /* ── Share menu sims ── */
+  .share-row-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-bottom: 64px;
+  }
+
+  .share-card {
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .share-card.light-bg { background: var(--surface); }
+  .share-card.dark-bg {
+    background: #0A0A0F;
+    border-color: #1E1E2A;
+  }
+  .share-card.dark-bg .card-label { color: #6B6B7B; }
+
+  .share-sim {
+    width: 200px;
+    border-radius: 14px;
+    padding: 10px 0;
+  }
+
+  .share-sim.light-mode {
+    background: #FFFFFF;
+    border: 1px solid #D8D8D8;
+  }
+
+  .share-sim.dark-mode {
+    background: #1C1C1E;
+    border: 1px solid #2C2C2E;
+  }
+
+  .share-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+  }
+
+  .share-sim.light-mode .share-row { color: #666; }
+  .share-sim.dark-mode .share-row { color: #aaa; }
+
+  .share-sim.light-mode .share-row.highlight {
+    background: #F0F0F0;
+    color: #1A1A1A;
+    font-weight: 500;
+  }
+
+  .share-sim.dark-mode .share-row.highlight {
+    background: #2A2A2E;
+    color: #fff;
+    font-weight: 500;
+  }
+
+  .share-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .share-icon.gray-light { background: #E0E0E0; }
+  .share-icon.gray-dark { background: #3a3a3e; }
+  .share-icon.blue { background: #0A84FF; }
+
+  /* Beam animations */
+  @keyframes beamPulse1 {
+    0%, 100% { opacity: 0.9; transform: translateX(0); }
+    50% { opacity: 1; transform: translateX(2px); }
+  }
+  @keyframes beamPulse2 {
+    0%, 100% { opacity: 0.55; transform: translateX(0); }
+    50% { opacity: 0.75; transform: translateX(3px); }
+  }
+  @keyframes beamPulse3 {
+    0%, 100% { opacity: 0.3; transform: translateX(0); }
+    50% { opacity: 0.5; transform: translateX(4px); }
+  }
+
+  .beam-arc-1 { animation: beamPulse1 2s ease-in-out infinite; }
+  .beam-arc-2 { animation: beamPulse2 2s ease-in-out 0.25s infinite; }
+  .beam-arc-3 { animation: beamPulse3 2s ease-in-out 0.5s infinite; }
+
+</style>
+</head>
+<body>
+
+<h1>ClipRelay — Light Background</h1>
+<p class="subtitle">All logo variants shown on light surfaces. Comparing dark-optimized vs light-optimized where applicable.</p>
+
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SECTION 1: Full Logo — dark vs light variant      -->
+<!-- ══════════════════════════════════════════════════ -->
+<h2 class="section-title">Full Logo</h2>
+<p class="section-note">Dark variant (left) was designed for dark backgrounds — notice how the glow washes out on white. Light variant (right) uses teal strokes and a drop shadow instead.</p>
+
+<div class="compare-row">
+  <!-- Dark variant on dark bg (reference) -->
+  <div class="compare-card dark-bg">
+    <span class="card-label">logo-full-dark.svg on dark</span>
+    <div class="icon-frame" style="background:transparent;">
+      <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+        <defs>
+          <linearGradient id="d1BoardGrad" x1="0" y1="0" x2="0.3" y2="1"><stop stop-color="#0A3A34"/><stop offset="1" stop-color="#082A26"/></linearGradient>
+          <linearGradient id="d1ArcGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00FFD5"/><stop offset="1" stop-color="#00DDC0"/></linearGradient>
+          <filter id="d1Glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#d1BoardGrad)" stroke="#00FFD5" stroke-width="1.5" opacity="0.9"/>
+        <rect x="24" y="18" width="38" height="14" rx="5" fill="#082A26" stroke="#00FFD5" stroke-width="1.2"/>
+        <rect x="30" y="14" width="26" height="8" rx="4" fill="#0A3A34" stroke="#00DDC0" stroke-width="1"/>
+        <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00FFD5" opacity="0.55"/>
+        <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.35"/>
+        <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+        <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+        <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.15"/>
+        <g filter="url(#d1Glow)">
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#d1ArcGrad)" stroke-width="4" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#d1ArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+          <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#d1ArcGrad)" stroke-width="3" stroke-linecap="round" fill="none" class="beam-arc-3"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Light variant on light bg -->
+  <div class="compare-card light-bg">
+    <span class="card-label">logo-full-light.svg on light</span>
+    <div class="icon-frame" style="background:transparent;">
+      <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+        <defs>
+          <linearGradient id="l1BoardGrad" x1="0" y1="0" x2="0.3" y2="1"><stop stop-color="#E0FFF8"/><stop offset="1" stop-color="#D0F5ED"/></linearGradient>
+          <linearGradient id="l1ArcGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00897B"/><stop offset="1" stop-color="#00796B"/></linearGradient>
+          <filter id="l1Shadow" x="-10%" y="-10%" width="130%" height="130%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00796B" flood-opacity="0.18"/></filter>
+        </defs>
+        <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#l1BoardGrad)" stroke="#00897B" stroke-width="1.5" filter="url(#l1Shadow)"/>
+        <rect x="24" y="18" width="38" height="14" rx="5" fill="#D0F5ED" stroke="#00897B" stroke-width="1.2"/>
+        <rect x="30" y="14" width="26" height="8" rx="4" fill="#E0FFF8" stroke="#00796B" stroke-width="1"/>
+        <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00796B" opacity="0.6"/>
+        <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00897B" opacity="0.45"/>
+        <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00897B" opacity="0.3"/>
+        <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00897B" opacity="0.3"/>
+        <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00897B" opacity="0.2"/>
+        <g filter="url(#l1Shadow)">
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#l1ArcGrad)" stroke-width="4" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#l1ArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+          <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#l1ArcGrad)" stroke-width="3" stroke-linecap="round" fill="none" class="beam-arc-3"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Show what happens when you put the dark variant on light -->
+<h2 class="section-title">Dark Variant on Light (why it doesn't work)</h2>
+<div class="compare-row">
+  <div class="compare-card light-bg">
+    <span class="card-label">logo-full-dark.svg on white</span>
+    <div class="icon-frame" style="background:transparent;">
+      <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+        <defs>
+          <linearGradient id="d2BoardGrad" x1="0" y1="0" x2="0.3" y2="1"><stop stop-color="#0A3A34"/><stop offset="1" stop-color="#082A26"/></linearGradient>
+          <linearGradient id="d2ArcGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00FFD5"/><stop offset="1" stop-color="#00DDC0"/></linearGradient>
+          <filter id="d2Glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#d2BoardGrad)" stroke="#00FFD5" stroke-width="1.5" opacity="0.9"/>
+        <rect x="24" y="18" width="38" height="14" rx="5" fill="#082A26" stroke="#00FFD5" stroke-width="1.2"/>
+        <rect x="30" y="14" width="26" height="8" rx="4" fill="#0A3A34" stroke="#00DDC0" stroke-width="1"/>
+        <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00FFD5" opacity="0.55"/>
+        <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.35"/>
+        <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+        <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+        <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.15"/>
+        <g filter="url(#d2Glow)">
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#d2ArcGrad)" stroke-width="4" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#d2ArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+          <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#d2ArcGrad)" stroke-width="3" stroke-linecap="round" fill="none" class="beam-arc-3"/>
+        </g>
+      </svg>
+    </div>
+    <span class="card-note" style="color:#999;font-style:italic;">Glow washes out, neon aqua strokes lack contrast on white</span>
+  </div>
+
+  <div class="compare-card light-bg">
+    <span class="card-label">logo-full-light.svg on white</span>
+    <div class="icon-frame" style="background:transparent;">
+      <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+        <defs>
+          <linearGradient id="l2BoardGrad" x1="0" y1="0" x2="0.3" y2="1"><stop stop-color="#E0FFF8"/><stop offset="1" stop-color="#D0F5ED"/></linearGradient>
+          <linearGradient id="l2ArcGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00897B"/><stop offset="1" stop-color="#00796B"/></linearGradient>
+          <filter id="l2Shadow" x="-10%" y="-10%" width="130%" height="130%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#00796B" flood-opacity="0.18"/></filter>
+        </defs>
+        <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#l2BoardGrad)" stroke="#00897B" stroke-width="1.5" filter="url(#l2Shadow)"/>
+        <rect x="24" y="18" width="38" height="14" rx="5" fill="#D0F5ED" stroke="#00897B" stroke-width="1.2"/>
+        <rect x="30" y="14" width="26" height="8" rx="4" fill="#E0FFF8" stroke="#00796B" stroke-width="1"/>
+        <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00796B" opacity="0.6"/>
+        <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00897B" opacity="0.45"/>
+        <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00897B" opacity="0.3"/>
+        <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00897B" opacity="0.3"/>
+        <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00897B" opacity="0.2"/>
+        <g filter="url(#l2Shadow)">
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#l2ArcGrad)" stroke-width="4" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#l2ArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+          <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#l2ArcGrad)" stroke-width="3" stroke-linecap="round" fill="none" class="beam-arc-3"/>
+        </g>
+      </svg>
+    </div>
+    <span class="card-note" style="color:#00897B;">Teal strokes + drop shadow read cleanly on light</span>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SECTION 2: All icon variants on light             -->
+<!-- ══════════════════════════════════════════════════ -->
+<h2 class="section-title">Icon Variants on Light</h2>
+
+<div class="icon-grid">
+  <!-- Android Icon -->
+  <div class="icon-card">
+    <span class="card-label">Android Icon</span>
+    <div class="icon-frame" style="width:120px;height:120px;border-radius:50%;background:linear-gradient(135deg,#00FFD5,#00DDC0);box-shadow:0 4px 20px #00FFD533;">
+      <svg width="76" height="76" viewBox="0 0 120 120" fill="none">
+        <rect x="14" y="26" width="58" height="78" rx="12" fill="rgba(0,25,22,0.55)" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+        <rect x="24" y="18" width="38" height="14" rx="5" fill="rgba(0,25,22,0.55)" stroke="rgba(255,255,255,0.35)" stroke-width="1.2"/>
+        <rect x="30" y="14" width="26" height="8" rx="4" fill="rgba(0,30,26,0.5)" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+        <rect x="39" y="22" width="8" height="3" rx="1.5" fill="rgba(255,255,255,0.45)"/>
+        <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="rgba(255,255,255,0.55)"/>
+        <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="rgba(255,255,255,0.35)"/>
+        <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="rgba(255,255,255,0.35)"/>
+        <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="rgba(255,255,255,0.25)"/>
+        <path d="M80 48 A 20 20 0 0 1 80 78" stroke="black" stroke-width="4.5" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+        <path d="M90 39 A 32 32 0 0 1 90 87" stroke="black" stroke-width="4" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+        <path d="M100 30 A 44 44 0 0 1 100 96" stroke="black" stroke-width="3.5" stroke-linecap="round" fill="none" class="beam-arc-3"/>
+      </svg>
+    </div>
+    <span class="card-note">Self-contained circle bg — works on any surface</span>
+  </div>
+
+  <!-- Share Icon -->
+  <div class="icon-card">
+    <span class="card-label">Share Icon</span>
+    <div class="icon-frame" style="width:120px;height:120px;border-radius:50%;background:linear-gradient(135deg,#00FFD5,#00DDC0);box-shadow:0 4px 20px #00FFD533;">
+      <svg width="76" height="76" viewBox="0 0 120 120" fill="none">
+        <rect x="14" y="30" width="54" height="70" rx="8" fill="rgba(0,0,0,0.35)"/>
+        <rect x="22" y="23" width="34" height="12" rx="4" fill="rgba(0,0,0,0.3)"/>
+        <rect x="28" y="19" width="22" height="7" rx="3.5" fill="rgba(0,0,0,0.3)"/>
+        <rect x="34" y="26" width="10" height="3" rx="1.5" fill="rgba(255,255,255,0.45)"/>
+        <rect x="22" y="46" width="36" height="5" rx="2.5" fill="rgba(255,255,255,0.7)"/>
+        <rect x="22" y="56" width="25" height="5" rx="2.5" fill="rgba(255,255,255,0.5)"/>
+        <rect x="22" y="66" width="30" height="5" rx="2.5" fill="rgba(255,255,255,0.5)"/>
+        <path d="M74 46 A 20 20 0 0 1 74 80" stroke="black" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <path d="M86 37 A 32 32 0 0 1 86 89" stroke="black" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+        <path d="M98 28 A 44 44 0 0 1 98 98" stroke="black" stroke-width="5" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <span class="card-note">Compact variant for small sizes — thicker strokes</span>
+  </div>
+
+  <!-- Menu Bar (light macOS bar) -->
+  <div class="icon-card">
+    <span class="card-label">Menu Bar (light)</span>
+    <div class="icon-frame menubar-light">
+      <div class="menubar-dot"></div>
+      <svg width="20" height="18" viewBox="0 0 120 120" fill="none">
+        <rect x="14" y="26" width="58" height="78" rx="12" fill="none" stroke="#00897B" stroke-width="6"/>
+        <rect x="24" y="18" width="38" height="14" rx="5" fill="none" stroke="#00897B" stroke-width="5"/>
+        <rect x="30" y="14" width="26" height="8" rx="4" fill="none" stroke="#00897B" stroke-width="4"/>
+        <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00897B" opacity="0.75"/>
+        <rect x="24" y="44" width="30" height="4" rx="2" fill="#00897B" opacity="0.65"/>
+        <rect x="24" y="52" width="22" height="4" rx="2" fill="#00897B" opacity="0.45"/>
+        <rect x="24" y="60" width="26" height="4" rx="2" fill="#00897B" opacity="0.35"/>
+        <path d="M80 48 A 20 20 0 0 1 80 78" stroke="#00897B" stroke-width="5" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+        <path d="M90 39 A 32 32 0 0 1 90 87" stroke="#00897B" stroke-width="4.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+      </svg>
+      <div class="menubar-dot"></div>
+      <div class="menubar-dot"></div>
+    </div>
+    <span class="card-note">Teal strokes for light macOS menu bar</span>
+  </div>
+
+  <!-- Menu Bar (dark macOS bar, reference) -->
+  <div class="icon-card">
+    <span class="card-label">Menu Bar (dark)</span>
+    <div class="icon-frame" style="background:linear-gradient(180deg,#3a3a3c,#2c2c2e);border-radius:8px;width:160px;height:40px;flex-direction:row;gap:16px;padding:0 12px;">
+      <div class="menubar-dot" style="background:#666;"></div>
+      <svg width="20" height="18" viewBox="0 0 120 120" fill="none">
+        <rect x="14" y="26" width="58" height="78" rx="12" fill="none" stroke="#00FFD5" stroke-width="6"/>
+        <rect x="24" y="18" width="38" height="14" rx="5" fill="none" stroke="#00FFD5" stroke-width="5"/>
+        <rect x="30" y="14" width="26" height="8" rx="4" fill="none" stroke="#00FFD5" stroke-width="4"/>
+        <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00FFD5" opacity="0.75"/>
+        <rect x="24" y="44" width="30" height="4" rx="2" fill="#00FFD5" opacity="0.65"/>
+        <rect x="24" y="52" width="22" height="4" rx="2" fill="#00FFD5" opacity="0.45"/>
+        <rect x="24" y="60" width="26" height="4" rx="2" fill="#00FFD5" opacity="0.35"/>
+        <path d="M80 48 A 20 20 0 0 1 80 78" stroke="#00FFD5" stroke-width="5" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+        <path d="M90 39 A 32 32 0 0 1 90 87" stroke="#00FFD5" stroke-width="4.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+      </svg>
+      <div class="menubar-dot" style="background:#666;"></div>
+      <div class="menubar-dot" style="background:#666;"></div>
+    </div>
+    <span class="card-note">Original aqua strokes for dark menu bar</span>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- SECTION 3: Share menu — light vs dark OS          -->
+<!-- ══════════════════════════════════════════════════ -->
+<h2 class="section-title">Share Menu Context</h2>
+
+<div class="share-row-grid">
+  <!-- Light OS share sheet -->
+  <div class="share-card light-bg">
+    <span class="card-label">Light Mode Share Sheet</span>
+    <div class="share-sim light-mode">
+      <div class="share-row"><div class="share-icon gray-light"><svg width="14" height="14" viewBox="0 0 24 24" fill="#999"><rect x="3" y="3" width="18" height="18" rx="4"/></svg></div><span>Copy</span></div>
+      <div class="share-row"><div class="share-icon blue"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="6"/></svg></div><span>Messages</span></div>
+      <div class="share-row highlight">
+        <div class="share-icon" style="background:linear-gradient(135deg,#00FFD5,#00DDC0);border-radius:50%;">
+          <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
+            <rect x="4" y="22" width="64" height="84" rx="10" fill="rgba(0,0,0,0.35)"/>
+            <rect x="16" y="13" width="40" height="14" rx="5" fill="rgba(0,0,0,0.3)"/>
+            <rect x="24" y="9" width="24" height="7" rx="3.5" fill="rgba(0,0,0,0.3)"/>
+            <rect x="31" y="17" width="10" height="3" rx="1.5" fill="rgba(255,255,255,0.45)"/>
+            <rect x="16" y="40" width="40" height="5.5" rx="2.75" fill="rgba(255,255,255,0.7)"/>
+            <rect x="16" y="52" width="28" height="5.5" rx="2.75" fill="rgba(255,255,255,0.5)"/>
+            <rect x="16" y="64" width="35" height="5.5" rx="2.75" fill="rgba(255,255,255,0.5)"/>
+            <path d="M74 46 A 20 20 0 0 1 74 80" stroke="black" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M86 37 A 32 32 0 0 1 86 89" stroke="black" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+            <path d="M98 28 A 44 44 0 0 1 98 98" stroke="black" stroke-width="5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span>ClipRelay</span>
+      </div>
+      <div class="share-row"><div class="share-icon gray-light"><svg width="14" height="14" viewBox="0 0 24 24" fill="#999"><circle cx="12" cy="12" r="8"/></svg></div><span>Notes</span></div>
+    </div>
+    <span class="card-note">Aqua icon pops against light share sheet — distinct from all neighbors</span>
+  </div>
+
+  <!-- Dark OS share sheet (reference) -->
+  <div class="share-card dark-bg">
+    <span class="card-label">Dark Mode Share Sheet</span>
+    <div class="share-sim dark-mode">
+      <div class="share-row"><div class="share-icon gray-dark"><svg width="14" height="14" viewBox="0 0 24 24" fill="#888"><rect x="3" y="3" width="18" height="18" rx="4"/></svg></div><span>Copy</span></div>
+      <div class="share-row"><div class="share-icon blue"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="6"/></svg></div><span>Messages</span></div>
+      <div class="share-row highlight">
+        <div class="share-icon" style="background:linear-gradient(135deg,#00FFD5,#00DDC0);border-radius:50%;">
+          <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
+            <rect x="4" y="22" width="64" height="84" rx="10" fill="rgba(0,0,0,0.35)"/>
+            <rect x="16" y="13" width="40" height="14" rx="5" fill="rgba(0,0,0,0.3)"/>
+            <rect x="24" y="9" width="24" height="7" rx="3.5" fill="rgba(0,0,0,0.3)"/>
+            <rect x="31" y="17" width="10" height="3" rx="1.5" fill="rgba(255,255,255,0.45)"/>
+            <rect x="16" y="40" width="40" height="5.5" rx="2.75" fill="rgba(255,255,255,0.7)"/>
+            <rect x="16" y="52" width="28" height="5.5" rx="2.75" fill="rgba(255,255,255,0.5)"/>
+            <rect x="16" y="64" width="35" height="5.5" rx="2.75" fill="rgba(255,255,255,0.5)"/>
+            <path d="M74 46 A 20 20 0 0 1 74 80" stroke="black" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M86 37 A 32 32 0 0 1 86 89" stroke="black" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+            <path d="M98 28 A 44 44 0 0 1 98 98" stroke="black" stroke-width="5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span>ClipRelay</span>
+      </div>
+      <div class="share-row"><div class="share-icon gray-dark"><svg width="14" height="14" viewBox="0 0 24 24" fill="#888"><circle cx="12" cy="12" r="8"/></svg></div><span>Notes</span></div>
+    </div>
+    <span class="card-note" style="color:#6B6B7B;">Reference — same icon works on both</span>
+  </div>
+</div>
+
+</body>
+</html>
