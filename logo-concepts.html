@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipRelay — Logo Concepts (Animated)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&family=Instrument+Serif:ital@0;1&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0A0A0F;
+    --surface: #13131A;
+    --border: #1E1E2A;
+    --text: #E8E8ED;
+    --text-dim: #6B6B7B;
+    --neon: #39FF14;
+    --neon-dim: #39FF1433;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 60px 40px;
+  }
+
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 3.5rem;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #fff 30%, var(--neon));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    font-size: 1.1rem;
+    color: var(--text-dim);
+    margin-bottom: 80px;
+    font-weight: 300;
+  }
+
+  .concept {
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    padding: 48px;
+    margin-bottom: 48px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .concept::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--neon-dim), transparent);
+  }
+
+  .concept-header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+
+  .concept-label {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--neon);
+    background: var(--neon-dim);
+    padding: 4px 10px;
+    border-radius: 4px;
+  }
+
+  .concept-name {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.8rem;
+    font-weight: 400;
+  }
+
+  .concept-desc {
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    margin-bottom: 40px;
+    max-width: 600px;
+    line-height: 1.6;
+    font-weight: 300;
+  }
+
+  .variants {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+  }
+
+  .variant {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .variant-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+
+  .icon-frame {
+    width: 160px;
+    height: 160px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .icon-frame.transparent {
+    background: repeating-conic-gradient(#1a1a24 0% 25%, #13131a 0% 50%) 50% / 16px 16px;
+    border: 1px solid var(--border);
+  }
+
+  .icon-frame.neon-bg {
+    background: linear-gradient(135deg, #39FF14, #00CC00);
+    box-shadow: 0 8px 32px #39FF1444;
+  }
+
+  .icon-frame.menubar {
+    background: linear-gradient(180deg, #3a3a3c, #2c2c2e);
+    border-radius: 8px;
+    width: 160px;
+    height: 40px;
+    flex-direction: row;
+    gap: 16px;
+    padding: 0 12px;
+  }
+
+  .menubar-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #666;
+  }
+
+  .icon-frame svg { display: block; }
+
+  .share-sim {
+    width: 160px;
+    background: #1C1C1E;
+    border-radius: 14px;
+    padding: 10px 0;
+    border: 1px solid #2C2C2E;
+  }
+
+  .share-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    font-size: 0.72rem;
+    color: #aaa;
+  }
+
+  .share-row.highlight {
+    background: #2A2A2E;
+    color: #fff;
+    font-weight: 500;
+  }
+
+  .share-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .share-icon.gray { background: #3a3a3e; }
+  .share-icon.blue { background: #0A84FF; }
+  .share-icon.green { background: linear-gradient(135deg, #39FF14, #00CC00); }
+
+  /* ════════════════════════════════════════════ */
+  /*  BEAM ANIMATIONS                            */
+  /* ════════════════════════════════════════════ */
+
+  @keyframes beamPulse1 {
+    0%, 100% { opacity: 0.9; transform: translateX(0); }
+    50% { opacity: 1; transform: translateX(2px); }
+  }
+  @keyframes beamPulse2 {
+    0%, 100% { opacity: 0.55; transform: translateX(0); }
+    50% { opacity: 0.75; transform: translateX(3px); }
+  }
+  @keyframes beamPulse3 {
+    0%, 100% { opacity: 0.3; transform: translateX(0); }
+    50% { opacity: 0.5; transform: translateX(4px); }
+  }
+
+  .beam-arc-1 { animation: beamPulse1 2s ease-in-out infinite; }
+  .beam-arc-2 { animation: beamPulse2 2s ease-in-out 0.25s infinite; }
+  .beam-arc-3 { animation: beamPulse3 2s ease-in-out 0.5s infinite; }
+
+  @keyframes beamTextShimmer {
+    0%, 100% { opacity: 0.4; }
+    40% { opacity: 0.6; }
+  }
+
+  .beam-text-line {
+    animation: beamTextShimmer 3s ease-in-out infinite;
+  }
+  .beam-text-line:nth-child(2) { animation-delay: 0.4s; }
+  .beam-text-line:nth-child(3) { animation-delay: 0.8s; }
+  .beam-text-line:nth-child(4) { animation-delay: 1.2s; }
+
+  /* ════════════════════════════════════════════ */
+  /*  PORTAL ANIMATIONS                          */
+  /* ════════════════════════════════════════════ */
+
+  @keyframes portalRotate {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  @keyframes portalPulseGreen {
+    0%, 100% { r: 8; opacity: 1; }
+    50% { r: 10; opacity: 0.8; }
+  }
+
+  @keyframes portalPulseMac {
+    0%, 100% { r: 8; opacity: 0.8; }
+    50% { r: 9; opacity: 0.6; }
+  }
+
+  @keyframes particleFlow {
+    0% { transform: translateX(-14px); opacity: 0; }
+    30% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { transform: translateX(14px); opacity: 0; }
+  }
+
+  @keyframes portalRingRotate {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: -100; }
+  }
+
+  .portal-ring-mac {
+    stroke-dasharray: 8 12;
+    animation: portalRingRotate 6s linear infinite;
+    transform-origin: 32px 60px;
+  }
+
+  .portal-ring-android {
+    stroke-dasharray: 8 12;
+    animation: portalRingRotate 4s linear infinite reverse;
+    transform-origin: 88px 60px;
+  }
+
+  .portal-core-green {
+    animation: portalPulseGreen 2s ease-in-out infinite;
+  }
+
+  .portal-core-mac {
+    animation: portalPulseMac 2.5s ease-in-out infinite;
+  }
+
+  .portal-particle {
+    animation: particleFlow 2s ease-in-out infinite;
+  }
+  .portal-particle:nth-child(2) { animation-delay: 0.6s; }
+  .portal-particle:nth-child(3) { animation-delay: 1.2s; }
+
+  @keyframes streamPulse {
+    0%, 100% { stroke-opacity: 0.4; }
+    50% { stroke-opacity: 1; }
+  }
+
+  .portal-stream {
+    animation: streamPulse 2s ease-in-out infinite;
+  }
+  .portal-stream:nth-child(2) { animation-delay: 0.3s; }
+  .portal-stream:nth-child(3) { animation-delay: 0.6s; }
+
+  /* ════════════════════════════════════════════ */
+  /*  PRISM ANIMATIONS                           */
+  /* ════════════════════════════════════════════ */
+
+  @keyframes prismArrowTop {
+    0% { stroke-dashoffset: 50; }
+    30% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: 0; }
+  }
+
+  @keyframes prismArrowBot {
+    0%, 35% { stroke-dashoffset: 50; }
+    65% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: 0; }
+  }
+
+  @keyframes prismArrowHeadTop {
+    0%, 25% { opacity: 0; }
+    35%, 100% { opacity: 1; }
+  }
+
+  @keyframes prismArrowHeadBot {
+    0%, 60% { opacity: 0; }
+    70%, 100% { opacity: 1; }
+  }
+
+  .prism-arrow-top {
+    stroke-dasharray: 50;
+    animation: prismArrowTop 2.5s linear infinite;
+  }
+
+  .prism-arrow-bot {
+    stroke-dasharray: 50;
+    animation: prismArrowBot 2.5s linear infinite;
+  }
+
+  .prism-head-top {
+    animation: prismArrowHeadTop 2.5s linear infinite;
+  }
+
+  .prism-head-bot {
+    animation: prismArrowHeadBot 2.5s linear infinite;
+  }
+
+  @keyframes prismShine {
+    0%, 100% { opacity: 0; }
+    50% { opacity: 0.15; }
+  }
+
+  .prism-shine {
+    animation: prismShine 4s ease-in-out infinite;
+  }
+
+  @keyframes prismEdgeGlow {
+    0%, 100% { stroke-opacity: 0.2; }
+    50% { stroke-opacity: 0.5; }
+  }
+
+  .prism-edge-glow {
+    animation: prismEdgeGlow 3s ease-in-out infinite;
+  }
+
+  @keyframes prismDividerPulse {
+    0%, 100% { stroke-opacity: 0.12; }
+    50% { stroke-opacity: 0.3; }
+  }
+  .prism-divider {
+    animation: prismDividerPulse 3s ease-in-out infinite;
+  }
+
+</style>
+</head>
+<body>
+
+<h1>ClipRelay Logo Concepts</h1>
+<p class="subtitle">Refined concept — animated, with colored menu share icon options.</p>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- CONCEPT B2: "BEAM REFINED" -->
+<!-- ═══════════════════════════════════════════════ -->
+<div class="concept">
+  <div class="concept-header">
+    <span class="concept-label">Concept B2</span>
+    <span class="concept-name">Beam Refined</span>
+  </div>
+  <p class="concept-desc">
+    Bolder, more confident take on Beam. Thicker clipboard with stronger contrast, more aggressive neon signal arcs with a visible broadcast dot at the source. The clipboard itself has a subtle green tint instead of full green fill — letting the signal arcs own the color. Feels more like a brand mark, less like a stock icon.
+  </p>
+  <div class="variants">
+    <div class="variant">
+      <span class="variant-label">Full Logo</span>
+      <div class="icon-frame transparent">
+        <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="b2BoardGrad" x1="0" y1="0" x2="0.3" y2="1">
+              <stop stop-color="#1A3A28"/>
+              <stop offset="1" stop-color="#0F1F18"/>
+            </linearGradient>
+            <linearGradient id="b2ArcGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop stop-color="#39FF14"/>
+              <stop offset="1" stop-color="#2AE68A"/>
+            </linearGradient>
+            <filter id="b2Glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="4" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="b2GlowStrong" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="6" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          <!-- Clipboard body — dark with green edge -->
+          <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#b2BoardGrad)" stroke="#39FF14" stroke-width="1.5" opacity="0.9"/>
+          <!-- Clip top -->
+          <rect x="28" y="17" width="30" height="16" rx="6" fill="#0F1F18" stroke="#39FF14" stroke-width="1.2"/>
+          <rect x="34" y="14" width="18" height="8" rx="4" fill="#1A3A28" stroke="#2AE68A" stroke-width="1"/>
+          <!-- Text lines -->
+          <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#39FF14" opacity="0.35"/>
+          <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#39FF14" opacity="0.22"/>
+          <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#39FF14" opacity="0.22"/>
+          <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#39FF14" opacity="0.15"/>
+
+          <!-- Signal arcs — bolder, with gradient -->
+          <g filter="url(#b2Glow)">
+            <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#b2ArcGrad)" stroke-width="4" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+            <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#b2ArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+            <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#b2ArcGrad)" stroke-width="3" stroke-linecap="round" fill="none" class="beam-arc-3"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div class="variant">
+      <span class="variant-label">Android Icon</span>
+      <div class="icon-frame neon-bg">
+        <svg width="90" height="90" viewBox="0 0 120 120" fill="none">
+          <!-- Clipboard — dark on green bg -->
+          <rect x="14" y="26" width="58" height="78" rx="12" fill="rgba(0,20,8,0.55)" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+          <rect x="28" y="17" width="30" height="16" rx="6" fill="rgba(0,20,8,0.55)" stroke="rgba(255,255,255,0.35)" stroke-width="1.2"/>
+          <rect x="34" y="14" width="18" height="8" rx="4" fill="rgba(0,30,12,0.5)" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+          <!-- Text lines -->
+          <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="rgba(255,255,255,0.55)"/>
+          <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="rgba(255,255,255,0.35)"/>
+          <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="rgba(255,255,255,0.35)"/>
+          <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="rgba(255,255,255,0.25)"/>
+          <!-- Arcs -->
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="white" stroke-width="4.5" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="white" stroke-width="4" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+          <path d="M100 30 A 44 44 0 0 1 100 96" stroke="white" stroke-width="3.5" stroke-linecap="round" fill="none" class="beam-arc-3"/>
+        </svg>
+      </div>
+    </div>
+    <div class="variant">
+      <span class="variant-label">Share Menu</span>
+      <div class="share-sim">
+        <div class="share-row">
+          <div class="share-icon gray"><svg width="14" height="14" viewBox="0 0 24 24" fill="#888"><rect x="3" y="3" width="18" height="18" rx="4"/></svg></div>
+          <span>Copy</span>
+        </div>
+        <div class="share-row">
+          <div class="share-icon blue"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="6"/></svg></div>
+          <span>Messages</span>
+        </div>
+        <div class="share-row highlight">
+          <div class="share-icon green">
+            <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
+              <!-- Clipboard — bigger -->
+              <rect x="4" y="22" width="64" height="84" rx="10" fill="rgba(0,0,0,0.35)"/>
+              <!-- Clip top -->
+              <rect x="20" y="12" width="32" height="16" rx="5" fill="rgba(0,0,0,0.3)"/>
+              <!-- Text lines -->
+              <rect x="16" y="40" width="40" height="5.5" rx="2.75" fill="rgba(255,255,255,0.7)"/>
+              <rect x="16" y="52" width="28" height="5.5" rx="2.75" fill="rgba(255,255,255,0.5)"/>
+              <rect x="16" y="64" width="35" height="5.5" rx="2.75" fill="rgba(255,255,255,0.5)"/>
+              <!-- 3 signal arcs -->
+              <path d="M74 46 A 20 20 0 0 1 74 80" stroke="white" stroke-width="6" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+              <path d="M86 37 A 32 32 0 0 1 86 89" stroke="white" stroke-width="5.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+              <path d="M98 28 A 44 44 0 0 1 98 98" stroke="white" stroke-width="5" stroke-linecap="round" fill="none" class="beam-arc-3"/>
+            </svg>
+          </div>
+          <span>ClipRelay</span>
+        </div>
+        <div class="share-row">
+          <div class="share-icon gray"><svg width="14" height="14" viewBox="0 0 24 24" fill="#888"><circle cx="12" cy="12" r="8"/></svg></div>
+          <span>Notes</span>
+        </div>
+      </div>
+    </div>
+    <div class="variant">
+      <span class="variant-label">Share (Dark Arcs)</span>
+      <div class="share-sim">
+        <div class="share-row">
+          <div class="share-icon gray"><svg width="14" height="14" viewBox="0 0 24 24" fill="#888"><rect x="3" y="3" width="18" height="18" rx="4"/></svg></div>
+          <span>Copy</span>
+        </div>
+        <div class="share-row">
+          <div class="share-icon blue"><svg width="14" height="14" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="6"/></svg></div>
+          <span>Messages</span>
+        </div>
+        <div class="share-row highlight">
+          <div class="share-icon green">
+            <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
+              <!-- Clipboard -->
+              <rect x="4" y="22" width="64" height="84" rx="10" fill="rgba(0,0,0,0.35)"/>
+              <rect x="20" y="12" width="32" height="16" rx="5" fill="rgba(0,0,0,0.3)"/>
+              <!-- Text lines -->
+              <rect x="16" y="40" width="40" height="5.5" rx="2.75" fill="rgba(255,255,255,0.7)"/>
+              <rect x="16" y="52" width="28" height="5.5" rx="2.75" fill="rgba(255,255,255,0.5)"/>
+              <rect x="16" y="64" width="35" height="5.5" rx="2.75" fill="rgba(255,255,255,0.5)"/>
+              <!-- 3 dark signal arcs — no animation, solid black -->
+              <path d="M74 46 A 20 20 0 0 1 74 80" stroke="black" stroke-width="6" stroke-linecap="round" fill="none"/>
+              <path d="M86 37 A 32 32 0 0 1 86 89" stroke="black" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+              <path d="M98 28 A 44 44 0 0 1 98 98" stroke="black" stroke-width="5" stroke-linecap="round" fill="none"/>
+            </svg>
+          </div>
+          <span>ClipRelay</span>
+        </div>
+        <div class="share-row">
+          <div class="share-icon gray"><svg width="14" height="14" viewBox="0 0 24 24" fill="#888"><circle cx="12" cy="12" r="8"/></svg></div>
+          <span>Notes</span>
+        </div>
+      </div>
+    </div>
+    <div class="variant">
+      <span class="variant-label">Menu Bar (Mac)</span>
+      <div class="icon-frame menubar">
+        <div class="menubar-dot"></div>
+        <svg width="20" height="18" viewBox="0 0 120 120" fill="none">
+          <rect x="14" y="26" width="58" height="78" rx="12" fill="none" stroke="#39FF14" stroke-width="6"/>
+          <rect x="28" y="17" width="30" height="16" rx="6" fill="none" stroke="#39FF14" stroke-width="5"/>
+          <rect x="34" y="14" width="18" height="8" rx="4" fill="none" stroke="#39FF14" stroke-width="4"/>
+          <rect x="24" y="44" width="30" height="4" rx="2" fill="#39FF14" opacity="0.65"/>
+          <rect x="24" y="52" width="22" height="4" rx="2" fill="#39FF14" opacity="0.45"/>
+          <rect x="24" y="60" width="26" height="4" rx="2" fill="#39FF14" opacity="0.35"/>
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="#39FF14" stroke-width="5" stroke-linecap="round" fill="none" class="beam-arc-1"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="#39FF14" stroke-width="4.5" stroke-linecap="round" fill="none" class="beam-arc-2"/>
+        </svg>
+        <div class="menubar-dot"></div>
+        <div class="menubar-dot"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+</body>
+</html>
