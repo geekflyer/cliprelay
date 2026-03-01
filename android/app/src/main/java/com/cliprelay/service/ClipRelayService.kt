@@ -152,13 +152,16 @@ class ClipRelayService : Service() {
             }
             ACTION_RELOAD_PAIRING -> {
                 loadPairingState()
-                // If token was cleared (unpair), restart the entire BLE stack.
-                // server.close() is the only reliable way to tear down all
-                // central connections — cancelConnection() is not enough.
-                if (encryptionKey == null && bleStarted) {
-                    stopBleComponents()
+                // If token was cleared (unpair), stop the entire BLE stack.
+                // server.close() tears down all central connections, and we
+                // intentionally do NOT restart — there's nothing to connect to
+                // when unpaired. A new pairing via QR will trigger another
+                // RELOAD_PAIRING that restarts everything.
+                if (encryptionKey == null) {
+                    if (bleStarted) {
+                        stopBleComponents()
+                    }
                     sendConnectionBroadcast(false)
-                    ensureBleComponentsState()
                 } else if (BlePermissions.hasRequiredRuntimePermissions(this)) {
                     if (bleStarted) {
                         advertiser.restart()
