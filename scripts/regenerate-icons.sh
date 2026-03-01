@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Regenerate raster icon assets from SVG sources.
-# Requires: rsvg-convert (from librsvg) or falls back to qlmanage (macOS).
+# Requires: rsvg-convert (from librsvg).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
@@ -10,27 +10,16 @@ DESIGN="$ROOT/design"
 ANDROID_RES="$ROOT/android/app/src/main/res"
 MACOS_RES="$ROOT/macos/ClipRelayMac/Resources"
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
 has_cmd() { command -v "$1" &>/dev/null; }
+
+if ! has_cmd rsvg-convert; then
+  echo "ERROR: rsvg-convert is required. Install with: brew install librsvg" >&2
+  exit 1
+fi
 
 svg_to_png() {
   local svg="$1" out="$2" size="$3"
-  if has_cmd rsvg-convert; then
-    rsvg-convert -w "$size" -h "$size" "$svg" -o "$out"
-  elif has_cmd qlmanage; then
-    qlmanage -t -s "$size" -o /tmp "$svg" 2>/dev/null
-    local ql_out="/tmp/$(basename "$svg").png"
-    if [[ -f "$ql_out" ]]; then
-      mv "$ql_out" "$out"
-    else
-      echo "  SKIP: qlmanage could not convert $svg at ${size}px" >&2
-      return 1
-    fi
-  else
-    echo "  SKIP: no rsvg-convert or qlmanage available" >&2
-    return 1
-  fi
+  rsvg-convert -w "$size" -h "$size" "$svg" -o "$out"
 }
 
 # ─── Android mipmap icons ────────────────────────────────────────────────────
@@ -42,11 +31,13 @@ gen_android_density() {
   local dir="$ANDROID_RES/mipmap-$density"
   mkdir -p "$dir"
 
+  # Legacy launcher icon (full circle icon with bg)
   echo "  $density: ic_launcher.png (${launcher_size}px)"
-  svg_to_png "$DESIGN/logo-android-icon.svg" "$dir/ic_launcher.png" "$launcher_size" || true
+  svg_to_png "$DESIGN/logo-android-icon.svg" "$dir/ic_launcher.png" "$launcher_size"
 
+  # Adaptive icon foreground (mark only, transparent bg, safe-zone padded)
   echo "  $density: ic_launcher_foreground.png (${fg_size}px)"
-  svg_to_png "$DESIGN/logo-android-icon.svg" "$dir/ic_launcher_foreground.png" "$fg_size" || true
+  svg_to_png "$DESIGN/logo-android-foreground.svg" "$dir/ic_launcher_foreground.png" "$fg_size"
 }
 
 gen_android_density mdpi    48  108
@@ -60,34 +51,36 @@ gen_android_density xxxhdpi 192 432
 echo "=== macOS StatusBar icons ==="
 mkdir -p "$MACOS_RES"
 
+# Menu bar template images (black shapes, macOS auto-tints)
 echo "  StatusBarIcon.png (18px)"
-svg_to_png "$DESIGN/logo-menubar.svg" "$MACOS_RES/StatusBarIcon.png" 18 || true
+svg_to_png "$DESIGN/logo-menubar.svg" "$MACOS_RES/StatusBarIcon.png" 18
 
 echo "  StatusBarIcon@2x.png (36px)"
-svg_to_png "$DESIGN/logo-menubar.svg" "$MACOS_RES/StatusBarIcon@2x.png" 36 || true
+svg_to_png "$DESIGN/logo-menubar.svg" "$MACOS_RES/StatusBarIcon@2x.png" 36
 
 # ─── macOS AppIcon.icns ─────────────────────────────────────────────────────
 
 echo "=== macOS AppIcon.icns ==="
 
-if has_cmd rsvg-convert && has_cmd iconutil; then
+if has_cmd iconutil; then
   ICONSET="/tmp/ClipRelay.iconset"
   rm -rf "$ICONSET"
   mkdir -p "$ICONSET"
 
+  # App icon uses the dedicated appicon SVG (solid dark bg + glowing mark)
   for size in 16 32 128 256 512; do
     echo "  icon_${size}x${size}.png"
-    rsvg-convert -w "$size" -h "$size" "$DESIGN/logo-full-dark.svg" -o "$ICONSET/icon_${size}x${size}.png"
+    svg_to_png "$DESIGN/logo-appicon.svg" "$ICONSET/icon_${size}x${size}.png" "$size"
     double=$((size * 2))
     echo "  icon_${size}x${size}@2x.png (${double}px)"
-    rsvg-convert -w "$double" -h "$double" "$DESIGN/logo-full-dark.svg" -o "$ICONSET/icon_${size}x${size}@2x.png"
+    svg_to_png "$DESIGN/logo-appicon.svg" "$ICONSET/icon_${size}x${size}@2x.png" "$double"
   done
 
   iconutil -c icns -o "$MACOS_RES/AppIcon.icns" "$ICONSET"
   rm -rf "$ICONSET"
   echo "  -> AppIcon.icns generated"
 else
-  echo "  SKIP: need rsvg-convert + iconutil for .icns generation"
+  echo "  SKIP: iconutil not available (macOS only)"
 fi
 
 echo "=== Done ==="
