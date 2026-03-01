@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -48,9 +50,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.cliprelay.R
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -138,8 +145,6 @@ fun ClipRelayScreen(
             Spacer(modifier = Modifier.height(12.dp))
             StatusChip(state = state)
             Spacer(modifier = Modifier.weight(1f))
-            LogoIcon(modifier = Modifier.size(72.dp), tint = Aqua)
-            Spacer(modifier = Modifier.height(20.dp))
             MainCard(
                 state = state,
                 clipboardTransferFlow = clipboardTransferFlow,
@@ -265,7 +270,7 @@ private fun MainCard(
 
     val borderColor by animateColorAsState(
         targetValue = when (state) {
-            is AppState.Unpaired -> Color(0x08000000)
+            is AppState.Unpaired -> Color(0x1400FFD5)
             is AppState.Searching -> Color(0x1F00FFD5)
             is AppState.Connected -> Color(0x3300FFD5)
         },
@@ -280,20 +285,35 @@ private fun MainCard(
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
             .shadow(
-                elevation = if (isConnected) 6.dp else 3.dp,
+                elevation = if (isConnected) 8.dp else 5.dp,
                 shape = RoundedCornerShape(28.dp),
                 spotColor = if (isConnected) Color(0x1A00FFD5) else Color(0x1A000000)
             )
             .clip(RoundedCornerShape(28.dp))
             .background(Brush.verticalGradient(listOf(cardTopColor, Color.White)))
             .border(
-                width = if (isPaired) 1.dp else 0.5.dp,
+                width = 1.dp,
                 color = borderColor,
                 shape = RoundedCornerShape(28.dp)
             )
             .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 28.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // App icon above title
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Aqua),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(R.mipmap.ic_launcher_foreground),
+                    contentDescription = "ClipRelay icon",
+                    modifier = Modifier.size(64.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
             // Title
             Text(
                 text = "ClipRelay",
@@ -305,7 +325,7 @@ private fun MainCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Clipboard sync",
+                text = "Seamless clipboard sync to your Mac",
                 fontSize = 15.sp,
                 color = if (isPaired) Teal.copy(alpha = 0.45f) else Color(0x66000000),
                 modifier = Modifier.fillMaxWidth(),
@@ -314,7 +334,7 @@ private fun MainCard(
 
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider(
-                color = if (isPaired) Color(0x1400FFD5) else Color(0x0F000000),
+                color = if (isPaired) Color(0x1400FFD5) else Color(0x0F00FFD5),
                 thickness = 1.dp
             )
             Spacer(modifier = Modifier.height(24.dp))
@@ -354,7 +374,8 @@ private fun MainCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(28.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Teal
+                        containerColor = Aqua,
+                        contentColor = Teal
                     )
                 ) {
                     Text(
@@ -603,12 +624,47 @@ private fun FooterSection(isConnected: Boolean = false) {
         modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
     ) {
         Text(
-            text = "Clipboard syncs automatically in the background.",
+            text = buildAnnotatedString {
+                append("To share with your Mac, tap ")
+                withStyle(SpanStyle(
+                    color = Teal,
+                    fontWeight = FontWeight.SemiBold,
+                    background = Aqua.copy(alpha = 0.12f)
+                )) {
+                    append(" Share ")
+                }
+                append(" in any app and look for:")
+            },
             fontSize = 13.sp,
-            color = Color(0x4D000000),
+            color = Color(0x80000000),
             textAlign = TextAlign.Center,
             lineHeight = 20.sp
         )
+        Spacer(modifier = Modifier.height(12.dp))
+        // Share sheet preview mock — vertical layout matching Android share sheet
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Aqua),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(R.mipmap.ic_launcher_foreground),
+                    contentDescription = "ClipRelay icon",
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "ClipRelay",
+                fontSize = 12.sp,
+                color = Color(0x99000000)
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
         // Nav bar hint
         Box(
