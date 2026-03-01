@@ -87,13 +87,13 @@ fun PairingBurst(onBurstShown: () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF39FF14).copy(alpha = flashAlpha.value))
+                .background(Color(0xFF00FFD5).copy(alpha = flashAlpha.value))
         )
 
         // Expanding rings
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
-            val ringColor = Color(0xFF39FF14)
+            val ringColor = Color(0xFF00FFD5)
             rings.forEach { ring ->
                 if (ring.alpha.value > 0.01f && ring.radius.value > 0f) {
                     drawCircle(
@@ -122,7 +122,7 @@ fun PairingBurst(onBurstShown: () -> Unit) {
                 Icon(
                     imageVector = Icons.Filled.Check,
                     contentDescription = null,
-                    tint = Color(0xFF2E7D32),
+                    tint = Color(0xFF00796B),
                     modifier = Modifier
                         .size(40.dp)
                         .padding(4.dp)

@@ -86,8 +86,8 @@ private fun SearchingBeam(modifier: Modifier = Modifier) {
         val gapLen = 8f.dp.toPx()
         val period = dashLen + gapLen
         val fadeEnd = size.width * 0.55f
-        val neonGreen = Color(0xFF39FF14)
-        val darkGreen = Color(0xFF1B9E1B)
+        val neonGreen = Color(0xFF00FFD5)
+        val darkGreen = Color(0xFF009688)
 
         // Fading dashed line: draw segment by segment up to 55% width
         var xDash = (dashPhase.dp.toPx() % period) - period
@@ -187,8 +187,8 @@ private fun ConnectedBeam(
         val trackOffset = 8f.dp.toPx()
         val dashLen = 5f.dp.toPx()
         val gapLen = 7f.dp.toPx()
-        val neonGreen = Color(0xFF39FF14)
-        val darkGreen = Color(0xFF1B9E1B)
+        val neonGreen = Color(0xFF00FFD5)
+        val darkGreen = Color(0xFF009688)
         val packetRadius = 3.5f.dp.toPx()
 
         // Top track: left→right
@@ -259,7 +259,7 @@ private fun ConnectedBeam(
                 else -> 1f
             }.coerceIn(0f, 1f)
             drawRoundRect(
-                color = Color(0xFF2E7D32).copy(alpha = iconAlpha),
+                color = Color(0xFF00796B).copy(alpha = iconAlpha),
                 topLeft = Offset(cx - iconSize / 2f, trackY - iconSize / 2f),
                 size = Size(iconSize, iconSize),
                 cornerRadius = CornerRadius(3f.dp.toPx())
@@ -267,7 +267,7 @@ private fun ConnectedBeam(
             val tabW = iconSize * 0.4f
             val tabH = iconSize * 0.18f
             drawRoundRect(
-                color = Color(0xFF2E7D32).copy(alpha = iconAlpha),
+                color = Color(0xFF00796B).copy(alpha = iconAlpha),
                 topLeft = Offset(cx - tabW / 2f, trackY - iconSize / 2f - tabH * 0.5f),
                 size = Size(tabW, tabH),
                 cornerRadius = CornerRadius(2f.dp.toPx())

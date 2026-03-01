@@ -50,16 +50,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
 // ─── Color constants ─────────────────────────────────────────────────────────
-private val NeonGreen = Color(0xFF39FF14)
-private val DarkGreen = Color(0xFF2E7D32)
-private val TitleGreen = Color(0xFF1B5E20)
-private val TextGreen = Color(0xFF1B8A1B)
-private val IconGreen = Color(0xFF1B9E1B)
+private val NeonAqua = Color(0xFF00FFD5)
+private val DarkTeal = Color(0xFF00796B)
+private val TitleTeal = Color(0xFF00695C)
+private val TextTeal = Color(0xFF00897B)
+private val IconTeal = Color(0xFF009688)
 
-private val BgTopUnpaired = Color(0xFFE8F5E9)
-private val BgTopConnected = Color(0xFFD6F5D6)
+private val BgTopUnpaired = Color(0xFFE8F5F3)
+private val BgTopConnected = Color(0xFFD6F5EF)
 private val BgBottomUnpaired = Color(0xFFF0F0F0)
-private val BgBottomConnected = Color(0xFFF0F7F0)
+private val BgBottomConnected = Color(0xFFF0F7F5)
 
 // ─── Root Screen ─────────────────────────────────────────────────────────────
 @Composable
@@ -101,7 +101,7 @@ fun ClipRelayScreen(
                 // Dot grid
                 val dotSpacing = 22.dp.toPx()
                 val dotRadius = 1.dp.toPx()
-                val dotColor = if (isConnected) Color(0x0F003200) else Color(0x0E000000)
+                val dotColor = if (isConnected) Color(0x0F003028) else Color(0x0E000000)
                 var x = 0f
                 while (x <= size.width) {
                     var y = 0f
@@ -113,9 +113,9 @@ fun ClipRelayScreen(
                 }
                 // Aurora glow
                 val auroraColors = if (isConnected) {
-                    listOf(Color(0x2E39FF14), Color(0x0F39FF14), Color(0x0539FF14), Color.Transparent)
+                    listOf(Color(0x2E00FFD5), Color(0x0F00FFD5), Color(0x0500FFD5), Color.Transparent)
                 } else {
-                    listOf(Color(0x1A39FF14), Color(0x0A39FF14), Color(0x0339FF14), Color.Transparent)
+                    listOf(Color(0x1A00FFD5), Color(0x0A00FFD5), Color(0x0300FFD5), Color.Transparent)
                 }
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -170,15 +170,15 @@ private fun StatusChip(state: AppState) {
             label = "Not paired"
         )
         is AppState.Searching -> ChipStyle(
-            bg = Color(0x1439FF14),
+            bg = Color(0x1400FFD5),
             dot = Color(0xFFBDBDBD),
-            text = TextGreen,
+            text = TextTeal,
             label = "Waiting for Mac"
         )
         is AppState.Connected -> ChipStyle(
-            bg = Color(0x1A39FF14),
-            dot = NeonGreen,
-            text = TextGreen,
+            bg = Color(0x1A00FFD5),
+            dot = NeonAqua,
+            text = TextTeal,
             label = "Connected"
         )
     }
@@ -249,8 +249,8 @@ private fun MainCard(
     val cardTopColor by animateColorAsState(
         targetValue = when (state) {
             is AppState.Unpaired -> Color.White
-            is AppState.Searching -> Color(0xFFF5FFF5)
-            is AppState.Connected -> Color(0xFFF0FFF0)
+            is AppState.Searching -> Color(0xFFF5FFFC)
+            is AppState.Connected -> Color(0xFFF0FFFC)
         },
         animationSpec = tween(600),
         label = "cardTop"
@@ -259,8 +259,8 @@ private fun MainCard(
     val borderColor by animateColorAsState(
         targetValue = when (state) {
             is AppState.Unpaired -> Color(0x08000000)
-            is AppState.Searching -> Color(0x1F39FF14)
-            is AppState.Connected -> Color(0x3339FF14)
+            is AppState.Searching -> Color(0x1F00FFD5)
+            is AppState.Connected -> Color(0x3300FFD5)
         },
         animationSpec = tween(600),
         label = "cardBorder"
@@ -275,7 +275,7 @@ private fun MainCard(
             .shadow(
                 elevation = if (isConnected) 6.dp else 3.dp,
                 shape = RoundedCornerShape(28.dp),
-                spotColor = if (isConnected) Color(0x1A39FF14) else Color(0x1A000000)
+                spotColor = if (isConnected) Color(0x1A00FFD5) else Color(0x1A000000)
             )
             .clip(RoundedCornerShape(28.dp))
             .background(Brush.verticalGradient(listOf(cardTopColor, Color.White)))
@@ -292,7 +292,7 @@ private fun MainCard(
                 text = "ClipRelay",
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (isPaired) Color(0xFF0D7D0D) else TitleGreen,
+                color = if (isPaired) Color(0xFF00796B) else TitleTeal,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
             )
@@ -300,14 +300,14 @@ private fun MainCard(
             Text(
                 text = "Clipboard sync",
                 fontSize = 15.sp,
-                color = if (isPaired) Color(0xFF0D7D0D).copy(alpha = 0.45f) else Color(0x66000000),
+                color = if (isPaired) Color(0xFF00796B).copy(alpha = 0.45f) else Color(0x66000000),
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider(
-                color = if (isPaired) Color(0x1439FF14) else Color(0x0F000000),
+                color = if (isPaired) Color(0x1400FFD5) else Color(0x0F000000),
                 thickness = 1.dp
             )
             Spacer(modifier = Modifier.height(24.dp))
@@ -347,7 +347,7 @@ private fun MainCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(28.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = DarkGreen
+                        containerColor = DarkTeal
                     )
                 ) {
                     Text(
@@ -359,12 +359,12 @@ private fun MainCard(
                 }
             } else {
                 val unpairBg by animateColorAsState(
-                    targetValue = if (isConnected) Color(0x1439FF14) else Color(0x0F39FF14),
+                    targetValue = if (isConnected) Color(0x1400FFD5) else Color(0x0F00FFD5),
                     animationSpec = tween(400),
                     label = "unpairBg"
                 )
                 val unpairBorder by animateColorAsState(
-                    targetValue = if (isConnected) Color(0x2639FF14) else Color(0x1A39FF14),
+                    targetValue = if (isConnected) Color(0x2600FFD5) else Color(0x1A00FFD5),
                     animationSpec = tween(400),
                     label = "unpairBorder"
                 )
@@ -376,7 +376,7 @@ private fun MainCard(
                     shape = RoundedCornerShape(28.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = unpairBg,
-                        contentColor = TextGreen
+                        contentColor = TextTeal
                     ),
                     elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp)
                 ) {
@@ -405,17 +405,17 @@ private fun DeviceNode(
     val isActive = if (isPhone) isPaired else isConnected
 
     val iconBg by animateColorAsState(
-        targetValue = if (isActive) Color(0x1439FF14) else Color(0x0D000000),
+        targetValue = if (isActive) Color(0x1400FFD5) else Color(0x0D000000),
         animationSpec = tween(400),
         label = "iconBg"
     )
     val iconTint by animateColorAsState(
-        targetValue = if (isActive) IconGreen else Color(0x40000000),
+        targetValue = if (isActive) IconTeal else Color(0x40000000),
         animationSpec = tween(400),
         label = "iconTint"
     )
     val borderAlpha by animateColorAsState(
-        targetValue = if (isActive) Color(0x1F39FF14) else Color.Transparent,
+        targetValue = if (isActive) Color(0x1F00FFD5) else Color.Transparent,
         animationSpec = tween(400),
         label = "borderAlpha"
     )

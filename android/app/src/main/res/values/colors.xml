@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#39FF14</color>
+    <color name="ic_launcher_background">#00FFD5</color>
 
-    <!-- Greens -->
-    <color name="green_neon">#39FF14</color>
-    <color name="green_dark">#2E7D32</color>
-    <color name="green_title">#1B5E20</color>
-    <color name="green_text">#1B8A1B</color>
-    <color name="green_icon">#1B9E1B</color>
+    <!-- Aqua accent -->
+    <color name="aqua_neon">#00FFD5</color>
+    <color name="teal_dark">#00796B</color>
+    <color name="teal_title">#00695C</color>
+    <color name="teal_text">#00897B</color>
+    <color name="teal_icon">#009688</color>
 
     <!-- Backgrounds -->
-    <color name="bg_top_unpaired">#E8F5E9</color>
-    <color name="bg_top_connected">#D6F5D6</color>
+    <color name="bg_top_unpaired">#E8F5F3</color>
+    <color name="bg_top_connected">#D6F5EF</color>
     <color name="bg_bottom_unpaired">#F0F0F0</color>
-    <color name="bg_bottom_connected">#F0F7F0</color>
+    <color name="bg_bottom_connected">#F0F7F5</color>
 
     <!-- UI -->
     <color name="card_white">#FFFFFF</color>
