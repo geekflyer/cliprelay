@@ -139,6 +139,7 @@ class ClipRelayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        loadPairingState()
         ensureBleComponentsState()
 
         when (intent?.action) {
@@ -151,7 +152,6 @@ class ClipRelayService : Service() {
                 }
             }
             ACTION_RELOAD_PAIRING -> {
-                loadPairingState()
                 // If token was cleared (unpair), stop the entire BLE stack.
                 // server.close() tears down all central connections, and we
                 // intentionally do NOT restart — there's nothing to connect to
@@ -159,7 +159,7 @@ class ClipRelayService : Service() {
                 // RELOAD_PAIRING that restarts everything.
                 if (encryptionKey == null) {
                     if (bleStarted) {
-                        stopBleComponents()
+                        stopBleComponents(disconnectCentralsFirst = true)
                     }
                     sendConnectionBroadcast(false)
                 } else if (BlePermissions.hasRequiredRuntimePermissions(this)) {
@@ -189,6 +189,14 @@ class ClipRelayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun ensureBleComponentsState(restartIfRunning: Boolean = false) {
+        if (encryptionKey == null) {
+            if (bleStarted) {
+                Log.d(TAG, "Pairing token missing; stopping BLE components")
+                stopBleComponents(disconnectCentralsFirst = true)
+            }
+            return
+        }
+
         if (!BlePermissions.hasRequiredRuntimePermissions(this)) {
             if (bleStarted) {
                 Log.w(TAG, "BLE runtime permissions missing; stopping BLE components")
@@ -227,7 +235,13 @@ class ClipRelayService : Service() {
         }
     }
 
-    private fun stopBleComponents(broadcastDisconnected: Boolean = true) {
+    private fun stopBleComponents(
+        broadcastDisconnected: Boolean = true,
+        disconnectCentralsFirst: Boolean = false
+    ) {
+        if (disconnectCentralsFirst) {
+            gattServer.disconnectAllCentrals()
+        }
         advertiser.stop()
         gattServer.stop()
         bleStarted = false
