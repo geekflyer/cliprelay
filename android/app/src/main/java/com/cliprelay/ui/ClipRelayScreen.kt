@@ -343,87 +343,105 @@ private fun MainCard(
             )
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Device row — top-aligned so icons line up regardless of label height
-            Row(
+            // Device row with background lock watermark when connected
+            val lockAlpha by animateColorAsState(
+                targetValue = if (isConnected) Aqua.copy(alpha = 0.06f) else Color.Transparent,
+                animationSpec = tween(800),
+                label = "lockAlpha"
+            )
+            Box(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                contentAlignment = Alignment.Center
             ) {
-                DeviceNode(
-                    isPhone = true,
-                    state = state,
-                    label = "This phone"
-                )
-                // Offset beam to vertically center on the 80dp icon boxes
-                BeamCanvas(
-                    state = state,
-                    clipboardTransferFlow = clipboardTransferFlow,
+                // Big lock watermark behind device row
+                Canvas(
                     modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .padding(horizontal = 8.dp)
-                        .offset(y = 20.dp)
-                )
-                DeviceNode(
-                    isPhone = false,
-                    state = state,
-                    label = deviceName ?: "Mac"
-                )
+                        .size(80.dp)
+                        .offset(y = 4.dp)
+                ) {
+                    val c = lockAlpha
+                    if (c != Color.Transparent) {
+                        val w = size.width
+                        val h = size.height
+                        val cx = w / 2f
+
+                        // Lock body
+                        val bodyW = w * 0.58f
+                        val bodyH = h * 0.38f
+                        val bodyTop = h * 0.52f
+                        drawRoundRect(
+                            color = c,
+                            topLeft = Offset(cx - bodyW / 2f, bodyTop),
+                            size = Size(bodyW, bodyH),
+                            cornerRadius = CornerRadius(bodyW * 0.15f)
+                        )
+
+                        // Shackle arc
+                        val sW = bodyW * 0.62f
+                        val sH = h * 0.28f
+                        val shackleStroke = bodyW * 0.13f
+                        drawArc(
+                            color = c,
+                            startAngle = 180f,
+                            sweepAngle = 180f,
+                            useCenter = false,
+                            topLeft = Offset(cx - sW / 2f, bodyTop - sH),
+                            size = Size(sW, sH),
+                            style = Stroke(shackleStroke, cap = StrokeCap.Round)
+                        )
+
+                        // Shackle legs
+                        val legTop = bodyTop - sH / 2f
+                        drawLine(c, Offset(cx - sW / 2f, legTop), Offset(cx - sW / 2f, bodyTop), shackleStroke)
+                        drawLine(c, Offset(cx + sW / 2f, legTop), Offset(cx + sW / 2f, bodyTop), shackleStroke)
+                    }
+                }
+
+                // Device row on top
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    DeviceNode(
+                        isPhone = true,
+                        state = state,
+                        label = "This phone"
+                    )
+                    // Offset beam to vertically center on the 80dp icon boxes
+                    BeamCanvas(
+                        state = state,
+                        clipboardTransferFlow = clipboardTransferFlow,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .padding(horizontal = 8.dp)
+                            .offset(y = 20.dp)
+                    )
+                    DeviceNode(
+                        isPhone = false,
+                        state = state,
+                        label = deviceName ?: "Mac"
+                    )
+                }
             }
 
-            // Security indicator
+            // Security label
             AnimatedVisibility(
                 visible = isConnected,
                 enter = fadeIn(tween(800)),
                 exit = fadeOut(tween(300))
             ) {
-                Row(
+                Text(
+                    text = "End-to-end encrypted",
+                    fontSize = 11.sp,
+                    color = Teal.copy(alpha = 0.4f),
+                    fontWeight = FontWeight.Medium,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Canvas(modifier = Modifier.size(11.dp)) {
-                        val lockColor = Teal.copy(alpha = 0.4f)
-                        val w = size.width
-                        val h = size.height
-                        // Lock body
-                        val bodyW = w * 0.72f
-                        val bodyH = h * 0.45f
-                        val bodyTop = h * 0.50f
-                        drawRoundRect(
-                            color = lockColor,
-                            topLeft = Offset((w - bodyW) / 2f, bodyTop),
-                            size = Size(bodyW, bodyH),
-                            cornerRadius = CornerRadius(w * 0.08f)
-                        )
-                        // Shackle arc
-                        val sW = w * 0.46f
-                        val sH = h * 0.34f
-                        drawArc(
-                            color = lockColor,
-                            startAngle = 180f,
-                            sweepAngle = 180f,
-                            useCenter = false,
-                            topLeft = Offset((w - sW) / 2f, bodyTop - sH),
-                            size = Size(sW, sH),
-                            style = Stroke(w * 0.12f, cap = StrokeCap.Round)
-                        )
-                        // Shackle legs
-                        val legX1 = (w - sW) / 2f
-                        val legX2 = (w + sW) / 2f
-                        drawLine(lockColor, Offset(legX1, bodyTop - sH / 2f), Offset(legX1, bodyTop), w * 0.12f)
-                        drawLine(lockColor, Offset(legX2, bodyTop - sH / 2f), Offset(legX2, bodyTop), w * 0.12f)
-                    }
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = "End-to-end encrypted",
-                        fontSize = 11.sp,
-                        color = Teal.copy(alpha = 0.4f),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                        .padding(top = 8.dp),
+                    textAlign = TextAlign.Center
+                )
             }
 
             Spacer(modifier = Modifier.height(28.dp))

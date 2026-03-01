@@ -18,17 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.Flow
 
 @Composable
@@ -164,15 +157,6 @@ private fun ConnectedBeam(
         label = "masterTime"
     )
 
-    val badgeBorderAlpha by transition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.45f,
-        animationSpec = infiniteRepeatable(tween(2500), RepeatMode.Reverse),
-        label = "badgeBorder"
-    )
-
-    val textMeasurer = rememberTextMeasurer()
-
     // Clipboard icon: -1f = inactive, 0..1 = animating
     var clipProgress by remember { mutableStateOf(-1f) }
     var clipGoesRight by remember { mutableStateOf(true) }
@@ -262,96 +246,6 @@ private fun ConnectedBeam(
                 center = Offset((1f - progress) * size.width, cy + trackOffset)
             )
         }
-
-        // ── Encryption pill badge at beam center ──
-        val badgeLabel = textMeasurer.measure(
-            "E2EE",
-            TextStyle(
-                fontSize = 9.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.5.sp
-            )
-        )
-
-        val lockIconSize = 10f.dp.toPx()
-        val iconTextGap = 3f.dp.toPx()
-        val badgePadH = 8f.dp.toPx()
-        val badgePadV = 4f.dp.toPx()
-
-        val contentWidth = lockIconSize + iconTextGap + badgeLabel.size.width
-        val badgeW = contentWidth + badgePadH * 2
-        val badgeH = maxOf(badgeLabel.size.height.toFloat(), lockIconSize) + badgePadV * 2
-        val badgeL = (size.width - badgeW) / 2f
-        val badgeT = cy - badgeH / 2f
-        val cornerR = CornerRadius(badgeH / 2f)
-
-        // Subtle glow behind badge
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(neonGreen.copy(alpha = 0.12f), Color.Transparent),
-                center = Offset(size.width / 2f, cy),
-                radius = badgeH * 1.5f
-            ),
-            radius = badgeH * 1.5f,
-            center = Offset(size.width / 2f, cy)
-        )
-
-        // Badge background
-        drawRoundRect(Color.White, Offset(badgeL, badgeT), Size(badgeW, badgeH), cornerR)
-
-        // Badge border (pulsing)
-        drawRoundRect(
-            neonGreen.copy(alpha = badgeBorderAlpha),
-            Offset(badgeL, badgeT), Size(badgeW, badgeH), cornerR,
-            style = Stroke(1f.dp.toPx())
-        )
-
-        // Lock icon (left side of badge)
-        val lockL = badgeL + badgePadH
-        val lockT = cy - lockIconSize / 2f
-        val lockColor = darkGreen
-
-        // Lock body
-        val lBodyW = lockIconSize * 0.72f
-        val lBodyH = lockIconSize * 0.45f
-        val lBodyTop = lockT + lockIconSize * 0.50f
-        drawRoundRect(
-            color = lockColor,
-            topLeft = Offset(lockL + (lockIconSize - lBodyW) / 2f, lBodyTop),
-            size = Size(lBodyW, lBodyH),
-            cornerRadius = CornerRadius(lockIconSize * 0.08f)
-        )
-
-        // Lock shackle arc
-        val sW = lockIconSize * 0.46f
-        val sH = lockIconSize * 0.34f
-        val shackleStrokeW = lockIconSize * 0.12f
-        drawArc(
-            color = lockColor,
-            startAngle = 180f,
-            sweepAngle = 180f,
-            useCenter = false,
-            topLeft = Offset(lockL + (lockIconSize - sW) / 2f, lBodyTop - sH),
-            size = Size(sW, sH),
-            style = Stroke(shackleStrokeW, cap = StrokeCap.Round)
-        )
-
-        // Lock shackle legs
-        val legX1 = lockL + (lockIconSize - sW) / 2f
-        val legX2 = lockL + (lockIconSize + sW) / 2f
-        val shackleLegTop = lBodyTop - sH / 2f
-        drawLine(lockColor, Offset(legX1, shackleLegTop), Offset(legX1, lBodyTop), shackleStrokeW)
-        drawLine(lockColor, Offset(legX2, shackleLegTop), Offset(legX2, lBodyTop), shackleStrokeW)
-
-        // "E2EE" text
-        drawText(
-            badgeLabel,
-            color = darkGreen,
-            topLeft = Offset(
-                lockL + lockIconSize + iconTextGap,
-                cy - badgeLabel.size.height / 2f
-            )
-        )
 
         // Clipboard icon — only visible during an actual transfer event
         if (clipProgressSnapshot >= 0f) {
