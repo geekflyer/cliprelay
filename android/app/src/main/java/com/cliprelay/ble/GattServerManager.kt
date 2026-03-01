@@ -126,6 +126,19 @@ class GattServerManager(
         return true
     }
 
+    /**
+     * Forcibly disconnect all connected centrals (e.g. after unpair)
+     * while keeping the GATT server itself running.
+     */
+    fun disconnectAllCentrals() {
+        val srv = server ?: return
+        val devices = callback.connectedDevicesSnapshot()
+        for (device in devices) {
+            Log.d(TAG, "Forcibly disconnecting central ${device.address}")
+            srv.cancelConnection(device)
+        }
+    }
+
     fun stop() {
         server?.close()
         callback.server = null

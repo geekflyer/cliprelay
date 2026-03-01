@@ -152,6 +152,11 @@ class ClipRelayService : Service() {
             }
             ACTION_RELOAD_PAIRING -> {
                 loadPairingState()
+                // If token was cleared (unpair), disconnect all centrals so Mac
+                // immediately sees the disconnection instead of staying green.
+                if (encryptionKey == null && bleStarted) {
+                    gattServer.disconnectAllCentrals()
+                }
                 if (BlePermissions.hasRequiredRuntimePermissions(this)) {
                     if (bleStarted) {
                         advertiser.restart()
