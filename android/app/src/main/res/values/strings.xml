@@ -19,4 +19,6 @@
     <string name="qr_loading_subtitle">Downloading required barcode module from Google Play services. Keep this screen open.</string>
     <string name="qr_loading_retry">Retry %1$d of %2$d</string>
     <string name="qr_module_still_downloading">Barcode scanner is still downloading. Please try again shortly.</string>
+    <string name="auto_clear_setting_title">Auto-clear synced clipboard</string>
+    <string name="auto_clear_setting_subtitle">Clear Mac-synced clipboard text after 60 seconds.</string>
 </resources>

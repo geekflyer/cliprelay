@@ -19,10 +19,12 @@ import androidx.core.content.ContextCompat
 import com.cliprelay.pairing.PairingStore
 import com.cliprelay.permissions.BlePermissions
 import com.cliprelay.service.ClipRelayService
+import com.cliprelay.settings.ClipboardSettingsStore
 
 class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+    private lateinit var clipboardSettingsStore: ClipboardSettingsStore
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -65,20 +67,24 @@ class MainActivity : AppCompatActivity() {
 
         requestRuntimePermissions()
         ensureServiceRunning()
+        clipboardSettingsStore = ClipboardSettingsStore(this)
 
         val isPaired = PairingStore(this).loadToken() != null
         val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
             .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
-        viewModel.initState(isPaired, deviceName)
+        val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
+        viewModel.initState(isPaired, deviceName, autoClearEnabled)
 
         setContent {
             val state by viewModel.state.collectAsState()
             val showBurst by viewModel.showBurst.collectAsState()
+            val autoClearEnabled by viewModel.autoClearEnabled.collectAsState()
 
             ClipRelayScreen(
                 state = state,
                 showBurst = showBurst,
                 clipboardTransferFlow = viewModel.clipboardTransfer,
+                autoClearEnabled = autoClearEnabled,
                 onPairClick = {
                     scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
                 },
@@ -92,6 +98,10 @@ class MainActivity : AppCompatActivity() {
                 },
                 onBurstShown = {
                     viewModel.onBurstShown()
+                },
+                onAutoClearSettingChanged = { enabled ->
+                    viewModel.onAutoClearSettingChanged(enabled)
+                    clipboardSettingsStore.setAutoClearSyncedClipboardEnabled(enabled)
                 }
             )
         }

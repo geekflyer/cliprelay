@@ -27,11 +27,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,6 +53,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -74,9 +79,11 @@ fun ClipRelayScreen(
     state: AppState,
     showBurst: Boolean,
     clipboardTransferFlow: Flow<Boolean> = emptyFlow(),
+    autoClearEnabled: Boolean,
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
     onBurstShown: () -> Unit,
+    onAutoClearSettingChanged: (Boolean) -> Unit,
 ) {
     val isConnected = state is AppState.Connected
     val isPaired = state !is AppState.Unpaired
@@ -148,8 +155,10 @@ fun ClipRelayScreen(
             MainCard(
                 state = state,
                 clipboardTransferFlow = clipboardTransferFlow,
+                autoClearEnabled = autoClearEnabled,
                 onPairClick = onPairClick,
-                onUnpairClick = onUnpairClick
+                onUnpairClick = onUnpairClick,
+                onAutoClearSettingChanged = onAutoClearSettingChanged
             )
             Spacer(modifier = Modifier.weight(1f))
             FooterSection()
@@ -252,8 +261,10 @@ private fun BlinkingDot(color: Color) {
 private fun MainCard(
     state: AppState,
     clipboardTransferFlow: Flow<Boolean>,
+    autoClearEnabled: Boolean,
     onPairClick: () -> Unit,
-    onUnpairClick: () -> Unit
+    onUnpairClick: () -> Unit,
+    onAutoClearSettingChanged: (Boolean) -> Unit
 ) {
     val isPaired = state !is AppState.Unpaired
     val isConnected = state is AppState.Connected
@@ -488,7 +499,69 @@ private fun MainCard(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            AutoClearSettingRow(
+                enabled = autoClearEnabled,
+                onEnabledChange = onAutoClearSettingChanged
+            )
         }
+    }
+}
+
+@Composable
+private fun AutoClearSettingRow(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
+) {
+    val toggleBg = if (enabled) Color(0x1400FFD5) else Color(0x08000000)
+    val toggleBorder = if (enabled) Color(0x2B00FFD5) else Color(0x14000000)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(toggleBg)
+            .border(1.dp, toggleBorder, RoundedCornerShape(18.dp))
+            .toggleable(
+                value = enabled,
+                role = Role.Switch,
+                onValueChange = onEnabledChange
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.auto_clear_setting_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xCC000000)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.auto_clear_setting_subtitle),
+                fontSize = 12.sp,
+                color = Color(0x80000000),
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Switch(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Teal,
+                checkedTrackColor = Aqua.copy(alpha = 0.45f),
+                checkedBorderColor = Aqua.copy(alpha = 0.60f),
+                uncheckedThumbColor = Color(0xFF7A7A7A),
+                uncheckedTrackColor = Color(0x15000000),
+                uncheckedBorderColor = Color(0x40000000)
+            )
+        )
     }
 }
 

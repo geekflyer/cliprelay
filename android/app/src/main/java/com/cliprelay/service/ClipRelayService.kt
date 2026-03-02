@@ -25,6 +25,7 @@ import com.cliprelay.crypto.E2ECrypto
 import com.cliprelay.debug.DebugSmokeProbe
 import com.cliprelay.permissions.BlePermissions
 import com.cliprelay.pairing.PairingStore
+import com.cliprelay.settings.ClipboardSettingsStore
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
@@ -63,11 +64,14 @@ class ClipRelayService : Service() {
     private lateinit var gattCallback: GattServerCallback
     private lateinit var advertiser: Advertiser
     private lateinit var clipboardWriter: ClipboardWriter
+    private lateinit var clipboardSettingsStore: ClipboardSettingsStore
     private lateinit var pairingStore: PairingStore
 
     private val transferExecutor = Executors.newSingleThreadExecutor()
     private val inboundStateMachine = BleInboundStateMachine()
     private val staleConnectionHandler = Handler(Looper.getMainLooper())
+    private val clipboardAutoClearHandler = Handler(Looper.getMainLooper())
+    private var pendingClipboardAutoClear: Runnable? = null
     private var bleHealthWindowStartedAtMs = 0L
     private var bleHealthRestartCountInWindow = 0
     private var lastBleHealthRestartAtMs = 0L
@@ -103,6 +107,7 @@ class ClipRelayService : Service() {
         super.onCreate()
 
         clipboardWriter = ClipboardWriter(this)
+        clipboardSettingsStore = ClipboardSettingsStore(this)
         pairingStore = PairingStore(this)
 
         gattCallback = GattServerCallback(
@@ -142,6 +147,7 @@ class ClipRelayService : Service() {
     override fun onDestroy() {
         isDestroyed = true
         staleConnectionHandler.removeCallbacksAndMessages(null)
+        clipboardAutoClearHandler.removeCallbacksAndMessages(null)
         unregisterReceiver(bluetoothStateReceiver)
         transferExecutor.shutdownNow()
         stopBleComponents()
@@ -308,8 +314,30 @@ class ClipRelayService : Service() {
 
         lastInboundHash = hash
         clipboardWriter.writeText(decodedText)
+        scheduleClipboardAutoClear(decodedText)
         sendClipboardTransferBroadcast(fromMac = true)
         DebugSmokeProbe.onInboundClipboardApplied(this, decodedText)
+    }
+
+    private fun scheduleClipboardAutoClear(inboundText: String) {
+        pendingClipboardAutoClear?.let {
+            clipboardAutoClearHandler.removeCallbacks(it)
+            pendingClipboardAutoClear = null
+        }
+
+        if (!clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()) {
+            return
+        }
+
+        val clearRunnable = Runnable {
+            pendingClipboardAutoClear = null
+            if (!clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()) {
+                return@Runnable
+            }
+            clipboardWriter.clearClipIfMatches(inboundText)
+        }
+        pendingClipboardAutoClear = clearRunnable
+        clipboardAutoClearHandler.postDelayed(clearRunnable, ClipboardSettingsStore.AUTO_CLEAR_DELAY_MS)
     }
 
     private fun handleAvailableMetadata(deviceId: String, metadata: ByteArray) {

@@ -20,12 +20,16 @@ class MainViewModel : ViewModel() {
     private val _showBurst = MutableStateFlow(false)
     val showBurst: StateFlow<Boolean> = _showBurst.asStateFlow()
 
+    private val _autoClearEnabled = MutableStateFlow(false)
+    val autoClearEnabled: StateFlow<Boolean> = _autoClearEnabled.asStateFlow()
+
     // Emits true = Mac→Android, false = Android→Mac
     private val _clipboardTransfer = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val clipboardTransfer: SharedFlow<Boolean> = _clipboardTransfer
 
-    fun initState(isPaired: Boolean, deviceName: String? = null) {
+    fun initState(isPaired: Boolean, deviceName: String? = null, autoClearEnabled: Boolean = false) {
         _state.value = if (isPaired) AppState.Searching(deviceName) else AppState.Unpaired
+        _autoClearEnabled.value = autoClearEnabled
     }
 
     fun onPaired() {
@@ -49,5 +53,9 @@ class MainViewModel : ViewModel() {
 
     fun onClipboardTransfer(fromMac: Boolean) {
         _clipboardTransfer.tryEmit(fromMac)
+    }
+
+    fun onAutoClearSettingChanged(enabled: Boolean) {
+        _autoClearEnabled.value = enabled
     }
 }
