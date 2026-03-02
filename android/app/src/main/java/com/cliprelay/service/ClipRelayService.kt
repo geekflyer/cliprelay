@@ -51,6 +51,9 @@ class ClipRelayService : Service() {
         private const val MAX_CLIPBOARD_BYTES = 102_400
         private const val STALE_CONNECTION_CHECK_INTERVAL_MS = 60_000L
         private const val STALE_CONNECTION_TIMEOUT_SECONDS = 90
+        private const val BLE_HEALTH_RESTART_WINDOW_MS = 10 * 60_000L
+        private const val BLE_HEALTH_RESTART_LIMIT = 3
+        private const val BLE_HEALTH_RESTART_MIN_INTERVAL_MS = 30_000L
         private const val PAYLOAD_TYPE_TEXT = "text/plain"
         private const val PAYLOAD_TYPE_CONTROL = "application/x-cliprelay-control"
         private const val CONTROL_EVENT_ANDROID_UNPAIRED = "android_unpaired"
@@ -65,6 +68,9 @@ class ClipRelayService : Service() {
     private val transferExecutor = Executors.newSingleThreadExecutor()
     private val inboundStateMachine = BleInboundStateMachine()
     private val staleConnectionHandler = Handler(Looper.getMainLooper())
+    private var bleHealthWindowStartedAtMs = 0L
+    private var bleHealthRestartCountInWindow = 0
+    private var lastBleHealthRestartAtMs = 0L
     @Volatile
     private var bleStarted = false
     @Volatile
@@ -174,7 +180,8 @@ class ClipRelayService : Service() {
                     sendConnectionBroadcast(false)
                 } else if (BlePermissions.hasRequiredRuntimePermissions(this)) {
                     if (bleStarted) {
-                        advertiser.restart()
+                        stopBleComponents(broadcastDisconnected = false)
+                        ensureBleComponentsState()
                     } else {
                         ensureBleComponentsState()
                     }
@@ -468,10 +475,50 @@ class ClipRelayService : Service() {
                     if (reaped) {
                         Log.d(TAG, "Reaped stale BLE connections")
                     }
+                    if (!gattServer.isHealthy()) {
+                        restartBleStackFromHealthCheck("GATT server unhealthy while BLE stack marked started")
+                    }
                 }
                 staleConnectionHandler.postDelayed(this, STALE_CONNECTION_CHECK_INTERVAL_MS)
             }
         }, STALE_CONNECTION_CHECK_INTERVAL_MS)
+    }
+
+    private fun restartBleStackFromHealthCheck(reason: String) {
+        val nowMs = System.currentTimeMillis()
+        if (!canRunBleHealthRestart(nowMs)) {
+            Log.w(TAG, "Skipping BLE health restart (rate-limited): $reason")
+            return
+        }
+
+        Log.w(TAG, "Restarting BLE stack from health check: $reason")
+        lastBleHealthRestartAtMs = nowMs
+        stopBleComponents(broadcastDisconnected = false)
+        ensureBleComponentsState()
+        if (!bleStarted) {
+            sendConnectionBroadcast(false)
+        }
+    }
+
+    private fun canRunBleHealthRestart(nowMs: Long): Boolean {
+        if (nowMs - lastBleHealthRestartAtMs < BLE_HEALTH_RESTART_MIN_INTERVAL_MS) {
+            return false
+        }
+
+        if (
+            bleHealthWindowStartedAtMs == 0L ||
+                nowMs - bleHealthWindowStartedAtMs > BLE_HEALTH_RESTART_WINDOW_MS
+        ) {
+            bleHealthWindowStartedAtMs = nowMs
+            bleHealthRestartCountInWindow = 0
+        }
+
+        if (bleHealthRestartCountInWindow >= BLE_HEALTH_RESTART_LIMIT) {
+            return false
+        }
+
+        bleHealthRestartCountInWindow += 1
+        return true
     }
 
     private fun buildNotification(): Notification {

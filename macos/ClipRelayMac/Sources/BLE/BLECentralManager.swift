@@ -81,7 +81,10 @@ final class BLECentralManager: NSObject {
     private var centralManager: CBCentralManager!
     private var knownPeripherals: [UUID: CBPeripheral] = [:]
     private var peripheralTokenMap: [UUID: String] = [:]
+    private var canonicalPeripheralIDByToken: [String: UUID] = [:]
     private var connectingPeerIDs: Set<UUID> = []
+    private var connectingTokens: Set<String> = []
+    private var connectingTokenByPeerID: [UUID: String] = [:]
     private var connectedPeers: [UUID: ConnectedPeer] = [:]
 
     private var reconnectDelay: TimeInterval = 1
@@ -105,9 +108,11 @@ final class BLECentralManager: NSObject {
     private var pendingPairingToken: String?
     private var lastInboundHash: String?
     private var lastInboundPeerID: UUID?
+    private var lastSeenByPeripheralID: [UUID: Date] = [:]
     private var pendingInboundMetadataByPeer: [UUID: PendingInboundMetadata] = [:]
     private var assemblerByPeer: [UUID: ChunkAssembler] = [:]
     private var pendingOutboundFrames: [UUID: (peripheral: CBPeripheral, frames: [Data], nextIndex: Int)] = [:]
+    private let stalePeripheralTTL: TimeInterval = 5 * 60
 
     init(clipboardWriter: ClipboardWriter, pairingManager: PairingManager) {
         self.clipboardWriter = clipboardWriter
@@ -152,6 +157,8 @@ final class BLECentralManager: NSObject {
             }
         }
         connectingPeerIDs.removeAll()
+        connectingTokenByPeerID.removeAll()
+        connectingTokens.removeAll()
         connectingSinceByPeerID.removeAll()
         connectedPeers.removeAll()
         pendingInboundMetadataByPeer.removeAll()
@@ -177,6 +184,8 @@ final class BLECentralManager: NSObject {
             }
         }
         connectingPeerIDs.removeAll()
+        connectingTokenByPeerID.removeAll()
+        connectingTokens.removeAll()
         connectingSinceByPeerID.removeAll()
         connectedPeers.removeAll()
         pendingInboundMetadataByPeer.removeAll()
@@ -213,6 +222,8 @@ final class BLECentralManager: NSObject {
         // immediately reconnect to known devices without waiting for
         // advertisement re-discovery.
         connectingPeerIDs.removeAll()
+        connectingTokenByPeerID.removeAll()
+        connectingTokens.removeAll()
         connectingSinceByPeerID.removeAll()
         connectedPeers.removeAll()
         pendingInboundMetadataByPeer.removeAll()
@@ -236,9 +247,128 @@ final class BLECentralManager: NSObject {
         startKeepaliveTimer()
         startScanCycleTimer()
 
-        // Re-queue direct connection attempts for all known paired peripherals.
-        for (peripheralID, _) in peripheralTokenMap {
-            connectToPairedPeerIfNeeded(peripheralID: peripheralID)
+        // Re-queue direct connection attempts for all known paired tokens.
+        for token in canonicalPeripheralIDByToken.keys {
+            connectToCanonicalPeerIfNeeded(token: token)
+        }
+    }
+
+    private func tokenForPeripheralID(_ peripheralID: UUID) -> String? {
+        if let token = peripheralTokenMap[peripheralID] { return token }
+        if let token = connectingTokenByPeerID[peripheralID] { return token }
+        return connectedPeers[peripheralID]?.token
+    }
+
+    private func clearConnectingState(for peripheralID: UUID) {
+        connectingPeerIDs.remove(peripheralID)
+        connectingSinceByPeerID.removeValue(forKey: peripheralID)
+
+        guard let token = connectingTokenByPeerID.removeValue(forKey: peripheralID) else {
+            return
+        }
+        if !connectingTokenByPeerID.values.contains(token) {
+            connectingTokens.remove(token)
+        }
+    }
+
+    private func removePeripheralTokenMapping(_ peripheralID: UUID) {
+        guard let token = peripheralTokenMap.removeValue(forKey: peripheralID) else { return }
+        if canonicalPeripheralIDByToken[token] == peripheralID {
+            if let replacement = peripheralTokenMap.first(where: { $0.value == token })?.key {
+                canonicalPeripheralIDByToken[token] = replacement
+            } else {
+                canonicalPeripheralIDByToken.removeValue(forKey: token)
+            }
+        }
+    }
+
+    private func clearPeripheralRuntimeState(
+        _ peripheralID: UUID,
+        removeKnownPeripheral: Bool = false,
+        removeTokenMapping: Bool = false,
+        markForgotten: Bool = false
+    ) {
+        clearConnectingState(for: peripheralID)
+        connectedPeers.removeValue(forKey: peripheralID)
+        pendingInboundMetadataByPeer.removeValue(forKey: peripheralID)
+        assemblerByPeer.removeValue(forKey: peripheralID)
+        pendingOutboundFrames.removeValue(forKey: peripheralID)
+        rssiMissCountByPeerID.removeValue(forKey: peripheralID)
+        pendingRSSIProbeByPeerID.removeValue(forKey: peripheralID)
+        if removeTokenMapping {
+            removePeripheralTokenMapping(peripheralID)
+        }
+        if removeKnownPeripheral {
+            knownPeripherals.removeValue(forKey: peripheralID)
+            lastSeenByPeripheralID.removeValue(forKey: peripheralID)
+        }
+        if markForgotten {
+            forgottenPeripheralIDs.insert(peripheralID)
+        }
+    }
+
+    private func connectToCanonicalPeerIfNeeded(token: String) {
+        guard let peripheralID = canonicalPeripheralIDByToken[token] else { return }
+        connectToPairedPeerIfNeeded(peripheralID: peripheralID)
+    }
+
+    private func registerDiscoveredPeripheral(
+        _ peripheral: CBPeripheral,
+        token: String
+    ) {
+        let peripheralID = peripheral.identifier
+        knownPeripherals[peripheralID] = peripheral
+        lastSeenByPeripheralID[peripheralID] = Date()
+
+        if let previousToken = peripheralTokenMap[peripheralID],
+           previousToken != token,
+           canonicalPeripheralIDByToken[previousToken] == peripheralID {
+            canonicalPeripheralIDByToken.removeValue(forKey: previousToken)
+        }
+
+        var duplicateIDs: [UUID] = []
+        for (existingID, existingToken) in peripheralTokenMap {
+            if existingToken == token, existingID != peripheralID {
+                duplicateIDs.append(existingID)
+            }
+        }
+
+        for duplicateID in duplicateIDs {
+            if let oldPeripheral = knownPeripherals[duplicateID] {
+                centralManager.cancelPeripheralConnection(oldPeripheral)
+            }
+            clearPeripheralRuntimeState(
+                duplicateID,
+                removeKnownPeripheral: true,
+                removeTokenMapping: true,
+                markForgotten: true
+            )
+            bleLog("[BLE] Replaced stale peripheral mapping for token; oldID=\(duplicateID) newID=\(peripheralID)", level: .debug)
+        }
+
+        peripheralTokenMap[peripheralID] = token
+        canonicalPeripheralIDByToken[token] = peripheralID
+    }
+
+    private func pruneStalePeripherals() {
+        let cutoff = Date().addingTimeInterval(-stalePeripheralTTL)
+        var staleIDs: [UUID] = []
+        for (peripheralID, lastSeen) in lastSeenByPeripheralID {
+            guard lastSeen < cutoff else { continue }
+            guard connectedPeers[peripheralID] == nil else { continue }
+            guard !connectingPeerIDs.contains(peripheralID) else { continue }
+            staleIDs.append(peripheralID)
+        }
+
+        guard !staleIDs.isEmpty else { return }
+
+        for peripheralID in staleIDs {
+            clearPeripheralRuntimeState(
+                peripheralID,
+                removeKnownPeripheral: true,
+                removeTokenMapping: true
+            )
+            bleLog("[BLE] Pruned stale peripheral \(peripheralID)", level: .debug)
         }
     }
 
@@ -249,23 +379,18 @@ final class BLECentralManager: NSObject {
         }
 
         let peripheralIDs = peripheralTokenMap.filter { $0.value == token }.map(\.key)
+        canonicalPeripheralIDByToken.removeValue(forKey: token)
+        connectingTokens.remove(token)
         for id in peripheralIDs {
             if let peripheral = knownPeripherals[id] {
                 centralManager.cancelPeripheralConnection(peripheral)
             }
-            connectingPeerIDs.remove(id)
-            connectingSinceByPeerID.removeValue(forKey: id)
-            connectedPeers.removeValue(forKey: id)
-            pendingInboundMetadataByPeer.removeValue(forKey: id)
-            assemblerByPeer.removeValue(forKey: id)
-            pendingOutboundFrames.removeValue(forKey: id)
-            rssiMissCountByPeerID.removeValue(forKey: id)
-            pendingRSSIProbeByPeerID.removeValue(forKey: id)
-            peripheralTokenMap.removeValue(forKey: id)
-            // Prevent this peripheral from being re-matched on future scans
-            // (e.g. via pending-pairing fallback or stale CoreBluetooth callbacks).
-            knownPeripherals.removeValue(forKey: id)
-            forgottenPeripheralIDs.insert(id)
+            clearPeripheralRuntimeState(
+                id,
+                removeKnownPeripheral: true,
+                removeTokenMapping: true,
+                markForgotten: true
+            )
         }
 
         // Second pass: clean up any connectedPeers whose token matches but whose
@@ -275,16 +400,12 @@ final class BLECentralManager: NSObject {
         for id in orphanedIDs {
             bleLog("[BLE] forgetDevice: cleaning up orphaned connectedPeer \(id) for token")
             centralManager.cancelPeripheralConnection(connectedPeers[id]!.peripheral)
-            connectedPeers.removeValue(forKey: id)
-            connectingPeerIDs.remove(id)
-            connectingSinceByPeerID.removeValue(forKey: id)
-            pendingInboundMetadataByPeer.removeValue(forKey: id)
-            assemblerByPeer.removeValue(forKey: id)
-            pendingOutboundFrames.removeValue(forKey: id)
-            rssiMissCountByPeerID.removeValue(forKey: id)
-            pendingRSSIProbeByPeerID.removeValue(forKey: id)
-            knownPeripherals.removeValue(forKey: id)
-            forgottenPeripheralIDs.insert(id)
+            clearPeripheralRuntimeState(
+                id,
+                removeKnownPeripheral: true,
+                removeTokenMapping: true,
+                markForgotten: true
+            )
         }
 
         notifyAllState()
@@ -393,7 +514,11 @@ final class BLECentralManager: NSObject {
 
     private func connectToPairedPeerIfNeeded(peripheralID: UUID) {
         guard connectedPeers[peripheralID] == nil else { return }
+        guard let token = peripheralTokenMap[peripheralID] else { return }
+        guard canonicalPeripheralIDByToken[token] == peripheralID else { return }
         guard !connectingPeerIDs.contains(peripheralID) else { return }
+        guard !connectingTokens.contains(token) else { return }
+        guard !connectedPeers.values.contains(where: { $0.token == token }) else { return }
         guard let peripheral = knownPeripherals[peripheralID] else { return }
 
         // Suppress connection attempts during cooldown (after "max connections" errors).
@@ -412,6 +537,8 @@ final class BLECentralManager: NSObject {
 
         connectingPeerIDs.insert(peripheralID)
         connectingSinceByPeerID[peripheralID] = Date()
+        connectingTokenByPeerID[peripheralID] = token
+        connectingTokens.insert(token)
         peripheral.delegate = self
         centralManager.connect(peripheral, options: nil)
     }
@@ -428,6 +555,8 @@ final class BLECentralManager: NSObject {
             centralManager.cancelPeripheralConnection(peer.peripheral)
         }
         connectingPeerIDs.removeAll()
+        connectingTokenByPeerID.removeAll()
+        connectingTokens.removeAll()
         connectingSinceByPeerID.removeAll()
     }
 
@@ -448,6 +577,9 @@ final class BLECentralManager: NSObject {
             // is reported again via didDiscover.
             self.centralManager.stopScan()
             self.scan()
+            for token in self.canonicalPeripheralIDByToken.keys {
+                self.connectToCanonicalPeerIfNeeded(token: token)
+            }
         }
     }
 
@@ -494,8 +626,7 @@ final class BLECentralManager: NSObject {
             if let peripheral = knownPeripherals[id] {
                 centralManager.cancelPeripheralConnection(peripheral)
             }
-            connectingPeerIDs.remove(id)
-            connectingSinceByPeerID.removeValue(forKey: id)
+            clearConnectingState(for: id)
         }
         scheduleReconnect()
     }
@@ -578,6 +709,7 @@ final class BLECentralManager: NSObject {
 
     private func cycleScan() {
         guard centralManager.state == .poweredOn else { return }
+        pruneStalePeripherals()
         bleLog("[BLE] Scan cycle tick: connectedPeers=\(connectedPeers.count) connecting=\(connectingPeerIDs.count) tokenMap=\(peripheralTokenMap.count)", level: .debug)
         // If we have no connected peers, reset backoff and aggressively re-scan
         if connectedPeers.isEmpty {
@@ -587,10 +719,10 @@ final class BLECentralManager: NSObject {
         centralManager.stopScan()
         scan()
 
-        // Also re-attempt direct connections for any known paired peripherals
+        // Also re-attempt direct connections for known paired tokens
         // that aren't currently connected or connecting.
-        for (peripheralID, _) in peripheralTokenMap {
-            connectToPairedPeerIfNeeded(peripheralID: peripheralID)
+        for token in canonicalPeripheralIDByToken.keys {
+            connectToCanonicalPeerIfNeeded(token: token)
         }
     }
 
@@ -626,7 +758,7 @@ final class BLECentralManager: NSObject {
     // MARK: - Crypto helpers
 
     private func encryptionKeyForPeer(_ peripheralID: UUID) -> SymmetricKey? {
-        guard let token = peripheralTokenMap[peripheralID] else { return nil }
+        guard let token = tokenForPeripheralID(peripheralID) else { return nil }
         return pairingManager.encryptionKey(for: token)
     }
 
@@ -678,9 +810,14 @@ final class BLECentralManager: NSObject {
 
         if let peer = connectedPeers[peripheralID] {
             bleLog("[BLE] Received Android unpair control from \(peer.displayName) — disconnecting")
-            peripheralTokenMap.removeValue(forKey: peripheralID)
-            knownPeripherals.removeValue(forKey: peripheralID)
             centralManager.cancelPeripheralConnection(peer.peripheral)
+            clearPeripheralRuntimeState(
+                peripheralID,
+                removeKnownPeripheral: true,
+                removeTokenMapping: true,
+                markForgotten: true
+            )
+            notifyAllState()
         }
     }
 
@@ -731,9 +868,10 @@ final class BLECentralManager: NSObject {
     private func connectUsingPendingPairingFallbackIfAvailable(peripheralID: UUID) -> Bool {
         guard peripheralTokenMap[peripheralID] == nil else { return false }
         guard let token = pendingPairingFallbackToken() else { return false }
+        guard let peripheral = knownPeripherals[peripheralID] else { return false }
 
         bleLog("[BLE]   -> Falling back to pending pairing token for discovered peripheral")
-        peripheralTokenMap[peripheralID] = token
+        registerDiscoveredPeripheral(peripheral, token: token)
         connectToPairedPeerIfNeeded(peripheralID: peripheralID)
         return true
     }
@@ -767,10 +905,14 @@ extension BLECentralManager: CBCentralManagerDelegate {
             // Also clear the forgotten set since the old peripheral UUIDs are no longer valid.
             knownPeripherals.removeAll()
             connectingPeerIDs.removeAll()
+            connectingTokenByPeerID.removeAll()
+            connectingTokens.removeAll()
             connectingSinceByPeerID.removeAll()
             connectedPeers.removeAll()
             peripheralTokenMap.removeAll()
+            canonicalPeripheralIDByToken.removeAll()
             forgottenPeripheralIDs.removeAll()
+            lastSeenByPeripheralID.removeAll()
             pendingInboundMetadataByPeer.removeAll()
             assemblerByPeer.removeAll()
             pendingOutboundFrames.removeAll()
@@ -798,6 +940,7 @@ extension BLECentralManager: CBCentralManagerDelegate {
         }
 
         knownPeripherals[peripheralID] = peripheral
+        lastSeenByPeripheralID[peripheralID] = Date()
 
         let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
         bleLog("[BLE] Discovered \(peripheral.name ?? "nil") mfgData=\(mfgData?.map { String(format: "%02x", $0) }.joined() ?? "nil") rssi=\(RSSI)", level: .debug)
@@ -820,7 +963,7 @@ extension BLECentralManager: CBCentralManagerDelegate {
         }
         bleLog("[BLE]   -> Matched paired device: \(device.displayName)", level: .debug)
 
-        peripheralTokenMap[peripheralID] = device.token
+        registerDiscoveredPeripheral(peripheral, token: device.token)
 
         // Capture advertised name early (available from scan response)
         let advName = extractDisplayName(peripheral: peripheral, advertisementData: advertisementData)
@@ -840,13 +983,28 @@ extension BLECentralManager: CBCentralManagerDelegate {
         reconnectDelay = 1
         connectionCooldownUntil = nil
         let peripheralID = peripheral.identifier
-        connectingPeerIDs.remove(peripheralID)
-        connectingSinceByPeerID.removeValue(forKey: peripheralID)
+        clearConnectingState(for: peripheralID)
         bleLog("[BLE] didConnect: \(peripheral.name ?? "nil") id=\(peripheralID)")
 
-        guard let token = peripheralTokenMap[peripheralID] else {
+        guard let token = tokenForPeripheralID(peripheralID) else {
             bleLog("[BLE]   -> No token mapped for this peripheral")
             return
+        }
+
+        peripheralTokenMap[peripheralID] = token
+        canonicalPeripheralIDByToken[token] = peripheralID
+
+        if let existingConnectedID = connectedPeers.first(where: { $0.value.token == token })?.key,
+           existingConnectedID != peripheralID {
+            if let existingPeripheral = knownPeripherals[existingConnectedID] {
+                centralManager.cancelPeripheralConnection(existingPeripheral)
+            }
+            clearPeripheralRuntimeState(
+                existingConnectedID,
+                removeKnownPeripheral: true,
+                removeTokenMapping: true
+            )
+            bleLog("[BLE] Dropped duplicate connected peripheral for token oldID=\(existingConnectedID) newID=\(peripheralID)", level: .debug)
         }
 
         if pendingPairingToken == token {
@@ -882,8 +1040,14 @@ extension BLECentralManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         bleLog("[BLE] didFailToConnect: \(peripheral.name ?? "nil") error=\(error?.localizedDescription ?? "nil")", level: .error)
-        connectingPeerIDs.remove(peripheral.identifier)
-        connectingSinceByPeerID.removeValue(forKey: peripheral.identifier)
+        let peripheralID = peripheral.identifier
+        let token = tokenForPeripheralID(peripheralID)
+        clearConnectingState(for: peripheralID)
+
+        if let token, canonicalPeripheralIDByToken[token] != peripheralID {
+            bleLog("[BLE] Ignoring connect failure from non-canonical peripheral \(peripheralID)", level: .debug)
+            return
+        }
 
         // Detect CoreBluetooth connection slot exhaustion.
         // When this happens, cancel ALL pending connections to release leaked slots,
@@ -906,8 +1070,8 @@ extension BLECentralManager: CBCentralManagerDelegate {
                 self.connectionCooldownUntil = nil
                 self.reconnectDelay = 1
                 self.scan()
-                for (peripheralID, _) in self.peripheralTokenMap {
-                    self.connectToPairedPeerIfNeeded(peripheralID: peripheralID)
+                for token in self.canonicalPeripheralIDByToken.keys {
+                    self.connectToCanonicalPeerIfNeeded(token: token)
                 }
             }
             return
@@ -919,32 +1083,38 @@ extension BLECentralManager: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         bleLog("[BLE] didDisconnect: \(peripheral.name ?? "nil") error=\(error?.localizedDescription ?? "nil")")
         let peripheralID = peripheral.identifier
-        connectingPeerIDs.remove(peripheralID)
-        connectingSinceByPeerID.removeValue(forKey: peripheralID)
-        connectedPeers.removeValue(forKey: peripheralID)
-        pendingInboundMetadataByPeer.removeValue(forKey: peripheralID)
-        assemblerByPeer.removeValue(forKey: peripheralID)
-        pendingOutboundFrames.removeValue(forKey: peripheralID)
-        rssiMissCountByPeerID.removeValue(forKey: peripheralID)
-        pendingRSSIProbeByPeerID.removeValue(forKey: peripheralID)
+        let token = tokenForPeripheralID(peripheralID)
+        clearPeripheralRuntimeState(peripheralID)
         notifyAllState()
 
         // Don't reconnect if we've been stopped — late CoreBluetooth callbacks
         // can fire after stop() and would otherwise undo the shutdown.
         guard !isStopped else { return }
 
+        guard let token else {
+            if forgottenPeripheralIDs.contains(peripheralID) {
+                return
+            }
+            scheduleReconnect()
+            return
+        }
+
+        guard let canonicalID = canonicalPeripheralIDByToken[token] else {
+            scheduleReconnect()
+            return
+        }
+
+        if canonicalID != peripheralID {
+            connectToPairedPeerIfNeeded(peripheralID: canonicalID)
+            return
+        }
+
         // Re-queue a connect on the same peripheral object. CoreBluetooth holds this as a
         // pending request and completes it as soon as the peripheral is available again
         // (e.g. the phone re-enables Bluetooth). This avoids relying on the scan to
         // re-discover the peripheral, which won't happen while the duplicate filter is active.
-        if peripheralTokenMap[peripheralID] != nil {
-            knownPeripherals[peripheralID] = peripheral
-            connectToPairedPeerIfNeeded(peripheralID: peripheralID)
-        } else {
-            // Only restart scanning for unknown peripherals; the direct connect
-            // above is sufficient for paired devices and avoids duplicate requests.
-            scheduleReconnect()
-        }
+        knownPeripherals[peripheralID] = peripheral
+        connectToCanonicalPeerIfNeeded(token: token)
     }
 }
 

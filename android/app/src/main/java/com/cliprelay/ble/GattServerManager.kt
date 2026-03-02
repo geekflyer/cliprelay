@@ -91,6 +91,13 @@ class GattServerManager(
         return callback.connectedDevicesSnapshot().isNotEmpty()
     }
 
+    fun isHealthy(): Boolean {
+        val srv = server ?: return false
+        if (callback.server == null) return false
+        if (availableCharacteristic == null || dataCharacteristic == null) return false
+        return srv.getService(SERVICE_UUID) != null
+    }
+
     fun publishClipboardFrames(
         availablePayload: ByteArray,
         dataFrames: List<ByteArray>
