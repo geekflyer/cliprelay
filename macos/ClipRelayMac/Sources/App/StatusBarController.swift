@@ -138,7 +138,7 @@ final class StatusBarController {
 
             let title: String
             if let tag = peer.deviceTagHex {
-                title = "\(peer.description)  [\(tag)]"
+                title = "\(peer.description)  [Pairing: \(tag)]"
             } else {
                 title = peer.description
             }

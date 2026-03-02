@@ -423,7 +423,7 @@ private fun MainCard(
                     )
                     if (deviceTag != null) {
                         Text(
-                            text = deviceTag,
+                            text = "Pairing: $deviceTag",
                             fontSize = 11.sp,
                             color = Teal.copy(alpha = 0.45f),
                             fontWeight = FontWeight.Normal
