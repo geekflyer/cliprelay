@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClipRelay — Seamless clipboard sharing between Mac and Android</title>
+  <meta name="description" content="End-to-end encrypted clipboard sharing between Mac and Android. Bluetooth only. No cloud. No servers.">
+  <meta name="theme-color" content="#0A0A0F">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="ClipRelay — Clipboard sharing for Mac & Android">
+  <meta property="og:description" content="End-to-end encrypted clipboard sync over Bluetooth. No cloud required.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://cliprelay.io">
+  <meta property="og:image" content="https://cliprelay.io/assets/og-image.png">
+
+  <!-- Favicon -->
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/animations.css">
+</head>
+<body>
+
+  <!-- ════════════════════════════════════ Nav ════════════════════════════════════ -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <svg width="28" height="28" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="navBoardGrad" x1="0" y1="0" x2="0.3" y2="1"><stop stop-color="#0A3A34"/><stop offset="1" stop-color="#082A26"/></linearGradient>
+            <linearGradient id="navArcGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00FFD5"/><stop offset="1" stop-color="#00DDC0"/></linearGradient>
+          </defs>
+          <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#navBoardGrad)" stroke="#00FFD5" stroke-width="1.5" opacity="0.9"/>
+          <rect x="24" y="18" width="38" height="14" rx="5" fill="#082A26" stroke="#00FFD5" stroke-width="1.2"/>
+          <rect x="30" y="14" width="26" height="8" rx="4" fill="#0A3A34" stroke="#00DDC0" stroke-width="1"/>
+          <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00FFD5" opacity="0.55"/>
+          <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.35"/>
+          <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+          <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+          <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.15"/>
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#navArcGrad)" stroke-width="4" stroke-linecap="round" fill="none"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#navArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+          <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#navArcGrad)" stroke-width="3" stroke-linecap="round" fill="none"/>
+        </svg>
+        ClipRelay
+      </a>
+
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how-it-works">How it Works</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="#download" class="nav-cta">Download</a></li>
+      </ul>
+
+      <button class="hamburger" aria-label="Menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ════════════════════════════════════ Hero ════════════════════════════════════ -->
+  <section class="hero" id="download">
+    <div class="hero-glow"></div>
+
+    <!-- Animated logo (inline SVG with beam classes) -->
+    <svg class="hero-logo" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="boardGrad" x1="0" y1="0" x2="0.3" y2="1">
+          <stop stop-color="#0A3A34"/>
+          <stop offset="1" stop-color="#082A26"/>
+        </linearGradient>
+        <linearGradient id="arcGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop stop-color="#00FFD5"/>
+          <stop offset="1" stop-color="#00DDC0"/>
+        </linearGradient>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="4" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      <!-- Board -->
+      <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#boardGrad)" stroke="#00FFD5" stroke-width="1.5" opacity="0.9"/>
+      <!-- Clamp base -->
+      <rect x="24" y="18" width="38" height="14" rx="5" fill="#082A26" stroke="#00FFD5" stroke-width="1.2"/>
+      <!-- Clamp top -->
+      <rect x="30" y="14" width="26" height="8" rx="4" fill="#0A3A34" stroke="#00DDC0" stroke-width="1"/>
+      <!-- Rivet -->
+      <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00FFD5" opacity="0.55"/>
+      <!-- Text lines -->
+      <rect class="beam-text-line" x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.35"/>
+      <rect class="beam-text-line" x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+      <rect class="beam-text-line" x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+      <rect class="beam-text-line" x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.15"/>
+      <!-- Beam arcs with glow -->
+      <g filter="url(#glow)">
+        <path class="beam-arc-1" d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#arcGrad)" stroke-width="4" stroke-linecap="round" fill="none"/>
+        <path class="beam-arc-2" d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#arcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+        <path class="beam-arc-3" d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#arcGrad)" stroke-width="3" stroke-linecap="round" fill="none"/>
+      </g>
+    </svg>
+
+    <h1>Seamless clipboard sharing between Mac and Android</h1>
+    <p class="hero-subtitle">End-to-end encrypted. Bluetooth only. No cloud.</p>
+
+    <div class="hero-ctas">
+      <a href="https://play.google.com/store/apps/details?id=com.cliprelay" class="btn btn-primary">
+        <!-- Google Play icon -->
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3.61 1.814L13.793 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734c0-.384.22-.72.61-.92zm1.4-.6L15.78 7.58l-2.894 2.894L5.01 1.214zm11.49 5.592L14.1 9.206l2.893 2.893L20.39 12l-3.397 1.901L14.1 16.794l2.4 2.4L20.39 12l-3.89-5.194zM5.01 22.786l7.878-9.26 2.893 2.894L5.01 22.786z"/></svg>
+        Get on Google Play
+      </a>
+      <a href="#" class="btn btn-outline">
+        <!-- Apple icon -->
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        Download for Mac
+      </a>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════ Features ════════════════════════════════════ -->
+  <section id="features">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">Features</span>
+        <h2 class="section-title">Privacy-first clipboard sync</h2>
+        <p class="section-subtitle">Built from the ground up to keep your data off the cloud and on your devices.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card reveal" data-delay="1">
+          <div class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><line x1="15" y1="13" x2="15" y2="17"/><line x1="13" y1="15" x2="17" y2="15"/></svg>
+          </div>
+          <h3>No Cloud, No Servers</h3>
+          <p>Your clipboard data never leaves the direct connection between your devices. Zero servers, zero accounts, zero tracking.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="2">
+          <div class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="1"/><path d="M5.5 5.5l13 13"/></svg>
+          </div>
+          <h3>BLE-Only Transfer</h3>
+          <p>Data travels over Bluetooth Low Energy — no WiFi or internet needed. Works anywhere, even offline.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="3">
+          <div class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>AES-256-GCM Encryption</h3>
+          <p>Every transfer is encrypted with AES-256-GCM. Keys are exchanged during pairing and never leave your devices.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="1">
+          <div class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          </div>
+          <h3>Automatic Mac &rarr; Android Sync</h3>
+          <p>Copy on your Mac and it appears on your Android instantly. No buttons to press, no extra steps.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="2">
+          <div class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          </div>
+          <h3>Share Sheet Integration</h3>
+          <p>Share text from any Android app directly to your Mac via the system share sheet. No clipboard needed.</p>
+        </div>
+
+        <div class="feature-card reveal" data-delay="3">
+          <div class="feature-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <h3>Auto-Clear Clipboard</h3>
+          <p>Clipboard content is automatically cleared after syncing. Your sensitive data doesn't linger.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════ How It Works ════════════════════════════════════ -->
+  <section id="how-it-works">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">How It Works</span>
+        <h2 class="section-title">Up and running in minutes</h2>
+        <p class="section-subtitle">Three steps to seamless clipboard sync between your Mac and Android.</p>
+      </div>
+
+      <div class="steps reveal">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Install on both devices</h3>
+            <p>Download ClipRelay on your Mac and install from Google Play on Android.</p>
+          </div>
+          <div class="step-connector"></div>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Scan QR code to pair</h3>
+            <p>Open both apps and scan the pairing QR code. Encryption keys are exchanged securely.</p>
+          </div>
+          <div class="step-connector"></div>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Clipboard syncs automatically</h3>
+            <p>Copy on one device, paste on the other. It just works — no cloud, no accounts.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════ Comparison ════════════════════════════════════ -->
+  <section id="compare">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">Compare</span>
+        <h2 class="section-title">How ClipRelay stacks up</h2>
+        <p class="section-subtitle">See how ClipRelay compares to other clipboard sharing solutions.</p>
+      </div>
+
+      <!-- Desktop table -->
+      <div class="comparison-wrapper reveal">
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th class="highlight">ClipRelay</th>
+              <th>Universal Clipboard</th>
+              <th>KDE Connect</th>
+              <th>Pushbullet</th>
+              <th>Intel Unison</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>E2E Encryption</td>
+              <td class="highlight"><span class="check">&#10003;</span> AES-256-GCM</td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span> TLS</td>
+              <td><span class="cross">&#10007;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>No cloud required</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&#10007;</span> iCloud</td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="cross">&#10007;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Mac + Android</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&#10007;</span> Apple only</td>
+              <td><span class="cross">&#10007;</span> Linux only</td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>BLE support</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="cross">&#10007;</span></td>
+              <td><span class="cross">&#10007;</span></td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+            <tr>
+              <td>Open source</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="cross">&#10007;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="cross">&#10007;</span></td>
+              <td><span class="cross">&#10007;</span></td>
+            </tr>
+            <tr>
+              <td>Free</td>
+              <td class="highlight"><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="check">&#10003;</span></td>
+              <td><span class="cross">&#10007;</span> Freemium</td>
+              <td><span class="check">&#10003;</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mobile cards -->
+      <div class="comparison-cards reveal">
+        <div class="comparison-card is-cliprelay">
+          <h4>ClipRelay</h4>
+          <div class="comparison-row"><span class="label">Encryption</span><span class="value check">AES-256-GCM</span></div>
+          <div class="comparison-row"><span class="label">No cloud</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">Mac + Android</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">BLE</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">Open source</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">Free</span><span class="value check">&#10003;</span></div>
+        </div>
+        <div class="comparison-card">
+          <h4>Universal Clipboard</h4>
+          <div class="comparison-row"><span class="label">Encryption</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">No cloud</span><span class="value cross">&#10007; iCloud</span></div>
+          <div class="comparison-row"><span class="label">Mac + Android</span><span class="value cross">&#10007; Apple only</span></div>
+          <div class="comparison-row"><span class="label">BLE</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">Open source</span><span class="value cross">&#10007;</span></div>
+          <div class="comparison-row"><span class="label">Free</span><span class="value check">&#10003;</span></div>
+        </div>
+        <div class="comparison-card">
+          <h4>KDE Connect</h4>
+          <div class="comparison-row"><span class="label">Encryption</span><span class="value check">TLS</span></div>
+          <div class="comparison-row"><span class="label">No cloud</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">Mac + Android</span><span class="value cross">&#10007; Linux only</span></div>
+          <div class="comparison-row"><span class="label">BLE</span><span class="value cross">&#10007;</span></div>
+          <div class="comparison-row"><span class="label">Open source</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">Free</span><span class="value check">&#10003;</span></div>
+        </div>
+        <div class="comparison-card">
+          <h4>Pushbullet</h4>
+          <div class="comparison-row"><span class="label">Encryption</span><span class="value cross">&#10007;</span></div>
+          <div class="comparison-row"><span class="label">No cloud</span><span class="value cross">&#10007;</span></div>
+          <div class="comparison-row"><span class="label">Mac + Android</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">BLE</span><span class="value cross">&#10007;</span></div>
+          <div class="comparison-row"><span class="label">Open source</span><span class="value cross">&#10007;</span></div>
+          <div class="comparison-row"><span class="label">Free</span><span class="value cross">&#10007; Freemium</span></div>
+        </div>
+        <div class="comparison-card">
+          <h4>Intel Unison</h4>
+          <div class="comparison-row"><span class="label">Encryption</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">No cloud</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">Mac + Android</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">BLE</span><span class="value check">&#10003;</span></div>
+          <div class="comparison-row"><span class="label">Open source</span><span class="value cross">&#10007;</span></div>
+          <div class="comparison-row"><span class="label">Free</span><span class="value check">&#10003;</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════ FAQ ════════════════════════════════════ -->
+  <section id="faq">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">FAQ</span>
+        <h2 class="section-title">Frequently asked questions</h2>
+      </div>
+
+      <div class="faq-list">
+        <details class="faq-item reveal">
+          <summary>Is my clipboard data sent to any servers?</summary>
+          <div class="faq-answer">No. ClipRelay uses Bluetooth Low Energy (BLE) for a direct device-to-device connection. Your clipboard data never touches a server, cloud service, or the internet. It goes straight from one device to the other.</div>
+        </details>
+
+        <details class="faq-item reveal">
+          <summary>How secure is the encryption?</summary>
+          <div class="faq-answer">ClipRelay uses AES-256-GCM encryption — the same standard used by banks and governments. Encryption keys are exchanged during the QR code pairing process and are stored locally on your devices. They are never transmitted or stored elsewhere.</div>
+        </details>
+
+        <details class="faq-item reveal">
+          <summary>What is the range?</summary>
+          <div class="faq-answer">BLE typically works within 10-15 meters (30-50 feet) depending on your environment and devices. It works best when devices are in the same room, which is the typical use case for clipboard sharing.</div>
+        </details>
+
+        <details class="faq-item reveal">
+          <summary>What types of content can I sync?</summary>
+          <div class="faq-answer">Currently, ClipRelay syncs plain text content. This includes URLs, code snippets, passwords, addresses, and any other text you copy. Rich content support (images, files) is planned for a future update.</div>
+        </details>
+
+        <details class="faq-item reveal">
+          <summary>Does it work without WiFi?</summary>
+          <div class="faq-answer">Yes! ClipRelay uses Bluetooth Low Energy, which is completely independent of WiFi and cellular data. It works in airplane mode, offline, or anywhere — as long as Bluetooth is enabled on both devices.</div>
+        </details>
+
+        <details class="faq-item reveal">
+          <summary>What are the system requirements?</summary>
+          <div class="faq-answer">macOS 13 (Ventura) or later, and Android 10 or later. Both devices need Bluetooth Low Energy support, which is standard on all modern Macs and Android devices.</div>
+        </details>
+
+        <details class="faq-item reveal">
+          <summary>Is ClipRelay free?</summary>
+          <div class="faq-answer">Yes, ClipRelay is completely free and open source. There are no ads, subscriptions, or hidden fees. Pro features like rich content transfer may be offered in the future, but the core clipboard sync will always be free.</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════ Footer ════════════════════════════════════ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="brand-name">
+            <svg width="24" height="24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="fBoardGrad" x1="0" y1="0" x2="0.3" y2="1"><stop stop-color="#0A3A34"/><stop offset="1" stop-color="#082A26"/></linearGradient>
+                <linearGradient id="fArcGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00FFD5"/><stop offset="1" stop-color="#00DDC0"/></linearGradient>
+              </defs>
+              <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#fBoardGrad)" stroke="#00FFD5" stroke-width="1.5" opacity="0.9"/>
+              <rect x="24" y="18" width="38" height="14" rx="5" fill="#082A26" stroke="#00FFD5" stroke-width="1.2"/>
+              <rect x="30" y="14" width="26" height="8" rx="4" fill="#0A3A34" stroke="#00DDC0" stroke-width="1"/>
+              <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00FFD5" opacity="0.55"/>
+              <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.35"/>
+              <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+              <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+              <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.15"/>
+              <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#fArcGrad)" stroke-width="4" stroke-linecap="round" fill="none"/>
+              <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#fArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+              <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#fArcGrad)" stroke-width="3" stroke-linecap="round" fill="none"/>
+            </svg>
+            ClipRelay
+          </div>
+          <p class="footer-tagline">Seamless, encrypted clipboard sharing between Mac and Android over Bluetooth.</p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Download</h4>
+          <ul>
+            <li><a href="https://play.google.com/store/apps/details?id=com.cliprelay">Google Play</a></li>
+            <li><a href="#">macOS Download</a></li>
+            <li><a href="https://github.com/nicokimmel/greenpaste">GitHub</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>&copy; 2026 ClipRelay. All rights reserved.</span>
+        <span>Made with care for your privacy.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — ClipRelay</title>
+  <meta name="description" content="ClipRelay privacy policy. We collect no data. Your clipboard stays between your devices.">
+  <meta name="theme-color" content="#0A0A0F">
+
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    .privacy-content {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 140px 20px 80px;
+    }
+    .privacy-content h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 400;
+      margin-bottom: 8px;
+      background: var(--gradient-title);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .privacy-content .last-updated {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      margin-bottom: 48px;
+    }
+    .privacy-content h2 {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 400;
+      margin-top: 40px;
+      margin-bottom: 12px;
+    }
+    .privacy-content p,
+    .privacy-content li {
+      color: var(--text-dim);
+      line-height: 1.8;
+      margin-bottom: 16px;
+    }
+    .privacy-content ul {
+      padding-left: 24px;
+      margin-bottom: 16px;
+    }
+    .privacy-content li { margin-bottom: 8px; }
+    .privacy-content a { color: var(--aqua); }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--aqua);
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="nav scrolled">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo">
+        <svg width="28" height="28" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="navBoardGrad" x1="0" y1="0" x2="0.3" y2="1"><stop stop-color="#0A3A34"/><stop offset="1" stop-color="#082A26"/></linearGradient>
+            <linearGradient id="navArcGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00FFD5"/><stop offset="1" stop-color="#00DDC0"/></linearGradient>
+          </defs>
+          <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#navBoardGrad)" stroke="#00FFD5" stroke-width="1.5" opacity="0.9"/>
+          <rect x="24" y="18" width="38" height="14" rx="5" fill="#082A26" stroke="#00FFD5" stroke-width="1.2"/>
+          <rect x="30" y="14" width="26" height="8" rx="4" fill="#0A3A34" stroke="#00DDC0" stroke-width="1"/>
+          <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00FFD5" opacity="0.55"/>
+          <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.35"/>
+          <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+          <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+          <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.15"/>
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#navArcGrad)" stroke-width="4" stroke-linecap="round" fill="none"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#navArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+          <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#navArcGrad)" stroke-width="3" stroke-linecap="round" fill="none"/>
+        </svg>
+        ClipRelay
+      </a>
+    </div>
+  </nav>
+
+  <div class="privacy-content">
+    <a href="index.html" class="back-link">&larr; Back to home</a>
+
+    <h1>Privacy Policy</h1>
+    <p class="last-updated">Last updated: March 1, 2026</p>
+
+    <h2>Overview</h2>
+    <p>ClipRelay is designed with privacy as its core principle. We do not collect, store, transmit, or process any personal data or clipboard content. Your data stays between your devices — always.</p>
+
+    <h2>Data Collection</h2>
+    <p><strong>We collect no data.</strong> ClipRelay does not have servers, accounts, analytics, or any form of data collection. Specifically:</p>
+    <ul>
+      <li>No clipboard content is sent to any server</li>
+      <li>No personal information is collected or stored</li>
+      <li>No usage analytics or telemetry is collected</li>
+      <li>No cookies or tracking mechanisms are used</li>
+      <li>No accounts are required to use the app</li>
+      <li>No advertising identifiers are used</li>
+    </ul>
+
+    <h2>How ClipRelay Works</h2>
+    <p>ClipRelay transfers clipboard data exclusively over Bluetooth Low Energy (BLE), creating a direct device-to-device connection between your Mac and Android device. No internet connection is required.</p>
+    <ul>
+      <li><strong>Pairing:</strong> Devices are paired via QR code scan, which exchanges encryption keys locally</li>
+      <li><strong>Encryption:</strong> All clipboard transfers are encrypted with AES-256-GCM. Keys are generated during pairing and stored only on your devices</li>
+      <li><strong>Transfer:</strong> Clipboard data travels directly between your devices over BLE. It never passes through any server or cloud service</li>
+      <li><strong>Auto-clear:</strong> Clipboard content can be automatically cleared after syncing for additional security</li>
+    </ul>
+
+    <h2>Data Stored on Your Devices</h2>
+    <p>ClipRelay stores the following data locally on your devices:</p>
+    <ul>
+      <li><strong>Encryption keys:</strong> Generated during pairing, stored in the system keychain (macOS) or encrypted shared preferences (Android)</li>
+      <li><strong>Pairing token:</strong> A BLE identifier used to reconnect to your paired device</li>
+      <li><strong>App preferences:</strong> Your settings (e.g., auto-clear preference)</li>
+    </ul>
+    <p>No clipboard content is persisted. Clipboard data is held transiently in memory only during the transfer process.</p>
+
+    <h2>Permissions</h2>
+    <p>ClipRelay requests the following permissions to function:</p>
+    <ul>
+      <li><strong>Bluetooth (macOS & Android):</strong> Required for BLE communication between devices</li>
+      <li><strong>Nearby Devices (Android):</strong> Required by Android to discover and connect to nearby BLE devices</li>
+      <li><strong>Notifications (Android):</strong> Optional, used to show connection status</li>
+      <li><strong>Camera (Android):</strong> Used only during pairing to scan the QR code. No photos are taken or stored</li>
+    </ul>
+
+    <h2>Third-Party Services</h2>
+    <p>ClipRelay does not use any third-party services, SDKs, or libraries that collect user data. There are no analytics, crash reporting, or advertising frameworks embedded in the app.</p>
+
+    <h2>Children's Privacy</h2>
+    <p>ClipRelay does not collect any data from any user, including children. The app does not have age restrictions as it collects no personal information.</p>
+
+    <h2>Open Source</h2>
+    <p>ClipRelay is open source. You can inspect the complete source code to verify these privacy claims. The source code is available on <a href="https://github.com/nicokimmel/greenpaste">GitHub</a>.</p>
+
+    <h2>Changes to This Policy</h2>
+    <p>If we ever make changes to this privacy policy, we will update the "Last updated" date at the top. Since ClipRelay collects no data, meaningful changes to this policy are unlikely.</p>
+
+    <h2>Contact</h2>
+    <p>If you have questions about this privacy policy, you can reach us by opening an issue on our <a href="https://github.com/nicokimmel/greenpaste/issues">GitHub repository</a>.</p>
+  </div>
+
+</body>
+</html>
