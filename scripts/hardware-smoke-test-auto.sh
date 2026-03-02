@@ -16,6 +16,9 @@ TIMEOUT_SEC=90
 BLE_CONNECT_TIMEOUT_MAX_SEC=10
 KEEP_PAIRING=false
 PAIR_TOKEN=""
+CONNECTION_STABILITY_SECONDS=8
+M2A_STRESS_COUNT=0
+M2A_STRESS_TIMEOUT_SEC=12
 
 usage() {
   cat <<'EOF'
@@ -28,6 +31,9 @@ Options:
   --pair <ip:port> --pair-code <code>
                                 Run `adb pair` before connecting
   --timeout <seconds>           Per-step timeout (default: 90)
+  --stability-seconds <seconds> Connected-state hold check before transfers (default: 8)
+  --m2a-stress-count <count>    Run extra Mac->Android stress iterations (default: 0)
+  --m2a-stress-timeout <sec>    Timeout per stress iteration (default: 12)
   --keep-pairing                Keep temporary smoke pairing token
 
 Runs a near-fully automated BLE smoke test on debug builds:
@@ -93,6 +99,30 @@ while [[ $# -gt 0 ]]; do
       TIMEOUT_SEC="$2"
       shift 2
       ;;
+    --stability-seconds)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --stability-seconds" >&2
+        exit 1
+      fi
+      CONNECTION_STABILITY_SECONDS="$2"
+      shift 2
+      ;;
+    --m2a-stress-count)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --m2a-stress-count" >&2
+        exit 1
+      fi
+      M2A_STRESS_COUNT="$2"
+      shift 2
+      ;;
+    --m2a-stress-timeout)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --m2a-stress-timeout" >&2
+        exit 1
+      fi
+      M2A_STRESS_TIMEOUT_SEC="$2"
+      shift 2
+      ;;
     --keep-pairing)
       KEEP_PAIRING=true
       shift
@@ -110,6 +140,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 ADB=(adb)
+
+require_non_negative_int() {
+  local value="$1"
+  local flag_name="$2"
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "Invalid value for ${flag_name}: ${value}" >&2
+    exit 1
+  fi
+}
+
+require_non_negative_int "$TIMEOUT_SEC" "--timeout"
+require_non_negative_int "$CONNECTION_STABILITY_SECONDS" "--stability-seconds"
+require_non_negative_int "$M2A_STRESS_COUNT" "--m2a-stress-count"
+require_non_negative_int "$M2A_STRESS_TIMEOUT_SEC" "--m2a-stress-timeout"
 
 if [[ -n "$ADB_PAIR_ENDPOINT" || -n "$ADB_PAIR_CODE" ]]; then
   if [[ -z "$ADB_PAIR_ENDPOINT" || -z "$ADB_PAIR_CODE" ]]; then
@@ -208,6 +252,34 @@ cleanup_smoke_pairing() {
 }
 
 trap cleanup_smoke_pairing EXIT
+
+dump_failure_diagnostics() {
+  echo
+  echo "==> Failure diagnostics"
+
+  local probe
+  probe="$(probe_json)"
+  if [[ -n "$probe" ]]; then
+    echo "- Android debug probe state:"
+    echo "$probe"
+  else
+    echo "- Android debug probe state unavailable"
+  fi
+
+  echo "- Recent Android BLE logs:"
+  "${ADB[@]}" logcat -d -s BluetoothGattServer GattServerCallback ClipRelayService 2>/dev/null || true
+
+  echo "- Recent macOS ClipRelay logs:"
+  /usr/bin/log show --last 2m --style compact --info --debug --predicate 'subsystem == "com.cliprelay"' 2>/dev/null || true
+}
+
+on_error() {
+  local exit_code=$?
+  dump_failure_diagnostics || true
+  exit "$exit_code"
+}
+
+trap on_error ERR
 
 require_cmd() {
   local cmd="$1"
@@ -309,6 +381,22 @@ wait_for_probe_counter_gt() {
   done
 }
 
+wait_for_stable_probe_connection() {
+  local stable_seconds="$1"
+  local elapsed=0
+
+  while (( elapsed < stable_seconds )); do
+    local connected
+    connected="$(probe_get "connected" "false")"
+    if [[ "$connected" != "true" ]]; then
+      echo "Connection dropped during stability check (elapsed=${elapsed}s/${stable_seconds}s)" >&2
+      return 1
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+}
+
 wait_for_mac_clipboard() {
   local expected="$1"
   local timeout="$2"
@@ -403,6 +491,65 @@ wait_for_probe_after_mac_copy_with_retries() {
     if (( now_ts - start_ts >= timeout )); then
       echo "Timed out waiting for Android probe inbound clipboard" >&2
       return 1
+    fi
+  done
+}
+
+wait_for_android_inbound_text_after() {
+  local expected_text="$1"
+  local baseline_inbound_ms="$2"
+  local timeout="$3"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  while true; do
+    local inbound_ms
+    inbound_ms="$(probe_get "last_inbound_at_ms" "0")"
+    local inbound_text
+    inbound_text="$(probe_get "last_inbound_text" "")"
+
+    if [[ "$inbound_ms" =~ ^[0-9]+$ ]] && (( inbound_ms > baseline_inbound_ms )) && [[ "$inbound_text" == "$expected_text" ]]; then
+      return 0
+    fi
+
+    local now_ts
+    now_ts="$(date +%s)"
+    if (( now_ts - start_ts >= timeout )); then
+      echo "Timed out waiting for Android inbound payload '$expected_text' (last_inbound_text='$inbound_text', last_inbound_at_ms='$inbound_ms')" >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+run_m2a_stress_loop() {
+  local iterations="$1"
+  local per_iteration_timeout="$2"
+  local run_id
+  run_id="$(date +%s)-$RANDOM"
+
+  echo "- Running Mac -> Android stress loop (${iterations} iterations)"
+  for ((i = 1; i <= iterations; i++)); do
+    local connected
+    connected="$(probe_get "connected" "false")"
+    if [[ "$connected" != "true" ]]; then
+      echo "Connection dropped before stress iteration ${i}/${iterations}" >&2
+      return 1
+    fi
+
+    local payload
+    payload="smoke-m2a-stress-${run_id}-i${i}"
+    local baseline_inbound_ms
+    baseline_inbound_ms="$(probe_get "last_inbound_at_ms" "0")"
+    if [[ ! "$baseline_inbound_ms" =~ ^[0-9]+$ ]]; then
+      baseline_inbound_ms=0
+    fi
+
+    printf '%s' "$payload" | pbcopy
+    wait_for_android_inbound_text_after "$payload" "$baseline_inbound_ms" "$per_iteration_timeout"
+
+    if (( i == iterations || i % 5 == 0 )); then
+      echo "  - Stress progress: ${i}/${iterations}"
     fi
   done
 }
@@ -548,6 +695,8 @@ start_mac_app
 
 echo "- Waiting for BLE connection"
 wait_for_probe_value "connected" "true" "$BLE_CONNECT_TIMEOUT_SEC"
+echo "- Verifying stable BLE connection"
+wait_for_stable_probe_connection "$CONNECTION_STABILITY_SECONDS"
 
 android_to_mac_text="smoke-a2m-$(date +%s)-$RANDOM"
 echo "- Running Android -> Mac transfer"
@@ -556,6 +705,10 @@ wait_for_mac_clipboard_with_retries "$android_to_mac_text" "$TIMEOUT_SEC"
 
 echo "- Running Mac -> Android transfer"
 mac_to_android_text="$(wait_for_probe_after_mac_copy_with_retries "smoke-m2a-$(date +%s)-$RANDOM" "$TIMEOUT_SEC")"
+
+if (( M2A_STRESS_COUNT > 0 )); then
+  run_m2a_stress_loop "$M2A_STRESS_COUNT" "$M2A_STRESS_TIMEOUT_SEC"
+fi
 
 echo "- Running reconnect cycle"
 counter_before_reconnect="$(probe_get "event_counter" "0")"
@@ -567,6 +720,8 @@ fi
 
 wait_for_probe_counter_gt "$counter_before_reconnect" 30
 wait_for_probe_value "connected" "true" "$BLE_CONNECT_TIMEOUT_SEC"
+echo "- Verifying stable BLE connection after reconnect"
+wait_for_stable_probe_connection "$CONNECTION_STABILITY_SECONDS"
 
 android_to_mac_text_re="smoke-a2m-re-$(date +%s)-$RANDOM"
 echo "- Re-verify Android -> Mac after reconnect"
@@ -580,3 +735,6 @@ echo "==> Automated BLE smoke: PASS"
 echo "Pair token tail: ${PAIR_TOKEN:56:8}"
 echo "Android -> Mac payload: $android_to_mac_text_re"
 echo "Mac -> Android payload: $mac_to_android_text_re"
+if (( M2A_STRESS_COUNT > 0 )); then
+  echo "Mac -> Android stress iterations: $M2A_STRESS_COUNT"
+fi

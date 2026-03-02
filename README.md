@@ -72,6 +72,20 @@ Optional device selection:
 ./scripts/hardware-smoke-test.sh --serial <adb-serial>
 ```
 
+Connection robustness options:
+
+```bash
+./scripts/hardware-smoke-test.sh --stability-seconds 8
+./scripts/hardware-smoke-test.sh --timeout 90
+./scripts/hardware-smoke-test.sh --m2a-stress-count 25 --m2a-stress-timeout 12
+```
+
+Use `--m2a-stress-count` to run repeated Mac -> Android clipboard transfers in one session.
+This catches intermittent regressions where a single transfer might pass but repeated writes fail.
+
+When a smoke step fails, the script now auto-dumps Android BLE logs, Android probe state,
+and recent macOS ClipRelay logs to speed up root-cause analysis.
+
 By default the script removes the temporary smoke-test pairing from both devices at the end.
 Use `--keep-pairing` if you want to retain that pairing.
 
