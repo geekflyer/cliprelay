@@ -424,8 +424,8 @@ private fun MainCard(
                     if (deviceTag != null) {
                         Text(
                             text = deviceTag,
-                            fontSize = 10.sp,
-                            color = Teal.copy(alpha = 0.25f),
+                            fontSize = 11.sp,
+                            color = Teal.copy(alpha = 0.45f),
                             fontWeight = FontWeight.Normal
                         )
                     }
