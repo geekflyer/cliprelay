@@ -75,8 +75,8 @@ class MainActivity : AppCompatActivity() {
         val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
             .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
         val deviceTag = token?.let { t ->
-            val hex = E2ECrypto.deviceTag(t).joinToString("") { "%02X".format(it) }
-            hex.chunked(4).joinToString(" ") // "9A93 227C E19A 8A39"
+            val hex = E2ECrypto.deviceTag(t).take(4).joinToString("") { "%02X".format(it) }
+            hex.chunked(4).joinToString(" ") // "9A93 227C"
         }
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         viewModel.initState(isPaired, deviceName, deviceTag, autoClearEnabled)

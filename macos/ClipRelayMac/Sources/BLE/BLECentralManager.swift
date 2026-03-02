@@ -492,8 +492,8 @@ final class BLECentralManager: NSObject {
 
     private func formattedDeviceTagHex(token: String) -> String? {
         guard let data = pairingManager.deviceTag(for: token) else { return nil }
-        let hex = data.map { String(format: "%02X", $0) }.joined()
-        // Group into chunks of 4: "9A93 227C E19A 8A39"
+        let hex = data.prefix(4).map { String(format: "%02X", $0) }.joined()
+        // Group into chunks of 4: "9A93 227C"
         return stride(from: 0, to: hex.count, by: 4).map { i in
             let start = hex.index(hex.startIndex, offsetBy: i)
             let end = hex.index(start, offsetBy: min(4, hex.count - i))
