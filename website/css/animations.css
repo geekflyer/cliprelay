@@ -44,6 +44,50 @@
 .reveal[data-delay="4"] { transition-delay: 0.4s; }
 .reveal[data-delay="5"] { transition-delay: 0.5s; }
 
+/* ── Device Showcase Animations ── */
+@keyframes packetRight {
+  0%   { transform: translateX(0);  opacity: 0; }
+  10%  { opacity: 0.8; }
+  90%  { opacity: 0.8; }
+  100% { transform: translateX(70px); opacity: 0; }
+}
+
+@keyframes packetLeft {
+  0%   { transform: translateX(0);  opacity: 0; }
+  10%  { opacity: 0.6; }
+  90%  { opacity: 0.6; }
+  100% { transform: translateX(-70px); opacity: 0; }
+}
+
+@keyframes beamDotRight {
+  0%   { cx: 0;   opacity: 0; }
+  10%  { opacity: 0.8; }
+  90%  { opacity: 0.8; }
+  100% { cx: 120; opacity: 0; }
+}
+
+@keyframes beamDotLeft {
+  0%   { cx: 120; opacity: 0; }
+  10%  { opacity: 0.6; }
+  90%  { opacity: 0.6; }
+  100% { cx: 0;   opacity: 0; }
+}
+
+@keyframes chipDotPulse {
+  0%, 100% { box-shadow: 0 0 4px var(--aqua); }
+  50%      { box-shadow: 0 0 8px var(--aqua), 0 0 16px rgba(0, 255, 213, 0.3); }
+}
+
+.packet-r { animation: packetRight 2.8s ease-in-out infinite; }
+.packet-l { animation: packetLeft 2.8s ease-in-out 1.4s infinite; }
+
+.beam-dot-1 { animation: beamDotRight 3s ease-in-out infinite; }
+.beam-dot-2 { animation: beamDotLeft 3s ease-in-out 1.5s infinite; }
+
+.app-chip-dot { animation: chipDotPulse 2s ease-in-out infinite; }
+
+.pop-dot { animation: chipDotPulse 2s ease-in-out infinite; }
+
 /* ── Reduced Motion ── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

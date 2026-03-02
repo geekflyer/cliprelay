@@ -126,6 +126,105 @@
         Download for Mac
       </a>
     </div>
+
+    <!-- ── Device Showcase ── -->
+    <div class="hero-showcase reveal">
+      <!-- Android Phone -->
+      <div class="mockup-phone">
+        <div class="phone-notch"></div>
+        <div class="phone-screen">
+          <div class="app-chip"><span class="app-chip-dot"></span>Connected</div>
+          <div class="app-card">
+            <svg class="app-logo" width="36" height="36" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="22" y="32" width="46" height="62" rx="10" fill="#0A3A34" stroke="#00FFD5" stroke-width="2.5" opacity="0.9"/>
+              <rect x="30" y="26" width="30" height="12" rx="4" fill="#082A26" stroke="#00FFD5" stroke-width="2"/>
+              <rect x="30" y="48" width="30" height="3.5" rx="1.75" fill="#00FFD5" opacity="0.4"/>
+              <rect x="30" y="55" width="20" height="3.5" rx="1.75" fill="#00FFD5" opacity="0.25"/>
+              <rect x="30" y="62" width="25" height="3.5" rx="1.75" fill="#00FFD5" opacity="0.25"/>
+              <path d="M78 46 A 16 16 0 0 1 78 72" stroke="#00FFD5" stroke-width="3" stroke-linecap="round" fill="none"/>
+              <path d="M86 38 A 26 26 0 0 1 86 80" stroke="#00FFD5" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.6"/>
+              <path d="M94 30 A 36 36 0 0 1 94 88" stroke="#00FFD5" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.3"/>
+            </svg>
+            <div class="app-name">ClipRelay</div>
+            <div class="app-desc">Seamless clipboard sharing with your Mac</div>
+            <div class="app-divider"></div>
+            <div class="app-conn">
+              <div class="app-node">
+                <div class="app-node-box active">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00FFD5" stroke-width="1.5" stroke-linecap="round"><rect x="7" y="2" width="10" height="20" rx="2.5"/><line x1="10" y1="18" x2="14" y2="18"/></svg>
+                </div>
+                <span>This phone</span>
+              </div>
+              <div class="app-beam-track">
+                <svg width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none">
+                  <line x1="0" y1="8" x2="80" y2="8" stroke="#00FFD5" stroke-width="1" stroke-dasharray="4 4" opacity="0.3"/>
+                  <line x1="0" y1="12" x2="80" y2="12" stroke="#00FFD5" stroke-width="1" stroke-dasharray="4 4" opacity="0.2"/>
+                  <circle class="packet packet-r" cx="0" cy="8" r="2.5" fill="#00FFD5"/>
+                  <circle class="packet packet-l" cx="80" cy="12" r="2" fill="#00FFD5" opacity="0.7"/>
+                </svg>
+              </div>
+              <div class="app-node">
+                <div class="app-node-box active">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00FFD5" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
+                </div>
+                <span>Mac</span>
+              </div>
+            </div>
+            <div class="app-encrypt">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              End-to-end encrypted
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connection beam between devices -->
+      <svg class="showcase-beam" width="120" height="60" viewBox="0 0 120 60">
+        <defs>
+          <linearGradient id="beamGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#00FFD5" stop-opacity="0.6"/>
+            <stop offset="50%" stop-color="#00FFD5" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#00FFD5" stop-opacity="0.6"/>
+          </linearGradient>
+        </defs>
+        <line x1="0" y1="30" x2="120" y2="30" stroke="url(#beamGrad)" stroke-width="1" stroke-dasharray="5 5"/>
+        <circle class="beam-dot beam-dot-1" cx="0" cy="30" r="3" fill="#00FFD5"/>
+        <circle class="beam-dot beam-dot-2" cx="120" cy="30" r="2.5" fill="#00FFD5" opacity="0.7"/>
+      </svg>
+
+      <!-- Mac Laptop -->
+      <div class="mockup-mac">
+        <div class="mac-screen">
+          <div class="mac-bar">
+            <div class="mac-dots"><span></span><span></span><span></span></div>
+            <div class="mac-bar-right">
+              <svg width="12" height="12" viewBox="0 0 120 120" fill="none">
+                <rect x="22" y="32" width="46" height="62" rx="10" stroke="#00FFD5" stroke-width="5" fill="none"/>
+                <rect x="30" y="26" width="30" height="12" rx="4" stroke="#00FFD5" stroke-width="4" fill="none"/>
+                <path d="M78 46 A 16 16 0 0 1 78 72" stroke="#00FFD5" stroke-width="5" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+          </div>
+          <div class="mac-desktop">
+            <div class="mac-popover">
+              <div class="pop-header">Paired Devices</div>
+              <div class="pop-device">
+                <span class="pop-dot"></span>
+                Pixel 9 Pro
+              </div>
+              <div class="pop-sep"></div>
+              <div class="pop-item">Pair New Device...<span class="pop-key">&#8984;N</span></div>
+              <div class="pop-sep"></div>
+              <div class="pop-item">Quit ClipRelay<span class="pop-key">&#8984;Q</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="mac-base">
+          <div class="mac-hinge"></div>
+        </div>
+      </div>
+    </div>
+
   </section>
 
   <!-- ════════════════════════════════════ Features ════════════════════════════════════ -->
@@ -170,21 +269,6 @@
           <p>Copy on your Mac and it appears on your Android instantly. No buttons to press, no extra steps.</p>
         </div>
 
-        <div class="feature-card reveal" data-delay="2">
-          <div class="feature-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-          </div>
-          <h3>Share Sheet Integration</h3>
-          <p>Share text from any Android app directly to your Mac via the system share sheet. No clipboard needed.</p>
-        </div>
-
-        <div class="feature-card reveal" data-delay="3">
-          <div class="feature-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
-          <h3>Auto-Clear Clipboard</h3>
-          <p>Clipboard content is automatically cleared after syncing. Your sensitive data doesn't linger.</p>
-        </div>
       </div>
     </div>
   </section>
