@@ -19,8 +19,8 @@
   --gradient-title: linear-gradient(135deg, #fff 30%, #00FFD5);
 
   /* Typography */
-  --font-display: 'Instrument Serif', serif;
-  --font-body: 'DM Sans', sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Inter', sans-serif;
 
   /* Spacing */
   --section-pad: clamp(60px, 10vw, 120px);
