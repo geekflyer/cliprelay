@@ -10,9 +10,9 @@
   --board-darker: #082A26;
 
   /* Dark UI Surfaces */
-  --bg: #0A0A0F;
-  --surface: #13131A;
-  --border: #1E1E2A;
+  --bg: #111820;
+  --surface: #182028;
+  --border: #243038;
   --text: #E8E8ED;
   --text-dim: #6B6B7B;
 
@@ -46,15 +46,16 @@ img, svg { display: block; max-width: 100%; }
 a { color: var(--aqua); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* ── Noise Overlay ── */
+/* ── Dot Grid Overlay ── */
 body::after {
   content: '';
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 9999;
-  opacity: 0.03;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.12;
+  background-image: radial-gradient(circle, #00FFD5 0.5px, transparent 0.5px);
+  background-size: 24px 24px;
 }
 
 /* ── Container ── */
@@ -75,7 +76,7 @@ body::after {
 }
 
 .nav.scrolled {
-  background: rgba(19, 19, 26, 0.85);
+  background: rgba(17, 24, 32, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
@@ -243,7 +244,7 @@ body::after {
 .mockup-phone {
   width: 200px;
   height: 400px;
-  background: #111118;
+  background: #151d25;
   border-radius: 28px;
   border: 2px solid #2a2a38;
   position: relative;
@@ -262,7 +263,7 @@ body::after {
   transform: translateX(-50%);
   width: 60px;
   height: 20px;
-  background: #0A0A0F;
+  background: #111820;
   border-radius: 0 0 12px 12px;
   z-index: 2;
 }
@@ -276,7 +277,7 @@ body::after {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #1a1a25;
+  background: #1e2830;
 }
 
 .phone-screen {
@@ -286,7 +287,7 @@ body::after {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  background: linear-gradient(180deg, #0d1a18 0%, #0e0e15 60%, #0f1614 100%);
+  background: linear-gradient(180deg, #152220 0%, #131c24 60%, #162220 100%);
 }
 
 .app-chip {
@@ -412,7 +413,7 @@ body::after {
 }
 
 .mac-screen {
-  background: #1a1a24;
+  background: #1e2830;
   border-radius: 12px 12px 0 0;
   border: 2px solid #2a2a38;
   border-bottom: none;
