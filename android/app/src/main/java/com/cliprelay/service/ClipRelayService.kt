@@ -88,12 +88,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
             when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
                 BluetoothAdapter.STATE_ON -> {
-                    Log.d(TAG, "Bluetooth enabled — ensuring BLE components are running")
+                    Log.w(TAG, "Bluetooth enabled — ensuring BLE components are running")
                     ensureBleComponentsState(restartIfRunning = true)
                     sendConnectionBroadcast(false)
                 }
                 BluetoothAdapter.STATE_OFF -> {
-                    Log.d(TAG, "Bluetooth disabled — stopping BLE components")
+                    Log.w(TAG, "Bluetooth disabled — stopping BLE components")
                     stopBleComponents()
                 }
             }
@@ -104,7 +104,6 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     override fun onCreate() {
         super.onCreate()
-
         clipboardWriter = ClipboardWriter(this)
         clipboardSettingsStore = ClipboardSettingsStore(this)
         pairingStore = PairingStore(this)
@@ -180,7 +179,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private fun ensureBleComponentsState(restartIfRunning: Boolean = false) {
         if (encryptionKey == null) {
             if (bleStarted) {
-                Log.d(TAG, "Pairing token missing; stopping BLE components")
+                Log.w(TAG, "Pairing token missing; stopping BLE components")
                 stopBleComponents()
             }
             return
@@ -206,6 +205,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     }
 
     private fun startBle() {
+        Log.w(TAG, "startBle() — encryptionKey=${if (encryptionKey != null) "set" else "null"}")
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter = bluetoothManager?.adapter
         if (adapter == null) {
@@ -219,13 +219,13 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             val l2cap = L2capServer(adapter, this)
             val psm = l2cap.start()
             l2capServer = l2cap
-            Log.d(TAG, "L2CAP server started on PSM $psm")
+            Log.w(TAG, "L2CAP server started on PSM $psm")
 
             // 2. Start minimal GATT server with PSM characteristic
             val psmGatt = PsmGattServer(this, bluetoothManager, psm)
             psmGatt.start()
             psmGattServer = psmGatt
-            Log.d(TAG, "PSM GATT server started")
+            Log.w(TAG, "PSM GATT server started")
 
             // 3. Start advertising (reuse existing Advertiser)
             val adv = Advertiser(this, ParcelUuid(PsmGattServer.SERVICE_UUID))
@@ -235,7 +235,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             }
             adv.start()
             advertiser = adv
-            Log.d(TAG, "BLE advertising started")
+            Log.w(TAG, "BLE advertising started (deviceTag=${advertiser?.deviceTag?.let { it.joinToString("") { b -> "%02x".format(b) } } ?: "null"})")
 
             true
         }.getOrElse { error ->
@@ -298,7 +298,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     // ── L2capServerCallback ───────────────────────────────────────────
 
     override fun onClientConnected(socket: BluetoothSocket) {
-        Log.d(TAG, "L2CAP client connected")
+        Log.w(TAG, "L2CAP client connected")
 
         // Tear down previous session
         activeSession?.close()
@@ -340,7 +340,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     // ── SessionCallback ───────────────────────────────────────────────
 
     override fun onSessionReady() {
-        Log.d(TAG, "L2CAP session ready")
+        Log.w(TAG, "L2CAP session ready")
         val name = loadConnectedDeviceName()
         sendConnectionBroadcast(true, name)
         DebugSmokeProbe.onConnectionChanged(this, true)

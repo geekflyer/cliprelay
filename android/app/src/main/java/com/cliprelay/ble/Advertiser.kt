@@ -90,7 +90,7 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
         val advertiseCallback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
                 retryAttempt = 0
-                Log.d(TAG, "BLE advertise started")
+                Log.w(TAG, "BLE advertise started")
             }
 
             override fun onStartFailure(errorCode: Int) {
