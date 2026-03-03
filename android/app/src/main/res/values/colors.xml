@@ -6,13 +6,10 @@
     <color name="aqua">#00FFD5</color>
     <color name="teal">#00796B</color>
 
-    <!-- Backgrounds -->
-    <color name="bg_top_unpaired">#E8F5F3</color>
-    <color name="bg_top_connected">#D6F5EF</color>
-    <color name="bg_bottom_unpaired">#F0F0F0</color>
-    <color name="bg_bottom_connected">#F0F7F5</color>
+    <!-- Dark backgrounds -->
+    <color name="dark_bg">#111820</color>
+    <color name="dark_surface">#182028</color>
 
     <!-- UI -->
-    <color name="card_white">#FFFFFF</color>
-    <color name="toast_bg">#323232</color>
+    <color name="toast_bg">#243038</color>
 </resources>
