@@ -1,5 +1,7 @@
 package com.cliprelay.ui
 
+// ViewModel exposing app state (pairing, connection, transfer events) to the Compose UI.
+
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow

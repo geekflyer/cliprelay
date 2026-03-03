@@ -1,5 +1,7 @@
 package com.cliprelay.ble
 
+// Listens for incoming BLE L2CAP connections and hands off connected sockets to a callback.
+
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket

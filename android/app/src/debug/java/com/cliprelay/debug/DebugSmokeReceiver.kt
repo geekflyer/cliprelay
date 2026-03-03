@@ -1,5 +1,7 @@
 package com.cliprelay.debug
 
+// BroadcastReceiver for smoke-test intents: import/clear pairing tokens and reset the probe.
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent

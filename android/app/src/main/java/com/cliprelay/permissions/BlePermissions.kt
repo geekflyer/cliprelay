@@ -1,5 +1,7 @@
 package com.cliprelay.permissions
 
+// Resolves which BLE runtime permissions are required on the current Android SDK version.
+
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager

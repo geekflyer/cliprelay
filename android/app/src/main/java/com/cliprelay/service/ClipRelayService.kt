@@ -1,5 +1,7 @@
 package com.cliprelay.service
 
+// Foreground service that orchestrates BLE advertising, L2CAP connections, and clipboard sync.
+
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager

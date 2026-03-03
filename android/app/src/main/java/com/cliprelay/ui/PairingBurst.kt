@@ -1,5 +1,7 @@
 package com.cliprelay.ui
 
+// Animated Compose component: celebratory particle burst shown after successful pairing.
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring

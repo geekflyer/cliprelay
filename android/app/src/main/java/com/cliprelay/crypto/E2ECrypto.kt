@@ -1,5 +1,7 @@
 package com.cliprelay.crypto
 
+// AES-256-GCM encryption/decryption and HKDF key derivation for end-to-end clipboard security.
+
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.SecretKey

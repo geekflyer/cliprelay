@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Publishes the Android release AAB to Google Play via Gradle Play Publisher.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

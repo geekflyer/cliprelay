@@ -1,3 +1,5 @@
+/* Keyframe animations for the beam-pulse hero visual on the landing page. */
+
 /* ── Beam Pulse (from BRAND.md) ── */
 @keyframes beamPulse1 {
   0%, 100% { opacity: 0.9; transform: translateX(0); }

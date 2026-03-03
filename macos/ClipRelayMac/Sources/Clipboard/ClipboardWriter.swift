@@ -1,3 +1,5 @@
+// Writes received text to the macOS system pasteboard.
+
 import AppKit
 
 final class ClipboardWriter {

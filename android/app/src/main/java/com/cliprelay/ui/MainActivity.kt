@@ -1,5 +1,7 @@
 package com.cliprelay.ui
 
+// Main activity: handles permissions, QR scanning results, and hosts the Compose UI.
+
 import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context

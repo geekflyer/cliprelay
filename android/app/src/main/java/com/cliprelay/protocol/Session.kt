@@ -1,5 +1,7 @@
 package com.cliprelay.protocol
 
+// Manages a single L2CAP protocol session: handshake, clipboard offer/accept, and payload transfer.
+
 import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream

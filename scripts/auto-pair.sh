@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
+# Generates a shared pairing token and injects it into both Mac and Android for automated testing.
 set -euo pipefail
-
-# Auto-pair Mac and Android for testing.
-# Generates a shared token, injects it into both Mac keychain and Android prefs,
-# and restarts both apps.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"

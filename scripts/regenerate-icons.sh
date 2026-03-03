@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
+# Regenerates raster icon assets (PNG) from SVG sources. Requires rsvg-convert.
 set -euo pipefail
-
-# Regenerate raster icon assets from SVG sources.
-# Requires: rsvg-convert (from librsvg).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/.."

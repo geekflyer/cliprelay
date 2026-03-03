@@ -1,5 +1,7 @@
 package com.cliprelay.ui
 
+// Main Compose UI screen showing connection status, pairing controls, and transfer animations.
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode

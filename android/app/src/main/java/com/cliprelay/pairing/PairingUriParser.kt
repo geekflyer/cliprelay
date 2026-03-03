@@ -1,5 +1,7 @@
 package com.cliprelay.pairing
 
+// Parses cliprelay:// pairing URIs from QR codes into a token and optional device name.
+
 import java.net.URI
 import java.net.URLDecoder
 

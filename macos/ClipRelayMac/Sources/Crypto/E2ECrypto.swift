@@ -1,3 +1,5 @@
+// AES-256-GCM encryption/decryption and HKDF key derivation for end-to-end clipboard security.
+
 import CryptoKit
 import Foundation
 

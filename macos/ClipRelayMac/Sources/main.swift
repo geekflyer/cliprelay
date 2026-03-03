@@ -1,3 +1,5 @@
+// App entry point: single-instance guard, smoke-test CLI dispatch, and NSApplication bootstrap.
+
 import AppKit
 import os
 

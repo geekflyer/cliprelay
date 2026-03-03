@@ -1,3 +1,5 @@
+// Thin wrapper around macOS Keychain Services for secure data storage and retrieval.
+
 import Foundation
 import Security
 

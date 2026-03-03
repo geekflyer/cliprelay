@@ -1,5 +1,7 @@
 package com.cliprelay.protocol
 
+// Binary wire format: length-prefixed message types and encoding/decoding for the L2CAP protocol.
+
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer

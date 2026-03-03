@@ -1,3 +1,5 @@
+// Manages the macOS menu bar icon, status dot, and dropdown menu for peer management.
+
 import AppKit
 import Foundation
 import QuartzCore

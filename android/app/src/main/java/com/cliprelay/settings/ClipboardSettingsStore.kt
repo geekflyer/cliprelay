@@ -1,5 +1,7 @@
 package com.cliprelay.settings
 
+// Persists user preferences for clipboard behavior (e.g. auto-clear after sync).
+
 import android.content.Context
 
 class ClipboardSettingsStore(context: Context) {

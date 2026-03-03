@@ -1,3 +1,5 @@
+// Binary wire format: length-prefixed message types and encoding/decoding for the L2CAP protocol.
+
 import Foundation
 
 enum MessageType: UInt8 {

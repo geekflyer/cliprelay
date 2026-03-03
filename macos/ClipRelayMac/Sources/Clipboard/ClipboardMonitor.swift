@@ -1,3 +1,5 @@
+// Polls the macOS pasteboard for changes and fires a callback when new text is detected.
+
 import AppKit
 import CryptoKit
 

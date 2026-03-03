@@ -1,5 +1,7 @@
 package com.cliprelay.ui
 
+// Animated Compose component: data-beam visual effect shown during clipboard transfer.
+
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat

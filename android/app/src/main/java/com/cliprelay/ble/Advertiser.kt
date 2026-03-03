@@ -1,5 +1,7 @@
 package com.cliprelay.ble
 
+// Manages BLE advertising with automatic retry and periodic restart to survive Android power management.
+
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData

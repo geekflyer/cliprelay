@@ -1,5 +1,7 @@
 package com.cliprelay.debug
 
+// Records internal state to a JSON file for automated smoke test assertions (debug builds only).
+
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import org.json.JSONObject

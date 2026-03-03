@@ -1,5 +1,7 @@
 package com.cliprelay.ui
 
+// Handles Android share-sheet intents to send shared text to the connected Mac.
+
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast

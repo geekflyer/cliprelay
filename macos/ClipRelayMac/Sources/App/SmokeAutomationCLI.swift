@@ -1,3 +1,5 @@
+// CLI subcommands for automated smoke testing (import/remove pairing tokens from command line).
+
 import Foundation
 
 enum SmokeAutomationCLI {

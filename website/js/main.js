@@ -1,3 +1,5 @@
+// Scroll-reveal animations using IntersectionObserver for the landing page.
+
 // ── Scroll Reveals ──
 const observer = new IntersectionObserver(
   (entries) => {

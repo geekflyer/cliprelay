@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# End-to-end BLE hardware smoke test: pairs devices, syncs clipboard, and verifies round-trip.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

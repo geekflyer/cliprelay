@@ -1,3 +1,5 @@
+// Manages a single L2CAP protocol session: handshake, clipboard offer/accept, and payload transfer.
+
 import Foundation
 import CommonCrypto
 

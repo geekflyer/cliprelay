@@ -1,5 +1,7 @@
 package com.cliprelay.service
 
+// Writes received text to the Android system clipboard on the main thread.
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context

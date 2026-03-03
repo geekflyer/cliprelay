@@ -1,5 +1,7 @@
 package com.cliprelay.pairing
 
+// Persists the pairing token in EncryptedSharedPreferences (with plaintext fallback).
+
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log

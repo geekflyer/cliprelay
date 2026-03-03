@@ -1,5 +1,7 @@
 package com.cliprelay.service
 
+// Starts the ClipRelay foreground service automatically after device boot.
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent

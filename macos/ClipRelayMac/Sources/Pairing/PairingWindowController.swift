@@ -1,3 +1,5 @@
+// Displays the pairing QR code in a floating window for the Android app to scan.
+
 import AppKit
 import CoreImage
 

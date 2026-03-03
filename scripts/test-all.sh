@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Runs the full test suite (Swift package tests and Android unit tests).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

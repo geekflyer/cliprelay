@@ -1,5 +1,7 @@
 package com.cliprelay.ui
 
+// Brand color tokens for the Compose theme.
+
 import androidx.compose.ui.graphics.Color
 
 // ─── Brand tokens ────────────────────────────────────────────────────────────

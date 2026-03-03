@@ -1,3 +1,5 @@
+// Posts macOS user notifications when clipboard text is received from Android.
+
 import Foundation
 import UserNotifications
 

@@ -1,3 +1,5 @@
+// BLE Central manager: scanning, L2CAP connections, and bidirectional data exchange with Android peers.
+
 import CoreBluetooth
 import Foundation
 import os

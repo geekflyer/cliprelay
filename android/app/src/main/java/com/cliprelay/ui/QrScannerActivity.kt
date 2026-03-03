@@ -1,5 +1,7 @@
 package com.cliprelay.ui
 
+// Launches the ML Kit barcode scanner for QR-based pairing with the Mac app.
+
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper

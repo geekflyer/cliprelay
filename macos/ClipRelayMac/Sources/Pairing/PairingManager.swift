@@ -1,3 +1,5 @@
+// Persists paired device records in Keychain and derives per-device encryption keys.
+
 import CryptoKit
 import Foundation
 import Security

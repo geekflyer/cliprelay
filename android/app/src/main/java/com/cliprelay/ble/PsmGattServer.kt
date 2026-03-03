@@ -1,5 +1,7 @@
 package com.cliprelay.ble
 
+// GATT server that advertises the L2CAP PSM so the Mac can discover which channel to connect on.
+
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
