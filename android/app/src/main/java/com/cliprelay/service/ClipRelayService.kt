@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothSocket
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -17,22 +19,22 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.cliprelay.R
 import com.cliprelay.ble.Advertiser
-import com.cliprelay.ble.BleInboundStateMachine
-import com.cliprelay.ble.ChunkTransfer
-import com.cliprelay.ble.GattServerCallback
-import com.cliprelay.ble.GattServerManager
+import com.cliprelay.ble.L2capServer
+import com.cliprelay.ble.L2capServerCallback
+import com.cliprelay.ble.PsmGattServer
 import com.cliprelay.crypto.E2ECrypto
 import com.cliprelay.debug.DebugSmokeProbe
 import com.cliprelay.permissions.BlePermissions
 import com.cliprelay.pairing.PairingStore
+import com.cliprelay.protocol.Session
+import com.cliprelay.protocol.SessionCallback
 import com.cliprelay.settings.ClipboardSettingsStore
-import org.json.JSONObject
+import java.io.IOException
 import java.security.MessageDigest
-import java.util.UUID
 import java.util.concurrent.Executors
 import javax.crypto.SecretKey
 
-class ClipRelayService : Service() {
+class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     companion object {
         const val ACTION_PUSH_TEXT = "com.cliprelay.action.PUSH_TEXT"
         const val ACTION_RELOAD_PAIRING = "com.cliprelay.action.RELOAD_PAIRING"
@@ -50,31 +52,32 @@ class ClipRelayService : Service() {
 
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
-        private const val STALE_CONNECTION_CHECK_INTERVAL_MS = 60_000L
-        private const val STALE_CONNECTION_TIMEOUT_SECONDS = 90
-        private const val BLE_HEALTH_RESTART_WINDOW_MS = 10 * 60_000L
-        private const val BLE_HEALTH_RESTART_LIMIT = 3
-        private const val BLE_HEALTH_RESTART_MIN_INTERVAL_MS = 30_000L
-        private const val PAYLOAD_TYPE_TEXT = "text/plain"
-        private const val PAYLOAD_TYPE_CONTROL = "application/x-cliprelay-control"
-        private const val CONTROL_EVENT_ANDROID_UNPAIRED = "android_unpaired"
     }
 
-    private lateinit var gattServer: GattServerManager
-    private lateinit var gattCallback: GattServerCallback
-    private lateinit var advertiser: Advertiser
+    // BLE components
+    private var advertiser: Advertiser? = null
+    private var l2capServer: L2capServer? = null
+    private var psmGattServer: PsmGattServer? = null
+
+    // Active L2CAP session (at most one)
+    @Volatile
+    private var activeSession: Session? = null
+    private var sessionThread: Thread? = null
+
+    // Crypto
+    @Volatile
+    private var encryptionKey: SecretKey? = null
+    @Volatile
+    private var lastInboundHash: String? = null
+
+    // Support
     private lateinit var clipboardWriter: ClipboardWriter
     private lateinit var clipboardSettingsStore: ClipboardSettingsStore
     private lateinit var pairingStore: PairingStore
-
-    private val transferExecutor = Executors.newSingleThreadExecutor()
-    private val inboundStateMachine = BleInboundStateMachine()
-    private val staleConnectionHandler = Handler(Looper.getMainLooper())
+    private val executor = Executors.newSingleThreadExecutor()
     private val clipboardAutoClearHandler = Handler(Looper.getMainLooper())
     private var pendingClipboardAutoClear: Runnable? = null
-    private var bleHealthWindowStartedAtMs = 0L
-    private var bleHealthRestartCountInWindow = 0
-    private var lastBleHealthRestartAtMs = 0L
+
     @Volatile
     private var bleStarted = false
     @Volatile
@@ -90,18 +93,14 @@ class ClipRelayService : Service() {
                     sendConnectionBroadcast(false)
                 }
                 BluetoothAdapter.STATE_OFF -> {
-                    Log.d(TAG, "Bluetooth disabled — stopping GATT server and advertiser")
+                    Log.d(TAG, "Bluetooth disabled — stopping BLE components")
                     stopBleComponents()
                 }
             }
         }
     }
 
-    @Volatile
-    private var encryptionKey: SecretKey? = null
-
-    @Volatile
-    private var lastInboundHash: String? = null
+    // ── Lifecycle ──────────────────────────────────────────────────────
 
     override fun onCreate() {
         super.onCreate()
@@ -110,46 +109,19 @@ class ClipRelayService : Service() {
         clipboardSettingsStore = ClipboardSettingsStore(this)
         pairingStore = PairingStore(this)
 
-        gattCallback = GattServerCallback(
-            onAvailableReceived = { deviceId, bytes ->
-                transferExecutor.execute {
-                    handleAvailableMetadata(deviceId, bytes)
-                }
-            },
-            onDataReceived = { deviceId, bytes ->
-                transferExecutor.execute {
-                    handleIncomingDataFrame(deviceId, bytes)
-                }
-            },
-            onDeviceConnectionChanged = { deviceId, isConnected, hasConnectedDevices ->
-                if (!isConnected) {
-                    transferExecutor.execute {
-                        inboundStateMachine.onDisconnected(deviceId)
-                    }
-                }
-                DebugSmokeProbe.onConnectionChanged(this, hasConnectedDevices)
-                val name = loadConnectedDeviceName()
-                sendConnectionBroadcast(hasConnectedDevices, name)
-            }
-        )
-        gattServer = GattServerManager(this, gattCallback)
-
-        advertiser = Advertiser(this, ParcelUuid(GattServerManager.SERVICE_UUID))
         loadPairingState()
         DebugSmokeProbe.reset(this)
 
         startForeground(1001, buildNotification())
         registerReceiver(bluetoothStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         ensureBleComponentsState()
-        scheduleStaleConnectionCheck()
     }
 
     override fun onDestroy() {
         isDestroyed = true
-        staleConnectionHandler.removeCallbacksAndMessages(null)
         clipboardAutoClearHandler.removeCallbacksAndMessages(null)
         unregisterReceiver(bluetoothStateReceiver)
-        transferExecutor.shutdownNow()
+        executor.shutdownNow()
         stopBleComponents()
         super.onDestroy()
     }
@@ -168,20 +140,15 @@ class ClipRelayService : Service() {
             ACTION_PUSH_TEXT -> {
                 val text = intent.getStringExtra(EXTRA_TEXT)
                 if (!text.isNullOrBlank()) {
-                    transferExecutor.execute {
+                    executor.execute {
                         pushPlainTextToMac(text)
                     }
                 }
             }
             ACTION_RELOAD_PAIRING -> {
-                // If token was cleared (unpair), stop the entire BLE stack.
-                // server.close() tears down all central connections, and we
-                // intentionally do NOT restart — there's nothing to connect to
-                // when unpaired. A new pairing via QR will trigger another
-                // RELOAD_PAIRING that restarts everything.
                 if (encryptionKey == null) {
                     if (bleStarted) {
-                        stopBleComponents(disconnectCentralsFirst = true)
+                        stopBleComponents()
                     }
                     sendConnectionBroadcast(false)
                 } else if (BlePermissions.hasRequiredRuntimePermissions(this)) {
@@ -195,12 +162,9 @@ class ClipRelayService : Service() {
                     Log.w(TAG, "BLE runtime permissions missing; stopping BLE components")
                     stopBleComponents()
                 }
-                transferExecutor.execute {
-                    inboundStateMachine.resetAll()
-                }
             }
             ACTION_QUERY_CONNECTION -> {
-                val connected = gattServer.hasConnectedCentral()
+                val connected = activeSession != null
                 val name = if (connected) loadConnectedDeviceName() else null
                 sendConnectionBroadcast(connected, name)
             }
@@ -211,11 +175,13 @@ class ClipRelayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // ── BLE stack management ──────────────────────────────────────────
+
     private fun ensureBleComponentsState(restartIfRunning: Boolean = false) {
         if (encryptionKey == null) {
             if (bleStarted) {
                 Log.d(TAG, "Pairing token missing; stopping BLE components")
-                stopBleComponents(disconnectCentralsFirst = true)
+                stopBleComponents()
             }
             return
         }
@@ -236,14 +202,50 @@ class ClipRelayService : Service() {
             return
         }
 
+        startBle()
+    }
+
+    private fun startBle() {
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val adapter = bluetoothManager?.adapter
+        if (adapter == null) {
+            Log.e(TAG, "BluetoothAdapter unavailable")
+            sendConnectionBroadcast(false)
+            return
+        }
+
         val started = runCatching {
-            gattServer.start()
-            advertiser.start()
+            // 1. Start L2CAP server, get PSM
+            val l2cap = L2capServer(adapter, this)
+            val psm = l2cap.start()
+            l2capServer = l2cap
+            Log.d(TAG, "L2CAP server started on PSM $psm")
+
+            // 2. Start minimal GATT server with PSM characteristic
+            val psmGatt = PsmGattServer(this, bluetoothManager, psm)
+            psmGatt.start()
+            psmGattServer = psmGatt
+            Log.d(TAG, "PSM GATT server started")
+
+            // 3. Start advertising (reuse existing Advertiser)
+            val adv = Advertiser(this, ParcelUuid(PsmGattServer.SERVICE_UUID))
+            adv.deviceTag = encryptionKey?.let {
+                val token = pairingStore.loadToken()
+                if (token != null) E2ECrypto.deviceTag(token) else null
+            }
+            adv.start()
+            advertiser = adv
+            Log.d(TAG, "BLE advertising started")
+
             true
         }.getOrElse { error ->
             bleStarted = false
-            advertiser.stop()
-            gattServer.stop()
+            advertiser?.stop()
+            advertiser = null
+            psmGattServer?.stop()
+            psmGattServer = null
+            l2capServer?.stop()
+            l2capServer = null
             if (error is SecurityException) {
                 Log.e(TAG, "BLE startup blocked by missing runtime permission", error)
             } else {
@@ -258,19 +260,24 @@ class ClipRelayService : Service() {
         }
     }
 
-    private fun stopBleComponents(
-        broadcastDisconnected: Boolean = true,
-        disconnectCentralsFirst: Boolean = false
-    ) {
-        if (disconnectCentralsFirst) {
-            gattServer.disconnectAllCentrals()
+    private fun stopBleComponents(broadcastDisconnected: Boolean = true) {
+        // Tear down active session
+        activeSession?.close()
+        sessionThread?.let { thread ->
+            try { thread.join(2000) } catch (_: InterruptedException) {}
         }
-        advertiser.stop()
-        gattServer.stop()
+        activeSession = null
+        sessionThread = null
+
+        // Stop BLE stack
+        advertiser?.stop()
+        advertiser = null
+        psmGattServer?.stop()
+        psmGattServer = null
+        l2capServer?.stop()
+        l2capServer = null
+
         bleStarted = false
-        transferExecutor.execute {
-            inboundStateMachine.resetAll()
-        }
         if (broadcastDisconnected) {
             sendConnectionBroadcast(false)
         }
@@ -280,27 +287,74 @@ class ClipRelayService : Service() {
         val token = pairingStore.loadToken()
         if (token != null) {
             encryptionKey = E2ECrypto.deriveKey(token)
-            advertiser.deviceTag = E2ECrypto.deviceTag(token)
+            advertiser?.deviceTag = E2ECrypto.deviceTag(token)
         } else {
             encryptionKey = null
-            advertiser.deviceTag = null
+            advertiser?.deviceTag = null
             saveConnectedDeviceName(null)
         }
     }
 
-    private fun handleIncomingDataFrame(deviceId: String, frame: ByteArray) {
-        val assembled = inboundStateMachine.onDataFrame(deviceId, frame) ?: return
-        val assembledBytes = assembled.bytes
+    // ── L2capServerCallback ───────────────────────────────────────────
 
-        // Decrypt
+    override fun onClientConnected(socket: BluetoothSocket) {
+        Log.d(TAG, "L2CAP client connected")
+
+        // Tear down previous session
+        activeSession?.close()
+        sessionThread?.let { thread ->
+            try { thread.join(2000) } catch (_: InterruptedException) {}
+        }
+
+        // Create new session (Android is the responder)
+        val session = Session(
+            socket.inputStream, socket.outputStream,
+            isInitiator = false,
+            this  // SessionCallback
+        )
+        activeSession = session
+
+        sessionThread = Thread({
+            session.performHandshake()
+            session.listenForMessages()
+        }, "L2CAP-Session").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    override fun onAcceptError(error: IOException) {
+        Log.e(TAG, "L2CAP accept error: ${error.message}")
+        // The L2CAP server loop has exited. If we're still alive, restart.
+        if (!isDestroyed && bleStarted) {
+            Handler(Looper.getMainLooper()).post {
+                if (!isDestroyed && bleStarted) {
+                    Log.d(TAG, "Restarting BLE stack after L2CAP accept error")
+                    stopBleComponents(broadcastDisconnected = false)
+                    ensureBleComponentsState()
+                }
+            }
+        }
+    }
+
+    // ── SessionCallback ───────────────────────────────────────────────
+
+    override fun onSessionReady() {
+        Log.d(TAG, "L2CAP session ready")
+        val name = loadConnectedDeviceName()
+        sendConnectionBroadcast(true, name)
+        DebugSmokeProbe.onConnectionChanged(this, true)
+    }
+
+    override fun onClipboardReceived(encryptedBlob: ByteArray, hash: String) {
         val key = encryptionKey
         if (key == null) {
-            Log.w(TAG, "No encryption key; ignoring incoming data")
+            Log.w(TAG, "No encryption key; ignoring incoming clipboard")
             return
         }
 
         val plaintext = try {
-            E2ECrypto.open(assembledBytes, key)
+            E2ECrypto.open(encryptedBlob, key)
         } catch (e: Exception) {
             Log.e(TAG, "Decryption failed: ${e.message}")
             return
@@ -309,15 +363,79 @@ class ClipRelayService : Service() {
         val decodedText = plaintext.toString(Charsets.UTF_8)
         if (decodedText.isEmpty()) return
 
-        val hash = sha256Hex(decodedText.toByteArray(Charsets.UTF_8))
-        if (hash == lastInboundHash) return
-
         lastInboundHash = hash
         clipboardWriter.writeText(decodedText)
         scheduleClipboardAutoClear(decodedText)
         sendClipboardTransferBroadcast(fromMac = true)
         DebugSmokeProbe.onInboundClipboardApplied(this, decodedText)
     }
+
+    override fun onTransferComplete(hash: String) {
+        Log.d(TAG, "Outbound transfer complete: $hash")
+        sendClipboardTransferBroadcast(fromMac = false)
+    }
+
+    override fun onSessionError(error: Exception) {
+        Log.e(TAG, "Session error: ${error.message}")
+        activeSession = null
+        sessionThread = null
+        sendConnectionBroadcast(false)
+        DebugSmokeProbe.onConnectionChanged(this, false)
+        // L2CAP server is still listening, will accept next connection
+    }
+
+    override fun hasHash(hash: String): Boolean {
+        return hash == lastInboundHash
+    }
+
+    // ── Outbound (Android → Mac) ─────────────────────────────────────
+
+    private fun pushPlainTextToMac(text: String) {
+        if (isDestroyed) return
+        val plaintext = text.toByteArray(Charsets.UTF_8)
+        if (plaintext.isEmpty() || plaintext.size > MAX_CLIPBOARD_BYTES) {
+            return
+        }
+
+        val session = activeSession
+        if (session == null) {
+            Log.d(TAG, "No active L2CAP session; skipping Android->Mac push")
+            return
+        }
+
+        val key = encryptionKey
+        if (key == null) {
+            Log.w(TAG, "No encryption key; skipping Android->Mac push")
+            return
+        }
+
+        val encrypted = try {
+            E2ECrypto.seal(plaintext, key)
+        } catch (e: Exception) {
+            Log.e(TAG, "Encryption failed: ${e.message}")
+            return
+        }
+
+        session.sendClipboard(encrypted)
+        DebugSmokeProbe.onOutboundClipboardPublished(this, text)
+    }
+
+    // ── Unpair ────────────────────────────────────────────────────────
+
+    private fun handleUnpairRequest() {
+        val hadConnection = bleStarted
+
+        pairingStore.clear()
+        loadPairingState()
+
+        if (hadConnection) {
+            stopBleComponents()
+        } else {
+            sendConnectionBroadcast(false)
+        }
+    }
+
+    // ── Clipboard helpers ─────────────────────────────────────────────
 
     private fun scheduleClipboardAutoClear(inboundText: String) {
         pendingClipboardAutoClear?.let {
@@ -340,133 +458,7 @@ class ClipRelayService : Service() {
         clipboardAutoClearHandler.postDelayed(clearRunnable, ClipboardSettingsStore.AUTO_CLEAR_DELAY_MS)
     }
 
-    private fun handleAvailableMetadata(deviceId: String, metadata: ByteArray) {
-        inboundStateMachine.onAvailableMetadata(deviceId, metadata)
-    }
-
-    private fun pushPlainTextToMac(text: String) {
-        if (isDestroyed) return
-        val plaintext = text.toByteArray(Charsets.UTF_8)
-        if (plaintext.isEmpty() || plaintext.size > MAX_CLIPBOARD_BYTES) {
-            return
-        }
-
-        if (!gattServer.hasConnectedCentral()) {
-            Log.d(TAG, "No connected Mac central; skipping Android->Mac push")
-            return
-        }
-
-        val key = encryptionKey
-        if (key == null) {
-            Log.w(TAG, "No encryption key; skipping Android->Mac push")
-            return
-        }
-
-        val published = publishEncryptedPayloadToMac(
-            plaintext = plaintext,
-            key = key,
-            payloadType = PAYLOAD_TYPE_TEXT
-        )
-        if (!published) {
-            Log.d(TAG, "No subscribers for Android->Mac push")
-        } else {
-            sendClipboardTransferBroadcast(fromMac = false)
-            DebugSmokeProbe.onOutboundClipboardPublished(this, text)
-        }
-    }
-
-    private fun handleUnpairRequest() {
-        val hadConnection = bleStarted
-        encryptionKey?.let { key ->
-            publishAndroidUnpairedControl(key)
-        }
-
-        pairingStore.clear()
-        loadPairingState()
-
-        // Delay BLE disconnect to give the Mac time to receive the unpair control event
-        val disconnectAction = Runnable {
-            if (hadConnection) {
-                stopBleComponents(disconnectCentralsFirst = true)
-            } else {
-                sendConnectionBroadcast(false)
-            }
-            transferExecutor.execute {
-                inboundStateMachine.resetAll()
-            }
-        }
-
-        if (hadConnection) {
-            Handler(Looper.getMainLooper()).postDelayed(disconnectAction, 500)
-        } else {
-            disconnectAction.run()
-        }
-    }
-
-    private fun publishAndroidUnpairedControl(key: SecretKey) {
-        val controlPayload = JSONObject()
-            .put("event", CONTROL_EVENT_ANDROID_UNPAIRED)
-            .toString()
-            .toByteArray(Charsets.UTF_8)
-        val published = publishEncryptedPayloadToMac(
-            plaintext = controlPayload,
-            key = key,
-            payloadType = PAYLOAD_TYPE_CONTROL
-        )
-        if (published) {
-            Log.d(TAG, "Published Android unpair control event")
-        } else {
-            Log.d(TAG, "No connected Mac central for unpair control event")
-        }
-    }
-
-    private fun publishEncryptedPayloadToMac(
-        plaintext: ByteArray,
-        key: SecretKey,
-        payloadType: String
-    ): Boolean {
-        if (!gattServer.hasConnectedCentral()) {
-            return false
-        }
-
-        val encrypted = try {
-            E2ECrypto.seal(plaintext, key)
-        } catch (e: Exception) {
-            Log.e(TAG, "Encryption failed: ${e.message}")
-            return false
-        }
-
-        val txId = UUID.randomUUID().toString().lowercase()
-        val totalChunks = ChunkTransfer.totalChunks(encrypted.size)
-        val dataFrames = ArrayList<ByteArray>(totalChunks + 1)
-        dataFrames.add(
-            ChunkTransfer.header(
-                txId = txId,
-                totalChunks = totalChunks,
-                totalBytes = encrypted.size,
-                encoding = "utf-8"
-            )
-        )
-
-        repeat(totalChunks) { index ->
-            dataFrames.add(ChunkTransfer.chunk(encrypted, index))
-        }
-
-        val availablePayload = JSONObject()
-            .put("hash", sha256Hex(encrypted))
-            .put("size", encrypted.size)
-            .put("type", payloadType)
-            .put("tx_id", txId)
-            .toString()
-            .toByteArray(Charsets.UTF_8)
-
-        return gattServer.publishClipboardFrames(availablePayload, dataFrames)
-    }
-
-    private fun sha256Hex(bytes: ByteArray): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-        return digest.joinToString(separator = "") { "%02x".format(it) }
-    }
+    // ── Broadcasts ────────────────────────────────────────────────────
 
     private fun sendClipboardTransferBroadcast(fromMac: Boolean) {
         val intent = Intent(ACTION_CLIPBOARD_TRANSFER)
@@ -483,6 +475,8 @@ class ClipRelayService : Service() {
         sendBroadcast(intent)
     }
 
+    // ── Preferences ───────────────────────────────────────────────────
+
     private fun saveConnectedDeviceName(name: String?) {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         prefs.edit().apply {
@@ -494,60 +488,7 @@ class ClipRelayService : Service() {
     private fun loadConnectedDeviceName(): String? =
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_CONNECTED_DEVICE, null)
 
-    private fun scheduleStaleConnectionCheck() {
-        staleConnectionHandler.postDelayed(object : Runnable {
-            override fun run() {
-                if (isDestroyed) return
-                if (bleStarted) {
-                    val reaped = gattCallback.reapStaleConnections(STALE_CONNECTION_TIMEOUT_SECONDS)
-                    if (reaped) {
-                        Log.d(TAG, "Reaped stale BLE connections")
-                    }
-                    if (!gattServer.isHealthy()) {
-                        restartBleStackFromHealthCheck("GATT server unhealthy while BLE stack marked started")
-                    }
-                }
-                staleConnectionHandler.postDelayed(this, STALE_CONNECTION_CHECK_INTERVAL_MS)
-            }
-        }, STALE_CONNECTION_CHECK_INTERVAL_MS)
-    }
-
-    private fun restartBleStackFromHealthCheck(reason: String) {
-        val nowMs = System.currentTimeMillis()
-        if (!canRunBleHealthRestart(nowMs)) {
-            Log.w(TAG, "Skipping BLE health restart (rate-limited): $reason")
-            return
-        }
-
-        Log.w(TAG, "Restarting BLE stack from health check: $reason")
-        lastBleHealthRestartAtMs = nowMs
-        stopBleComponents(broadcastDisconnected = false)
-        ensureBleComponentsState()
-        if (!bleStarted) {
-            sendConnectionBroadcast(false)
-        }
-    }
-
-    private fun canRunBleHealthRestart(nowMs: Long): Boolean {
-        if (nowMs - lastBleHealthRestartAtMs < BLE_HEALTH_RESTART_MIN_INTERVAL_MS) {
-            return false
-        }
-
-        if (
-            bleHealthWindowStartedAtMs == 0L ||
-                nowMs - bleHealthWindowStartedAtMs > BLE_HEALTH_RESTART_WINDOW_MS
-        ) {
-            bleHealthWindowStartedAtMs = nowMs
-            bleHealthRestartCountInWindow = 0
-        }
-
-        if (bleHealthRestartCountInWindow >= BLE_HEALTH_RESTART_LIMIT) {
-            return false
-        }
-
-        bleHealthRestartCountInWindow += 1
-        return true
-    }
+    // ── Notification ──────────────────────────────────────────────────
 
     private fun buildNotification(): Notification {
         val channelId = "cliprelay-service"
