@@ -30,7 +30,10 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                 val deviceName = intent.getStringExtra(EXTRA_DEVICE_NAME)
 
                 runCatching {
-                    PairingStore(context).saveToken(normalizedToken)
+                    if (!PairingStore(context).saveToken(normalizedToken)) {
+                        setResultCode(3)
+                        return
+                    }
                     if (!deviceName.isNullOrBlank()) {
                         context.getSharedPreferences(ClipRelayService.PREFS_NAME, Context.MODE_PRIVATE)
                             .edit()

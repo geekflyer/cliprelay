@@ -110,7 +110,7 @@ class QrScannerActivity : AppCompatActivity() {
         }
 
         val stored = runCatching {
-            PairingStore(this).saveToken(info.token)
+            if (!PairingStore(this).saveToken(info.token)) return@runCatching false
 
             if (info.deviceName != null) {
                 getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
@@ -118,7 +118,8 @@ class QrScannerActivity : AppCompatActivity() {
                     .putString(ClipRelayService.KEY_CONNECTED_DEVICE, info.deviceName)
                     .apply()
             }
-        }.isSuccess
+            true
+        }.getOrDefault(false)
 
         if (!stored) {
             Toast.makeText(this, "Pairing failed. Please try again.", Toast.LENGTH_LONG).show()

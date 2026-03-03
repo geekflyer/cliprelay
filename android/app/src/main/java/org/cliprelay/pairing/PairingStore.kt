@@ -1,6 +1,6 @@
 package org.cliprelay.pairing
 
-// Persists the pairing token in EncryptedSharedPreferences (with plaintext fallback).
+// Persists the pairing token in EncryptedSharedPreferences.
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -15,9 +15,6 @@ class PairingStore(context: Context) {
         private const val KEY_TOKEN = "pairing_token"
     }
 
-    private val fallbackPrefs: SharedPreferences =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
     private val encryptedPrefs: SharedPreferences? = try {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -30,31 +27,28 @@ class PairingStore(context: Context) {
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     } catch (e: Exception) {
-        Log.w(TAG, "EncryptedSharedPreferences unavailable; pairing token will use plaintext storage", e)
+        Log.e(TAG, "EncryptedSharedPreferences unavailable; pairing will not be possible on this device", e)
         null
     }
 
-    fun saveToken(token: String) {
-        if (writeToken(encryptedPrefs, token)) return
-        Log.w(TAG, "Falling back to plaintext SharedPreferences for pairing token")
-        writeToken(fallbackPrefs, token)
-    }
-
-    fun loadToken(): String? {
-        return readToken(encryptedPrefs) ?: readToken(fallbackPrefs)
-    }
-
-    fun clear() {
-        clearToken(encryptedPrefs)
-        clearToken(fallbackPrefs)
-    }
-
-    private fun writeToken(prefs: SharedPreferences?, token: String): Boolean {
-        if (prefs == null) return false
+    fun saveToken(token: String): Boolean {
+        val prefs = encryptedPrefs
+        if (prefs == null) {
+            Log.e(TAG, "Cannot save pairing token: encrypted storage unavailable")
+            return false
+        }
         return runCatching {
             prefs.edit().putString(KEY_TOKEN, token).apply()
             true
         }.getOrDefault(false)
+    }
+
+    fun loadToken(): String? {
+        return readToken(encryptedPrefs)
+    }
+
+    fun clear() {
+        clearToken(encryptedPrefs)
     }
 
     private fun readToken(prefs: SharedPreferences?): String? {
