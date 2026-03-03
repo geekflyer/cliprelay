@@ -26,6 +26,11 @@
   - **Android**: Install the new APK (`adb install -r dist/cliprelay-debug.apk`), force-stop the app (`adb shell am force-stop com.cliprelay`), and relaunch (`adb shell am start -n com.cliprelay/.ui.MainActivity`)
 - Do not skip this step or tell the user to do it manually.
 
+## macOS Notarization
+- Keychain profile name: `ClipRelay`
+- Use with: `xcrun notarytool submit <file> --keychain-profile "ClipRelay" --wait`
+- Check history: `xcrun notarytool history --keychain-profile "ClipRelay"`
+
 ## Android UI Design Verification
 - After any visual/design change to the Android app, take a screenshot of the running app to verify the result before reporting completion.
 - Use `adb exec-out screencap -p > /tmp/cliprelay-screenshot.png` to capture, then read the image to visually inspect the layout.
