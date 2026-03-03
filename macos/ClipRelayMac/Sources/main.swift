@@ -13,9 +13,11 @@ private func hasAnotherRunningInstance() -> Bool {
         .contains { $0.processIdentifier != currentPID }
 }
 
+#if DEBUG
 if let exitCode = SmokeAutomationCLI.runIfRequested(arguments: CommandLine.arguments) {
     exit(exitCode)
 }
+#endif
 
 if hasAnotherRunningInstance() {
     bootstrapLogger.error("Another ClipRelay instance detected; refusing secondary launch")
