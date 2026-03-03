@@ -3,6 +3,7 @@
 import AppKit
 import CryptoKit
 import os
+import ServiceManagement
 
 private let appLogger = Logger(subsystem: "com.cliprelay", category: "App")
 
@@ -63,12 +64,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         notificationManager.requestAuthorization()
         pairingManager.removePendingDevices()
+        enableLaunchAtLoginIfFirstRun()
 
         statusBarController.onPairNewDeviceRequested = { [weak self] in
             self?.startPairing()
         }
         statusBarController.onForgetDeviceRequested = { [weak self] token in
             self?.forgetDevice(token: token)
+        }
+        statusBarController.onToggleLaunchAtLogin = {
+            let service = SMAppService.mainApp
+            do {
+                if service.status == .enabled {
+                    try service.unregister()
+                } else {
+                    try service.register()
+                }
+            } catch {
+                appLogger.error("[App] Failed to toggle launch at login: \(error.localizedDescription)")
+            }
+        }
+        statusBarController.isLaunchAtLoginEnabled = {
+            SMAppService.mainApp.status == .enabled
         }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()
@@ -102,6 +119,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMonitor?.stop()
         activeSession?.close()
         connectionManager?.disconnect()
+    }
+
+    // MARK: - Launch at Login
+
+    private func enableLaunchAtLoginIfFirstRun() {
+        let key = "hasEnabledLaunchAtLogin"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        do {
+            try SMAppService.mainApp.register()
+            appLogger.info("[App] Launch at login enabled on first run")
+        } catch {
+            appLogger.error("[App] Failed to enable launch at login: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Clipboard Change → Session

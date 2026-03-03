@@ -7,6 +7,8 @@ import QuartzCore
 final class StatusBarController {
     var onPairNewDeviceRequested: (() -> Void)?
     var onForgetDeviceRequested: ((String) -> Void)?
+    var onToggleLaunchAtLogin: (() -> Void)?
+    var isLaunchAtLoginEnabled: (() -> Bool)?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
@@ -122,6 +124,15 @@ final class StatusBarController {
 
         menu.addItem(NSMenuItem.separator())
 
+        let launchItem = NSMenuItem(
+            title: "Launch at Login",
+            action: #selector(handleToggleLaunchAtLogin),
+            keyEquivalent: ""
+        )
+        launchItem.target = self
+        launchItem.state = (isLaunchAtLoginEnabled?() == true) ? .on : .off
+        menu.addItem(launchItem)
+
         menu.addItem(NSMenuItem(
             title: "Quit ClipRelay",
             action: #selector(NSApplication.terminate(_:)),
@@ -191,6 +202,12 @@ final class StatusBarController {
     @objc
     private func handlePairNewDevice() {
         onPairNewDeviceRequested?()
+    }
+
+    @objc
+    private func handleToggleLaunchAtLogin() {
+        onToggleLaunchAtLogin?()
+        renderMenu()
     }
 
     @objc
