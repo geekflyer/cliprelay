@@ -81,11 +81,17 @@ if ! adb get-state >/dev/null 2>&1; then
     exit 1
 fi
 
-# Inject token via broadcast receiver (uses EncryptedSharedPreferences properly)
+# Get Mac name for the Android side
+MAC_NAME_RAW="$(scutil --get ComputerName 2>/dev/null || hostname)"
+MAC_NAME="$(printf '%s' "$MAC_NAME_RAW" | tr -cs '[:alnum:]_-.' '_')"
+
+# Inject token via debug broadcast receiver
 adb shell am broadcast \
-    -a "com.cliprelay.action.SMOKE_IMPORT_PAIRING" \
-    --es "extra_token" "$TOKEN" \
-    -n "$ANDROID_PKG/.debug.SmokeImportReceiver" 2>&1 | tail -1
+    -n "$ANDROID_PKG/.debug.DebugSmokeReceiver" \
+    -a "com.cliprelay.debug.IMPORT_PAIRING" \
+    --es token "$TOKEN" \
+    --es device_name "$MAC_NAME" \
+    --receiver-foreground 2>&1 | tail -1
 echo "Android pairing token injected via broadcast."
 
 # ── Restart both apps ────────────────────────────────────────────────

@@ -66,12 +66,6 @@ For real-device BLE verification (macOS host + Android phone, debug builds):
 ./scripts/hardware-smoke-test.sh
 ```
 
-Quick Mac -> Android stress run (25 iterations by default):
-
-```bash
-./scripts/hardware-m2a-stress-test.sh
-```
-
 Optional device selection:
 
 ```bash

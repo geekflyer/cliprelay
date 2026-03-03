@@ -49,13 +49,6 @@
             </intent-filter>
         </receiver>
 
-        <receiver
-            android:name=".debug.SmokeImportReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.cliprelay.action.SMOKE_IMPORT_PAIRING" />
-            </intent-filter>
-        </receiver>
     </application>
 
 </manifest>
