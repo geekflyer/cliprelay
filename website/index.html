@@ -434,6 +434,15 @@
         </details>
 
         <details class="faq-item reveal">
+          <summary>Is my data secure over Bluetooth?</summary>
+          <div class="faq-answer">
+            <p>ClipRelay encrypts all data with AES-256-GCM before it ever leaves your device. Bluetooth Low Energy is just the transport — by the time anything hits the airwaves, it's already ciphertext.</p>
+            <p>This is the same design pattern used throughout the industry. Smart locks like <a href="https://www.august.com" target="_blank">August</a> and <a href="https://www.yalehome.com" target="_blank">Yale</a> authenticate over BLE using their own cryptographic protocols on top. Continuous glucose monitors transmit patient health data over BLE with application-layer encryption. The principle is the same: treat BLE as a pipe, secure the contents independently.</p>
+            <p>Even in the unlikely event someone intercepts your BLE traffic, they get encrypted bytes with no way to derive the key.</p>
+          </div>
+        </details>
+
+        <details class="faq-item reveal">
           <summary>What is the range?</summary>
           <div class="faq-answer">BLE typically works within 10-15 meters (30-50 feet) depending on your environment and devices. It works best when devices are in the same room, which is the typical use case for clipboard sharing.</div>
         </details>
