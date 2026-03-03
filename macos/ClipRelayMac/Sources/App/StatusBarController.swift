@@ -135,6 +135,23 @@ final class StatusBarController {
         }
         menu.addItem(launchItem)
 
+        menu.addItem(NSMenuItem.separator())
+
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let versionItem = NSMenuItem(title: "ClipRelay v\(version)", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
+
+        let websiteItem = NSMenuItem(
+            title: "Visit Website\u{2026}",
+            action: #selector(handleVisitWebsite),
+            keyEquivalent: ""
+        )
+        websiteItem.target = self
+        menu.addItem(websiteItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         menu.addItem(NSMenuItem(
             title: "Quit ClipRelay",
             action: #selector(NSApplication.terminate(_:)),
@@ -210,6 +227,13 @@ final class StatusBarController {
     private func handleToggleLaunchAtLogin() {
         onToggleLaunchAtLogin?()
         renderMenu()
+    }
+
+    @objc
+    private func handleVisitWebsite() {
+        if let url = URL(string: "https://cliprelay.pages.dev") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc
