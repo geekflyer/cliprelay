@@ -73,26 +73,13 @@ final class PairingManager {
 
     func deviceTag(for token: String) -> Data? {
         if let cached = tagCache[token] { return cached }
-        guard let tokenData = hexToData(token) else { return nil }
-        let ikm = SymmetricKey(data: tokenData)
-        let tagKey = HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: ikm,
-            info: Data("cliprelay-tag-v1".utf8),
-            outputByteCount: 8
-        )
-        let result = tagKey.withUnsafeBytes { Data($0) }
+        guard let result = E2ECrypto.deviceTag(tokenHex: token) else { return nil }
         tagCache[token] = result
         return result
     }
 
     func encryptionKey(for token: String) -> SymmetricKey? {
-        guard let tokenData = hexToData(token) else { return nil }
-        let ikm = SymmetricKey(data: tokenData)
-        return HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: ikm,
-            info: Data("cliprelay-enc-v1".utf8),
-            outputByteCount: 32
-        )
+        return E2ECrypto.deriveKey(tokenHex: token)
     }
 
     func findDevice(byTag tag: Data) -> PairedDevice? {
@@ -108,14 +95,4 @@ final class PairingManager {
         keychain.setData(data, for: Self.keychainAccount)
     }
 
-    private func hexToData(_ hex: String) -> Data? {
-        let chars = Array(hex)
-        guard chars.count.isMultiple(of: 2) else { return nil }
-        var data = Data(capacity: chars.count / 2)
-        for i in stride(from: 0, to: chars.count, by: 2) {
-            guard let byte = UInt8(String(chars[i...i + 1]), radix: 16) else { return nil }
-            data.append(byte)
-        }
-        return data
-    }
 }
