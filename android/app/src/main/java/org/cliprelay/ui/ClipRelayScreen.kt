@@ -70,10 +70,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
 // ─── UI-specific background colors ───────────────────────────────────────────
-private val BgTopUnpaired = Color(0xFFE8F5F3)
-private val BgTopConnected = Color(0xFFD6F5EF)
-private val BgBottomUnpaired = Color(0xFFF0F0F0)
-private val BgBottomConnected = Color(0xFFF0F7F5)
+private val BgTopUnpaired = DarkBg
+private val BgTopConnected = Color(0xFF131E28)
+private val BgBottomUnpaired = DarkBg
+private val BgBottomConnected = Color(0xFF111E22)
 
 // ─── Root Screen ─────────────────────────────────────────────────────────────
 @Composable
@@ -108,7 +108,7 @@ fun ClipRelayScreen(
                 Brush.verticalGradient(
                     colorStops = arrayOf(
                         0.00f to bgTop,
-                        0.60f to Color(0xFFF5F5F5),
+                        0.60f to Color(0xFF121A22),
                         1.00f to bgBottom
                     )
                 )
@@ -117,7 +117,7 @@ fun ClipRelayScreen(
                 // Dot grid
                 val dotSpacing = 22.dp.toPx()
                 val dotRadius = 1.dp.toPx()
-                val dotColor = if (isConnected) Color(0x0F003028) else Color(0x0E000000)
+                val dotColor = if (isConnected) Color(0x1F00FFD5) else Color(0x1400FFD5)
                 var x = 0f
                 while (x <= size.width) {
                     var y = 0f
@@ -129,9 +129,9 @@ fun ClipRelayScreen(
                 }
                 // Aurora glow
                 val auroraColors = if (isConnected) {
-                    listOf(Color(0x2E00FFD5), Color(0x0F00FFD5), Color(0x0500FFD5), Color.Transparent)
+                    listOf(Color(0x3300FFD5), Color(0x1A00FFD5), Color(0x0A00FFD5), Color.Transparent)
                 } else {
-                    listOf(Color(0x1A00FFD5), Color(0x0A00FFD5), Color(0x0300FFD5), Color.Transparent)
+                    listOf(Color(0x2000FFD5), Color(0x1000FFD5), Color(0x0500FFD5), Color.Transparent)
                 }
                 drawCircle(
                     brush = Brush.radialGradient(
@@ -182,21 +182,21 @@ fun ClipRelayScreen(
 private fun StatusChip(state: AppState) {
     val (bgColor, dotColor, textColor, label) = when (state) {
         is AppState.Unpaired -> ChipStyle(
-            bg = Color(0x0A000000),
-            dot = Color(0x33000000),
-            text = Color(0x73000000),
+            bg = DarkSurface,
+            dot = TextDim,
+            text = TextDim,
             label = "Not paired"
         )
         is AppState.Searching -> ChipStyle(
-            bg = Color(0x1400FFD5),
-            dot = Color(0xFFBDBDBD),
-            text = Teal,
+            bg = Color(0x1A00FFD5),
+            dot = Aqua,
+            text = TextPrimary,
             label = "Searching for Mac"
         )
         is AppState.Connected -> ChipStyle(
-            bg = Color(0x1A00FFD5),
+            bg = Color(0x2000FFD5),
             dot = Aqua,
-            text = Teal,
+            text = Aqua,
             label = "Connected"
         )
     }
@@ -273,9 +273,9 @@ private fun MainCard(
 
     val cardTopColor by animateColorAsState(
         targetValue = when (state) {
-            is AppState.Unpaired -> Color.White
-            is AppState.Searching -> Color(0xFFF5FFFC)
-            is AppState.Connected -> Color(0xFFF0FFFC)
+            is AppState.Unpaired -> DarkSurface
+            is AppState.Searching -> Color(0xFF1A2530)
+            is AppState.Connected -> Color(0xFF1C2832)
         },
         animationSpec = tween(600),
         label = "cardTop"
@@ -283,9 +283,9 @@ private fun MainCard(
 
     val borderColor by animateColorAsState(
         targetValue = when (state) {
-            is AppState.Unpaired -> Color(0x1400FFD5)
-            is AppState.Searching -> Color(0x1F00FFD5)
-            is AppState.Connected -> Color(0x3300FFD5)
+            is AppState.Unpaired -> DarkBorder
+            is AppState.Searching -> Color(0x3300FFD5)
+            is AppState.Connected -> Color(0x5500FFD5)
         },
         animationSpec = tween(600),
         label = "cardBorder"
@@ -309,10 +309,10 @@ private fun MainCard(
             .shadow(
                 elevation = if (isConnected) 8.dp else 5.dp,
                 shape = RoundedCornerShape(28.dp),
-                spotColor = if (isConnected) Color(0x1A00FFD5) else Color(0x1A000000)
+                spotColor = if (isConnected) Color(0x1A00FFD5) else Color(0x40000000)
             )
             .clip(RoundedCornerShape(28.dp))
-            .background(Brush.verticalGradient(listOf(cardTopColor, Color.White)))
+            .background(Brush.verticalGradient(listOf(cardTopColor, DarkSurface)))
             .border(
                 width = 1.dp,
                 color = borderColor,
@@ -341,7 +341,13 @@ private fun MainCard(
                 text = "ClipRelay",
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Bold,
-                color = Teal,
+                style = androidx.compose.ui.text.TextStyle(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color.White, Aqua),
+                        start = Offset(0f, 0f),
+                        end = Offset(400f, 400f)
+                    )
+                ),
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
             )
@@ -349,14 +355,14 @@ private fun MainCard(
             Text(
                 text = "Seamless clipboard sharing with your Mac",
                 fontSize = 15.sp,
-                color = if (isPaired) Teal.copy(alpha = 0.45f) else Color(0x66000000),
+                color = if (isPaired) Aqua.copy(alpha = 0.45f) else TextDim,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider(
-                color = if (isPaired) Color(0x1400FFD5) else Color(0x0F00FFD5),
+                color = if (isPaired) Color(0x2000FFD5) else Color(0x1500FFD5),
                 thickness = 1.dp
             )
             Spacer(modifier = Modifier.height(24.dp))
@@ -420,14 +426,14 @@ private fun MainCard(
                     Text(
                         text = "End-to-end encrypted",
                         fontSize = 11.sp,
-                        color = Teal.copy(alpha = 0.4f),
+                        color = Aqua.copy(alpha = 0.3f),
                         fontWeight = FontWeight.Medium
                     )
                     if (deviceTag != null) {
                         Text(
                             text = "Pairing: $deviceTag",
                             fontSize = 11.sp,
-                            color = Teal.copy(alpha = 0.45f),
+                            color = TextDim,
                             fontWeight = FontWeight.Normal
                         )
                     }
@@ -473,7 +479,7 @@ private fun MainCard(
                     shape = RoundedCornerShape(28.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Aqua,
-                        contentColor = Teal
+                        contentColor = DarkBg
                     )
                 ) {
                     Text(
@@ -485,12 +491,12 @@ private fun MainCard(
                 }
             } else {
                 val unpairBg by animateColorAsState(
-                    targetValue = if (isConnected) Color(0x1400FFD5) else Color(0x0F00FFD5),
+                    targetValue = if (isConnected) Color(0x1A00FFD5) else Color(0x0D00FFD5),
                     animationSpec = tween(400),
                     label = "unpairBg"
                 )
                 val unpairBorder by animateColorAsState(
-                    targetValue = if (isConnected) Color(0x2600FFD5) else Color(0x1A00FFD5),
+                    targetValue = if (isConnected) Color(0x3300FFD5) else Color(0x2000FFD5),
                     animationSpec = tween(400),
                     label = "unpairBorder"
                 )
@@ -502,7 +508,7 @@ private fun MainCard(
                     shape = RoundedCornerShape(28.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = unpairBg,
-                        contentColor = Teal
+                        contentColor = Aqua
                     ),
                     elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp)
                 ) {
@@ -529,8 +535,8 @@ private fun AutoClearSettingRow(
     enabled: Boolean,
     onEnabledChange: (Boolean) -> Unit
 ) {
-    val toggleBg = if (enabled) Color(0x1400FFD5) else Color(0x08000000)
-    val toggleBorder = if (enabled) Color(0x2B00FFD5) else Color(0x14000000)
+    val toggleBg = if (enabled) Color(0x1A00FFD5) else Color(0x0DFFFFFF)
+    val toggleBorder = if (enabled) Color(0x3300FFD5) else Color(0x14FFFFFF)
 
     Row(
         modifier = Modifier
@@ -552,13 +558,13 @@ private fun AutoClearSettingRow(
                 text = stringResource(R.string.auto_clear_setting_title),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xCC000000)
+                color = TextPrimary
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = stringResource(R.string.auto_clear_setting_subtitle),
                 fontSize = 12.sp,
-                color = Color(0x80000000),
+                color = TextDim,
                 lineHeight = 16.sp
             )
         }
@@ -569,12 +575,12 @@ private fun AutoClearSettingRow(
             checked = enabled,
             onCheckedChange = onEnabledChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Teal,
-                checkedTrackColor = Aqua.copy(alpha = 0.45f),
-                checkedBorderColor = Aqua.copy(alpha = 0.60f),
-                uncheckedThumbColor = Color(0xFF7A7A7A),
-                uncheckedTrackColor = Color(0x15000000),
-                uncheckedBorderColor = Color(0x40000000)
+                checkedThumbColor = Aqua,
+                checkedTrackColor = Aqua.copy(alpha = 0.30f),
+                checkedBorderColor = Aqua.copy(alpha = 0.50f),
+                uncheckedThumbColor = TextDim,
+                uncheckedTrackColor = Color(0x15FFFFFF),
+                uncheckedBorderColor = Color(0x30FFFFFF)
             )
         )
     }
@@ -593,21 +599,21 @@ private fun DeviceNode(
     val isActive = if (isPhone) isPaired else isConnected
 
     val iconBg by animateColorAsState(
-        targetValue = if (isActive) Color(0x1400FFD5) else Color(0x0D000000),
+        targetValue = if (isActive) Color(0x1A00FFD5) else DarkSurface,
         animationSpec = tween(400),
         label = "iconBg"
     )
     val iconTint by animateColorAsState(
-        targetValue = if (isActive) Teal else Color(0x40000000),
+        targetValue = if (isActive) Aqua else TextDim,
         animationSpec = tween(400),
         label = "iconTint"
     )
     val borderAlpha by animateColorAsState(
-        targetValue = if (isActive) Color(0x1F00FFD5) else Color.Transparent,
+        targetValue = if (isActive) Color(0x3300FFD5) else DarkBorder,
         animationSpec = tween(400),
         label = "borderAlpha"
     )
-    val labelColor = if (isActive) Color(0xB3000000) else Color(0x59000000)
+    val labelColor = if (isActive) TextPrimary else TextDim
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -660,14 +666,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPhoneIcon(tint:
     )
     // Screen cutout
     drawRoundRect(
-        color = Color.White.copy(alpha = 0.25f),
+        color = DarkBg.copy(alpha = 0.35f),
         topLeft = Offset(left + bodyW * 0.10f, top + bodyH * 0.08f),
         size = Size(bodyW * 0.80f, bodyH * 0.72f),
         cornerRadius = CornerRadius(bodyW * 0.12f)
     )
     // Home button
     drawCircle(
-        color = Color.White.copy(alpha = 0.35f),
+        color = DarkBg.copy(alpha = 0.40f),
         radius = bodyW * 0.10f,
         center = Offset(w / 2f, top + bodyH * 0.88f)
     )
@@ -690,7 +696,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMacIcon(tint: C
     )
     // Screen glass
     drawRoundRect(
-        color = Color.White.copy(alpha = 0.25f),
+        color = DarkBg.copy(alpha = 0.35f),
         topLeft = Offset(screenLeft + screenW * 0.06f, screenTop + screenH * 0.08f),
         size = Size(screenW * 0.88f, screenH * 0.76f),
         cornerRadius = CornerRadius(2f.dp.toPx())
@@ -792,16 +798,16 @@ private fun FooterSection() {
             text = buildAnnotatedString {
                 append("To share with your Mac, tap ")
                 withStyle(SpanStyle(
-                    color = Teal,
+                    color = Aqua,
                     fontWeight = FontWeight.SemiBold,
-                    background = Aqua.copy(alpha = 0.12f)
+                    background = Aqua.copy(alpha = 0.15f)
                 )) {
                     append(" Share ")
                 }
                 append(" in any app and look for:")
             },
             fontSize = 13.sp,
-            color = Color(0x80000000),
+            color = TextDim,
             textAlign = TextAlign.Center,
             lineHeight = 20.sp
         )
@@ -827,7 +833,7 @@ private fun FooterSection() {
             Text(
                 text = "ClipRelay",
                 fontSize = 12.sp,
-                color = Color(0x99000000)
+                color = TextDim
             )
         }
     }
