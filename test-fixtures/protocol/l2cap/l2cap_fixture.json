@@ -1,0 +1,78 @@
+{
+  "fixture_id": "l2cap-codec-v1",
+  "description": "Golden fixture for L2CAP wire protocol codec interop testing",
+  "wire_format": {
+    "header_size": 4,
+    "length_encoding": "uint32_big_endian",
+    "length_covers": "type + payload",
+    "max_message_size": 200000
+  },
+  "messages": [
+    {
+      "name": "HELLO",
+      "type_byte": "01",
+      "payload_utf8": "{\"version\":1}",
+      "payload_hex": "7b2276657273696f6e223a317d",
+      "encoded_hex": "0000000e017b2276657273696f6e223a317d"
+    },
+    {
+      "name": "WELCOME",
+      "type_byte": "02",
+      "payload_utf8": "{\"version\":1}",
+      "payload_hex": "7b2276657273696f6e223a317d",
+      "encoded_hex": "0000000e027b2276657273696f6e223a317d"
+    },
+    {
+      "name": "OFFER",
+      "type_byte": "10",
+      "payload_utf8": "{\"hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"size\":12345,\"type\":\"text/plain\"}",
+      "payload_hex": "7b2268617368223a2265336230633434323938666331633134396166626634633839393666623932343237616534316534363439623933346361343935393931623738353262383535222c2273697a65223a31323334352c2274797065223a22746578742f706c61696e227d",
+      "encoded_hex": "0000006d107b2268617368223a2265336230633434323938666331633134396166626634633839393666623932343237616534316534363439623933346361343935393931623738353262383535222c2273697a65223a31323334352c2274797065223a22746578742f706c61696e227d"
+    },
+    {
+      "name": "ACCEPT",
+      "type_byte": "11",
+      "payload_hex": "",
+      "encoded_hex": "0000000111"
+    },
+    {
+      "name": "PAYLOAD",
+      "type_byte": "12",
+      "payload_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "encoded_hex": "0000001112aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "DONE",
+      "type_byte": "13",
+      "payload_utf8": "{\"hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"ok\":true}",
+      "payload_hex": "7b2268617368223a2265336230633434323938666331633134396166626634633839393666623932343237616534316534363439623933346361343935393931623738353262383535222c226f6b223a747275657d",
+      "encoded_hex": "00000056137b2268617368223a2265336230633434323938666331633134396166626634633839393666623932343237616534316534363439623933346361343935393931623738353262383535222c226f6b223a747275657d"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unknown_type",
+      "description": "Valid length but unknown message type 0xFF",
+      "encoded_hex": "00000005ff74657374",
+      "expected_error": "unknown_type"
+    },
+    {
+      "name": "truncated_header",
+      "description": "Only 2 bytes instead of 4-byte header",
+      "encoded_hex": "0000",
+      "expected_error": "incomplete_header"
+    },
+    {
+      "name": "zero_length",
+      "description": "Length field is zero (no type byte, no payload)",
+      "encoded_hex": "00000000",
+      "expected_error": "empty_message"
+    },
+    {
+      "name": "oversized",
+      "description": "Length exceeds MAX_MESSAGE_SIZE (200001 bytes)",
+      "encoded_hex": "00030d4101",
+      "expected_error": "message_too_large"
+    }
+  ]
+}

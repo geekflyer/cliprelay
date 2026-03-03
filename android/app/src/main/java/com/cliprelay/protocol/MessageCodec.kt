@@ -1,0 +1,89 @@
+package com.cliprelay.protocol
+
+import java.io.InputStream
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+enum class MessageType(val byte: Byte) {
+    HELLO(0x01),
+    WELCOME(0x02),
+    OFFER(0x10),
+    ACCEPT(0x11),
+    PAYLOAD(0x12),
+    DONE(0x13);
+
+    companion object {
+        fun fromByte(b: Byte): MessageType =
+            entries.firstOrNull { it.byte == b }
+                ?: throw ProtocolException("Unknown message type: 0x${b.toUByte().toString(16).padStart(2, '0')}")
+    }
+}
+
+data class Message(val type: MessageType, val payload: ByteArray) {
+    override fun equals(other: Any?): Boolean =
+        other is Message && type == other.type && payload.contentEquals(other.payload)
+
+    override fun hashCode(): Int =
+        31 * type.hashCode() + payload.contentHashCode()
+}
+
+class ProtocolException(message: String) : Exception(message)
+
+object MessageCodec {
+    const val MAX_MESSAGE_SIZE = 200_000
+    private const val HEADER_SIZE = 4
+
+    fun encode(message: Message): ByteArray {
+        val messageLength = 1 + message.payload.size // type byte + payload
+        val buffer = ByteBuffer.allocate(HEADER_SIZE + messageLength)
+        buffer.order(ByteOrder.BIG_ENDIAN)
+        buffer.putInt(messageLength)
+        buffer.put(message.type.byte)
+        buffer.put(message.payload)
+        return buffer.array()
+    }
+
+    fun decode(input: InputStream): Message {
+        val headerBytes = readExactly(input, HEADER_SIZE)
+            ?: throw ProtocolException("Incomplete header: expected $HEADER_SIZE bytes")
+
+        val messageLength = ByteBuffer.wrap(headerBytes).order(ByteOrder.BIG_ENDIAN).int
+
+        if (messageLength <= 0) {
+            throw ProtocolException("Empty message: length is $messageLength")
+        }
+
+        if (messageLength > MAX_MESSAGE_SIZE) {
+            throw ProtocolException("Message too large: $messageLength bytes exceeds maximum of $MAX_MESSAGE_SIZE")
+        }
+
+        val body = readExactly(input, messageLength)
+            ?: throw ProtocolException("Incomplete body: expected $messageLength bytes")
+
+        val typeByte = body[0]
+        val type = MessageType.fromByte(typeByte)
+        val payload = body.copyOfRange(1, body.size)
+
+        return Message(type, payload)
+    }
+
+    fun write(output: OutputStream, message: Message) {
+        output.write(encode(message))
+        output.flush()
+    }
+
+    private fun readExactly(input: InputStream, count: Int): ByteArray? {
+        val buffer = ByteArray(count)
+        var offset = 0
+        while (offset < count) {
+            val read = input.read(buffer, offset, count - offset)
+            if (read == -1) {
+                return if (offset == 0) null
+                else throw ProtocolException("Stream ended after $offset bytes, expected $count")
+            }
+            offset += read
+        }
+        return buffer
+    }
+}
