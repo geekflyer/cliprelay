@@ -125,6 +125,15 @@ build_mac() {
 </plist>
 PLIST
 
+  # ── Sign with entitlements + hardened runtime ──
+  local entitlements_path="$ROOT_DIR/macos/ClipRelayMac/Resources/ClipRelay.entitlements"
+  echo "Signing with entitlements and hardened runtime..."
+  codesign --force --sign - \
+      --entitlements "$entitlements_path" \
+      --options runtime \
+      "$app_dir"
+  echo "Code signing complete."
+
   echo "macOS app bundle created: $app_dir"
 }
 
