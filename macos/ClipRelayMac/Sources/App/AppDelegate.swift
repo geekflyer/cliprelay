@@ -7,20 +7,6 @@ import ServiceManagement
 
 private let appLogger = Logger(subsystem: "org.cliprelay", category: "App")
 
-/// Simple file logger for debugging when NSLog / os.Logger output is not accessible.
-private func debugLog(_ message: String) {
-    let ts = ISO8601DateFormatter().string(from: Date())
-    let line = "[\(ts)] \(message)\n"
-    let path = "/tmp/cliprelay-debug.log"
-    if let fh = FileHandle(forWritingAtPath: path) {
-        fh.seekToEndOfFile()
-        fh.write(Data(line.utf8))
-        fh.closeFile()
-    } else {
-        FileManager.default.createFile(atPath: path, contents: Data(line.utf8))
-    }
-}
-
 enum PairingProgressAction: Equatable {
     case none
     case cancelPending
@@ -330,7 +316,6 @@ extension AppDelegate: ConnectionManagerDelegate {
 
         // UI update deferred to sessionDidBecomeReady (after handshake exchanges device name)
 
-        debugLog("[App] L2CAP channel established, starting handshake")
         appLogger.info("[App] L2CAP channel established, starting handshake")
     }
 
@@ -377,7 +362,6 @@ extension AppDelegate: ConnectionManagerDelegate {
 extension AppDelegate: SessionDelegate {
     func sessionDidBecomeReady(_ session: Session) {
         let remoteName = session.remoteName
-        debugLog("[App] Session handshake complete — remote device: \(remoteName ?? "unknown")")
         appLogger.info("[App] Session handshake complete — remote device: \(remoteName ?? "unknown", privacy: .private)")
 
         // Update stored device name from handshake and refresh UI

@@ -123,6 +123,10 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertEqual(ConnectionManager.maxReconnectDelay, 30.0)
     }
 
+    func testHealthCheckInterval() {
+        XCTAssertEqual(ConnectionManager.healthCheckInterval, 60.0)
+    }
+
     // MARK: - PSM Extraction Tests
 
     func testExtractPSMFromValidData() {

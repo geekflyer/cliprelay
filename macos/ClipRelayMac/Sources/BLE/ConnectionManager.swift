@@ -6,19 +6,6 @@ import os
 
 private let connLogger = Logger(subsystem: "org.cliprelay", category: "ConnectionManager")
 
-private func debugLog(_ message: String) {
-    let ts = ISO8601DateFormatter().string(from: Date())
-    let line = "[\(ts)] \(message)\n"
-    let path = "/tmp/cliprelay-debug.log"
-    if let fh = FileHandle(forWritingAtPath: path) {
-        fh.seekToEndOfFile()
-        fh.write(Data(line.utf8))
-        fh.closeFile()
-    } else {
-        FileManager.default.createFile(atPath: path, contents: Data(line.utf8))
-    }
-}
-
 // MARK: - Delegate
 
 protocol ConnectionManagerDelegate: AnyObject {
@@ -52,13 +39,16 @@ class ConnectionManager: NSObject {
     private var reconnectTimer: Timer?
     private var l2capChannel: CBL2CAPChannel?  // strong reference required!
     private var matchedToken: String?
+    private var healthCheckTimer: Timer?
 
     static let serviceUUID = CBUUID(string: "c10b0001-1234-5678-9abc-def012345678")
     static let maxReconnectDelay: TimeInterval = 30.0
+    static let healthCheckInterval: TimeInterval = 60.0
 
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: nil)
+        startHealthCheck()
     }
 
     /// Internal init that skips CBCentralManager creation (for testing).
@@ -66,6 +56,7 @@ class ConnectionManager: NSObject {
         super.init()
         if !skipCentralManager {
             centralManager = CBCentralManager(delegate: self, queue: nil)
+            startHealthCheck()
         }
     }
 
@@ -73,12 +64,13 @@ class ConnectionManager: NSObject {
         guard centralManager?.state == .poweredOn else { return }
         guard case .idle = state else { return }
         state = .scanning
-        debugLog("[CM] Starting BLE scan")
         connLogger.info("Starting BLE scan for ClipRelay peripherals")
         centralManager.scanForPeripherals(withServices: [Self.serviceUUID], options: nil)
     }
 
     func disconnect() {
+        healthCheckTimer?.invalidate()
+        healthCheckTimer = nil
         reconnectTimer?.invalidate()
         reconnectTimer = nil
 
@@ -98,6 +90,24 @@ class ConnectionManager: NSObject {
         l2capChannel = nil
         matchedToken = nil
         state = .idle
+    }
+
+    // MARK: - Health Check
+
+    private func startHealthCheck() {
+        healthCheckTimer?.invalidate()
+        healthCheckTimer = Timer.scheduledTimer(withTimeInterval: Self.healthCheckInterval, repeats: true) { [weak self] _ in
+            self?.performHealthCheck()
+        }
+    }
+
+    private func performHealthCheck() {
+        guard centralManager?.state == .poweredOn else { return }
+        guard case .idle = state else { return }
+        guard reconnectTimer == nil else { return }
+        connLogger.info("Health check: idle with no reconnect scheduled, restarting scan")
+        resetReconnectDelay()
+        startScanning()
     }
 
     // MARK: - Reconnect Logic
@@ -149,12 +159,12 @@ class ConnectionManager: NSObject {
 
 extension ConnectionManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        debugLog("[CM] Bluetooth state: \(central.state.rawValue)")
+        connLogger.info("Bluetooth state: \(central.state.rawValue)")
         if central.state == .poweredOn {
             reconnectDelay = 1.0  // reset backoff on BT power cycle
+            startHealthCheck()
             startScanning()
         } else {
-            connLogger.info("Bluetooth state changed: \(central.state.rawValue)")
             state = .idle
         }
     }
@@ -169,7 +179,6 @@ extension ConnectionManager: CBCentralManagerDelegate {
         // Match against paired tokens
         guard let matched = pairedDevices().first(where: { $0.tag == tag }) else { return }
         matchedToken = matched.token
-        debugLog("[CM] Matched device tag, PSM=\(psm)")
         connLogger.info("Matched device tag for token, PSM=\(psm)")
 
         // Stop scanning, connect (will open L2CAP after BLE connection)
@@ -185,21 +194,20 @@ extension ConnectionManager: CBCentralManagerDelegate {
             centralManager.cancelPeripheralConnection(peripheral)
             return
         }
-        debugLog("[CM] Connected, opening L2CAP (PSM=\(psm))")
         connLogger.info("Connected to peripheral, opening L2CAP channel (PSM=\(psm))")
         state = .openingL2CAP(peripheral)
         peripheral.openL2CAPChannel(psm)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        debugLog("[CM] Failed to connect: \(error?.localizedDescription ?? "unknown")")
+        connLogger.info("Failed to connect: \(error?.localizedDescription ?? "unknown")")
         state = .idle
         scheduleReconnect()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
                          error: Error?) {
-        debugLog("[CM] Disconnected: \(error?.localizedDescription ?? "clean")")
+        connLogger.info("Disconnected: \(error?.localizedDescription ?? "clean")")
         let token = matchedToken
         l2capChannel = nil
         matchedToken = nil
@@ -216,7 +224,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
 extension ConnectionManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
         guard let channel = channel, error == nil else {
-            debugLog("[CM] L2CAP open failed: \(error?.localizedDescription ?? "nil channel")")
+            connLogger.error("L2CAP open failed: \(error?.localizedDescription ?? "nil channel")")
             centralManager.cancelPeripheralConnection(peripheral)
             return
         }
@@ -225,7 +233,7 @@ extension ConnectionManager: CBPeripheralDelegate {
         l2capChannel = channel
         state = .connected(peripheral)
         reconnectDelay = 1.0  // reset backoff on successful connection
-        debugLog("[CM] L2CAP channel established, handing off to delegate")
+        connLogger.info("L2CAP channel established, handing off to delegate")
 
         // Schedule streams on main RunLoop (avoids threading pitfalls on macOS)
         channel.inputStream.schedule(in: .main, forMode: .common)
