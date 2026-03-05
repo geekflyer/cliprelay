@@ -5,7 +5,7 @@
   /* Brand */
   --aqua: #00FFD5;
   --aqua-gradient: #00DDC0;
-  --teal: #00796B;
+
   --board-dark: #0A3A34;
   --board-darker: #082A26;
 
@@ -17,7 +17,7 @@
   --text-dim: #6B6B7B;
 
   /* Gradients */
-  --gradient-aqua: linear-gradient(135deg, #00FFD5, #00DDC0);
+
   --gradient-title: linear-gradient(135deg, #fff 30%, #00FFD5);
 
   /* Typography */
@@ -578,15 +578,6 @@ body::after {
 
 .btn:hover { transform: translateY(-2px); }
 
-.btn-primary {
-  background: var(--aqua);
-  color: var(--bg);
-  box-shadow: 0 4px 24px rgba(0, 255, 213, 0.2);
-}
-
-.btn-primary:hover {
-  box-shadow: 0 8px 32px rgba(0, 255, 213, 0.3);
-}
 
 .btn-outline {
   background: transparent;
@@ -959,9 +950,6 @@ section {
   color: var(--text-dim);
 }
 
-.footer-bottom a {
-  color: var(--text-dim);
-}
 
 /* ── Scroll Reveal ── */
 .reveal {

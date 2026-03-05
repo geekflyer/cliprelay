@@ -4,10 +4,6 @@ package org.cliprelay.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -713,72 +709,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMacIcon(tint: C
         size = Size(w * 0.40f, h * 0.04f),
         cornerRadius = CornerRadius(1f.dp.toPx())
     )
-}
-
-// ─── Logo Icon ──────────────────────────────────────────────────────────────
-@Composable
-private fun LogoIcon(modifier: Modifier = Modifier, tint: Color = Aqua) {
-    val transition = rememberInfiniteTransition(label = "logoPulse")
-    val arc1Alpha by transition.animateFloat(
-        initialValue = 0.85f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse),
-        label = "arc1"
-    )
-    val arc2Alpha by transition.animateFloat(
-        initialValue = 0.50f, targetValue = 0.70f,
-        animationSpec = infiniteRepeatable(tween(2000, delayMillis = 250), RepeatMode.Reverse),
-        label = "arc2"
-    )
-    val arc3Alpha by transition.animateFloat(
-        initialValue = 0.25f, targetValue = 0.45f,
-        animationSpec = infiniteRepeatable(tween(2000, delayMillis = 500), RepeatMode.Reverse),
-        label = "arc3"
-    )
-
-    Canvas(modifier = modifier) {
-        val s = size.minDimension
-        fun v(n: Float) = n / 120f * s
-
-        // Board body
-        drawRoundRect(tint.copy(alpha = 0.12f), Offset(v(14f), v(26f)), Size(v(58f), v(78f)), CornerRadius(v(12f)))
-        drawRoundRect(tint, Offset(v(14f), v(26f)), Size(v(58f), v(78f)),
-            CornerRadius(v(12f)), style = Stroke(v(2f)))
-
-        // Clamp base
-        drawRoundRect(tint.copy(alpha = 0.12f), Offset(v(24f), v(18f)), Size(v(38f), v(14f)), CornerRadius(v(5f)))
-        drawRoundRect(tint, Offset(v(24f), v(18f)), Size(v(38f), v(14f)),
-            CornerRadius(v(5f)), style = Stroke(v(1.5f)))
-
-        // Clamp top
-        drawRoundRect(tint.copy(alpha = 0.12f), Offset(v(30f), v(14f)), Size(v(26f), v(8f)), CornerRadius(v(4f)))
-        drawRoundRect(tint.copy(alpha = 0.7f), Offset(v(30f), v(14f)), Size(v(26f), v(8f)),
-            CornerRadius(v(4f)), style = Stroke(v(1.2f)))
-
-        // Rivet
-        drawRoundRect(tint.copy(alpha = 0.5f), Offset(v(39f), v(22f)), Size(v(8f), v(3f)),
-            CornerRadius(v(1.5f)))
-
-        // Text lines
-        drawRoundRect(tint.copy(alpha = 0.35f), Offset(v(24f), v(42f)), Size(v(38f), v(4.5f)),
-            CornerRadius(v(2.25f)))
-        drawRoundRect(tint.copy(alpha = 0.22f), Offset(v(24f), v(51f)), Size(v(27f), v(4.5f)),
-            CornerRadius(v(2.25f)))
-        drawRoundRect(tint.copy(alpha = 0.22f), Offset(v(24f), v(60f)), Size(v(33f), v(4.5f)),
-            CornerRadius(v(2.25f)))
-        drawRoundRect(tint.copy(alpha = 0.15f), Offset(v(24f), v(69f)), Size(v(20f), v(4.5f)),
-            CornerRadius(v(2.25f)))
-
-        // Beam arcs (3 arcs, radii 20, 32, 44)
-        drawArc(tint.copy(alpha = arc1Alpha), startAngle = -48.6f, sweepAngle = 97.2f,
-            useCenter = false, topLeft = Offset(v(47f), v(43f)), size = Size(v(40f), v(40f)),
-            style = Stroke(v(4f), cap = StrokeCap.Round))
-        drawArc(tint.copy(alpha = arc2Alpha), startAngle = -48.6f, sweepAngle = 97.2f,
-            useCenter = false, topLeft = Offset(v(37f), v(31f)), size = Size(v(64f), v(64f)),
-            style = Stroke(v(3.5f), cap = StrokeCap.Round))
-        drawArc(tint.copy(alpha = arc3Alpha), startAngle = -48.6f, sweepAngle = 97.2f,
-            useCenter = false, topLeft = Offset(v(27f), v(19f)), size = Size(v(88f), v(88f)),
-            style = Stroke(v(3f), cap = StrokeCap.Round))
-    }
 }
 
 // ─── Footer ──────────────────────────────────────────────────────────────────

@@ -43,11 +43,6 @@ final class PairingManager {
         persist(devices)
     }
 
-    func isPendingDeviceToken(_ token: String) -> Bool {
-        loadDevices().contains {
-            $0.token == token && $0.displayName.hasPrefix(Self.pendingDisplayNamePrefix)
-        }
-    }
 
     func generateToken() -> String? {
         var bytes = [UInt8](repeating: 0, count: 32)
@@ -82,12 +77,6 @@ final class PairingManager {
         return E2ECrypto.deriveKey(tokenHex: token)
     }
 
-    func findDevice(byTag tag: Data) -> PairedDevice? {
-        let devices = loadDevices()
-        return devices.first { device in
-            deviceTag(for: device.token) == tag
-        }
-    }
 
     private func persist(_ devices: [PairedDevice]) {
         tagCache.removeAll()

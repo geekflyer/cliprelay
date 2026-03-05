@@ -74,13 +74,6 @@ private fun SearchingBeam(modifier: Modifier = Modifier) {
         label = "masterTime"
     )
 
-    @Suppress("UNUSED_VARIABLE")
-    val labelAlpha by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.3f,
-        animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse),
-        label = "labelAlpha"
-    )
 
     Canvas(modifier = modifier) {
         val cy = size.height / 2f

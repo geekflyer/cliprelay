@@ -67,15 +67,6 @@ final class StatusBarController {
         renderMenu()
     }
 
-    /// Update the overall connection state. Convenience for ConnectionManager integration.
-    /// Updates the status bar icon color (aqua = connected, template = disconnected).
-    func updateConnectionState(connected: Bool, deviceName: String?) {
-        // The icon color is driven by connectedPeers being non-empty,
-        // which is already managed by setConnectedPeers(). This method
-        // exists as a semantic entry point — the actual icon update happens
-        // when setConnectedPeers is called.
-        updateStatusBarIcon()
-    }
 
     /// Briefly pulses the status bar icon to indicate a clipboard sync.
     func flashSyncIndicator() {

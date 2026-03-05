@@ -7,25 +7,6 @@ import ServiceManagement
 
 private let appLogger = Logger(subsystem: "org.cliprelay", category: "App")
 
-enum PairingProgressAction: Equatable {
-    case none
-    case cancelPending
-    case completePairing
-}
-
-func pairingProgressAction(
-    awaitingNewPairingConnection: Bool,
-    isPairingWindowShowing: Bool,
-    connectedPeerIDs: Set<UUID>,
-    pairingBaselineConnectedPeerIDs: Set<UUID>
-) -> PairingProgressAction {
-    guard awaitingNewPairingConnection else { return .none }
-    guard isPairingWindowShowing else { return .cancelPending }
-
-    let newlyConnectedPeers = connectedPeerIDs.subtracting(pairingBaselineConnectedPeerIDs)
-    return newlyConnectedPeers.isEmpty ? .none : .completePairing
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let pairingManager = PairingManager()
     private let statusBarController = StatusBarController()
@@ -43,8 +24,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastReceivedHash: String?
 
     private var clipboardMonitor: ClipboardMonitor?
-    private var lastConnectedPeerIDs: Set<UUID> = []
-    private var pairingBaselineConnectedPeerIDs: Set<UUID> = []
     private var awaitingNewPairingConnection = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -175,7 +154,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         pairingManager.addDevice(device)
 
-        pairingBaselineConnectedPeerIDs = lastConnectedPeerIDs
         awaitingNewPairingConnection = true
 
         guard let uri = pairingManager.pairingURI(token: token) else { return }
@@ -328,7 +306,6 @@ extension AppDelegate: ConnectionManagerDelegate {
         sessionThread = nil
 
         DispatchQueue.main.async { [weak self] in
-            self?.statusBarController.updateConnectionState(connected: false, deviceName: nil)
             self?.updateConnectedPeersMenu(token: token, deviceName: nil, connected: false)
         }
 
@@ -381,7 +358,6 @@ extension AppDelegate: SessionDelegate {
                 ?? "Android"
 
             DispatchQueue.main.async { [weak self] in
-                self?.statusBarController.updateConnectionState(connected: true, deviceName: deviceName)
                 self?.updateConnectedPeersMenu(token: token, deviceName: deviceName, connected: true)
 
                 // Complete pairing if we were waiting for a new connection
@@ -447,7 +423,6 @@ extension AppDelegate: SessionDelegate {
         sessionThread = nil
 
         DispatchQueue.main.async { [weak self] in
-            self?.statusBarController.updateConnectionState(connected: false, deviceName: nil)
             self?.statusBarController.setConnectedPeers([])
         }
 
