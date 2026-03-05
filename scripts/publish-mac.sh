@@ -45,7 +45,8 @@ cmd_list() {
     id=$(basename "$dir")
     if [[ -f "$dir/info.txt" ]]; then
       date=$(grep "^date:" "$dir/info.txt" | cut -d' ' -f2-)
-      echo "  $id  ($date)"
+      git_hash=$(grep "^git:" "$dir/info.txt" | cut -d' ' -f2-)
+      echo "  $id  ($date)  ${git_hash:0:12}"
     else
       echo "  $id"
     fi
@@ -222,6 +223,7 @@ cp "$DMG_PATH" "$NOTARY_DIR/$SUBMISSION_ID/ClipRelay.dmg"
 cat > "$NOTARY_DIR/$SUBMISSION_ID/info.txt" <<EOF
 id: $SUBMISSION_ID
 date: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+git: $(git -C "$ROOT_DIR" rev-parse HEAD)
 EOF
 
 echo ""
