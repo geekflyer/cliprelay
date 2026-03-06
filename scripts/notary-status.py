@@ -211,7 +211,7 @@ class NotaryApp(App):
             return f"[green]{summary}[/]"
         return summary
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         detail = self.query_one("#detail", RichLog)
         detail.clear()
         idx = event.cursor_row
