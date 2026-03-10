@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
+import java.security.MessageDigest
 
 class E2ECryptoTest {
     @Test
@@ -112,6 +113,69 @@ class E2ECryptoTest {
         val reconstructed = E2ECrypto.x25519PublicKeyFromRaw(raw)
         val rawAgain = E2ECrypto.x25519PublicKeyToRaw(reconstructed)
         assertArrayEquals(raw, rawAgain)
+    }
+
+    // --- Cross-platform ECDH interop (must match macOS E2ECryptoKeyDerivationTests.swift) ---
+
+    // Golden fixture values from test-fixtures/protocol/l2cap/ecdh_fixture.json
+    private val rawEcdhSecretHex = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
+    private val expectedRootSecretHex = "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1"
+    private val expectedEncryptionKeyHex = "5b4fd11a1ad6d9e9efa059d2baebf904a9f4f9b7104f9e547f1a68127443ccba"
+    private val expectedDeviceTagHex = "a33273934e2b9e80"
+    private val expectedPairingTagHex = "300c9c9603b92a4b"
+    private val macPublicKeyHex = "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
+
+    @Test
+    fun ecdhFixtureRootSecret() {
+        // root_secret = HKDF-SHA256(ikm=raw_ecdh_secret, salt=zeros(32), info="cliprelay-ecdh-v1", len=32)
+        val rawSecret = E2ECrypto.hexToBytes(rawEcdhSecretHex)
+        val rootSecret = E2ECrypto.hkdf(rawSecret, "cliprelay-ecdh-v1", 32)
+        assertEquals(expectedRootSecretHex, rootSecret.toHex())
+    }
+
+    @Test
+    fun ecdhFixtureEncryptionKey() {
+        // encryption_key = deriveKey(root_secret)
+        val rootBytes = E2ECrypto.hexToBytes(expectedRootSecretHex)
+        val encKey = E2ECrypto.deriveKey(rootBytes)
+        assertEquals(expectedEncryptionKeyHex, encKey.encoded.toHex())
+    }
+
+    @Test
+    fun ecdhFixtureDeviceTag() {
+        // device_tag = deviceTag(root_secret)
+        val rootBytes = E2ECrypto.hexToBytes(expectedRootSecretHex)
+        val tag = E2ECrypto.deviceTag(rootBytes)
+        assertEquals(expectedDeviceTagHex, tag.toHex())
+    }
+
+    @Test
+    fun ecdhFixturePairingTag() {
+        // pairing_tag = SHA256(mac_public_key)[0:8]
+        val macPubBytes = E2ECrypto.hexToBytes(macPublicKeyHex)
+        val hash = MessageDigest.getInstance("SHA-256").digest(macPubBytes)
+        val pairingTag = hash.copyOfRange(0, 8)
+        assertEquals(expectedPairingTagHex, pairingTag.toHex())
+    }
+
+    @Test
+    fun ecdhFixtureFullDerivationChain() {
+        // Verify the full chain: raw_ecdh_secret -> root_secret -> encryption_key + device_tag
+        val rawSecret = E2ECrypto.hexToBytes(rawEcdhSecretHex)
+
+        // Step 1: Derive root_secret from raw ECDH secret
+        val rootSecret = E2ECrypto.hkdf(rawSecret, "cliprelay-ecdh-v1", 32)
+
+        // Step 2: Derive encryption_key from root_secret
+        val encKey = E2ECrypto.deriveKey(rootSecret)
+
+        // Step 3: Derive device_tag from root_secret
+        val tag = E2ECrypto.deviceTag(rootSecret)
+
+        // All values must match the fixture
+        assertEquals(expectedRootSecretHex, rootSecret.toHex())
+        assertEquals(expectedEncryptionKeyHex, encKey.encoded.toHex())
+        assertEquals(expectedDeviceTagHex, tag.toHex())
     }
 }
 

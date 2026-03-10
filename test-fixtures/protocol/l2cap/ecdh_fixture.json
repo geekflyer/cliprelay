@@ -9,7 +9,7 @@
     "encryption_key = HKDF-SHA256(ikm=root_secret, salt=zeros(32), info='cliprelay-enc-v1', length=32)",
     "device_tag = HKDF-SHA256(ikm=root_secret, salt=zeros(32), info='cliprelay-tag-v1', length=8)",
     "pairing_tag = SHA256(mac_public_key)[0:8]",
-    "derived values (root_secret, encryption_key, device_tag, pairing_tag) are left empty and will be computed in Task 7"
+    "derived values computed from the raw ECDH secret using HKDF-SHA256 (verified on both platforms)"
   ],
   "key_pairs": {
     "mac_ephemeral": {
@@ -25,10 +25,10 @@
   },
   "derivation": {
     "raw_ecdh_secret": "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
-    "root_secret": "",
-    "encryption_key": "",
-    "device_tag": "",
-    "pairing_tag": ""
+    "root_secret": "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1",
+    "encryption_key": "5b4fd11a1ad6d9e9efa059d2baebf904a9f4f9b7104f9e547f1a68127443ccba",
+    "device_tag": "a33273934e2b9e80",
+    "pairing_tag": "300c9c9603b92a4b"
   },
   "wire_format": {
     "header_size": 4,
@@ -47,9 +47,10 @@
     {
       "name": "KEY_CONFIRM",
       "type_byte": "04",
-      "description": "Mac confirms pairing with device_tag; payload will be filled in Task 7 once derived values are computed",
-      "payload_hex": "",
-      "encoded_hex": ""
+      "description": "Mac confirms pairing with device_tag",
+      "payload_utf8": "{\"tag\":\"a33273934e2b9e80\"}",
+      "payload_hex": "7b22746167223a2261333332373339333465326239653830227d",
+      "encoded_hex": "0000001b047b22746167223a2261333332373339333465326239653830227d"
     }
   ]
 }

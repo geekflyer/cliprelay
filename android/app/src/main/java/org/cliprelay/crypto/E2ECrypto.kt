@@ -90,7 +90,7 @@ object E2ECrypto {
         return cipher.doFinal(ciphertextWithTag)
     }
 
-    private fun hkdf(ikm: ByteArray, info: String, length: Int): ByteArray {
+    internal fun hkdf(ikm: ByteArray, info: String, length: Int): ByteArray {
         val infoBytes = info.toByteArray(Charsets.UTF_8)
         val mac = Mac.getInstance("HmacSHA256")
         // Extract: PRK = HMAC-SHA256(salt=zeros, IKM)
