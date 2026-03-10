@@ -124,6 +124,17 @@ body::after {
   text-decoration: none;
 }
 
+.nav-github {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+  transition: color 0.2s;
+}
+
+.nav-github:hover {
+  color: var(--aqua);
+}
+
 .nav-cta {
   display: inline-flex;
   align-items: center;
