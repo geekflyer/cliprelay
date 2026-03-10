@@ -3,6 +3,7 @@ package org.cliprelay.crypto
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class E2ECryptoTest {
@@ -60,6 +61,57 @@ class E2ECryptoTest {
         val second = E2ECrypto.seal(plaintext, key)
 
         assertNotEquals(first.toHex(), second.toHex())
+    }
+
+    @Test
+    fun ecdhSharedSecretSymmetry() {
+        val keyPair1 = E2ECrypto.generateX25519KeyPair()
+        val keyPair2 = E2ECrypto.generateX25519KeyPair()
+
+        val pub1Raw = E2ECrypto.x25519PublicKeyToRaw(keyPair1.public)
+        val pub2Raw = E2ECrypto.x25519PublicKeyToRaw(keyPair2.public)
+
+        val secret1 = E2ECrypto.ecdhSharedSecret(keyPair1.private, pub2Raw)
+        val secret2 = E2ECrypto.ecdhSharedSecret(keyPair2.private, pub1Raw)
+
+        assertArrayEquals(secret1, secret2)
+        assertEquals(32, secret1.size)
+    }
+
+    @Test
+    fun deriveKeyFromSecretBytes() {
+        val secretBytes = ByteArray(32) { 0x42 }
+        val key = E2ECrypto.deriveKey(secretBytes)
+        assertNotNull(key)
+
+        val tag = E2ECrypto.deviceTag(secretBytes)
+        assertEquals(8, tag.size)
+    }
+
+    @Test
+    fun deriveKeyFromSecretBytesMatchesHexVersion() {
+        val hex = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
+        val bytes = E2ECrypto.hexToBytes(hex)
+
+        val keyFromHex = E2ECrypto.deriveKey(hex)
+        val keyFromBytes = E2ECrypto.deriveKey(bytes)
+
+        // Both should produce the same key - verify by encrypting and cross-decrypting
+        val plaintext = "test".toByteArray()
+        val encrypted = E2ECrypto.seal(plaintext, keyFromHex)
+        val decrypted = E2ECrypto.open(encrypted, keyFromBytes)
+        assertArrayEquals(plaintext, decrypted)
+    }
+
+    @Test
+    fun x25519PublicKeyRoundTrip() {
+        val keyPair = E2ECrypto.generateX25519KeyPair()
+        val raw = E2ECrypto.x25519PublicKeyToRaw(keyPair.public)
+        assertEquals(32, raw.size)
+
+        val reconstructed = E2ECrypto.x25519PublicKeyFromRaw(raw)
+        val rawAgain = E2ECrypto.x25519PublicKeyToRaw(reconstructed)
+        assertArrayEquals(raw, rawAgain)
     }
 }
 

@@ -2,7 +2,14 @@ package org.cliprelay.crypto
 
 // AES-256-GCM encryption/decryption and HKDF key derivation for end-to-end clipboard security.
 
+import java.security.KeyFactory
+import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.security.PrivateKey
+import java.security.PublicKey
+import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
+import javax.crypto.KeyAgreement as JKeyAgreement
 import javax.crypto.Mac
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -13,15 +20,54 @@ object E2ECrypto {
     private const val GCM_TAG_BITS = 128
     private val AAD = "cliprelay-v1".toByteArray(Charsets.UTF_8)
 
-    fun deriveKey(tokenHex: String): SecretKey {
-        val tokenBytes = hexToBytes(tokenHex)
-        val keyBytes = hkdf(tokenBytes, "cliprelay-enc-v1", 32)
+    fun deriveKey(secretBytes: ByteArray): SecretKey {
+        val keyBytes = hkdf(secretBytes, "cliprelay-enc-v1", 32)
         return SecretKeySpec(keyBytes, "AES")
     }
 
+    fun deriveKey(tokenHex: String): SecretKey {
+        return deriveKey(hexToBytes(tokenHex))
+    }
+
+    fun deviceTag(secretBytes: ByteArray): ByteArray {
+        return hkdf(secretBytes, "cliprelay-tag-v1", 8)
+    }
+
     fun deviceTag(tokenHex: String): ByteArray {
-        val tokenBytes = hexToBytes(tokenHex)
-        return hkdf(tokenBytes, "cliprelay-tag-v1", 8)
+        return deviceTag(hexToBytes(tokenHex))
+    }
+
+    fun generateX25519KeyPair(): KeyPair {
+        val kpg = KeyPairGenerator.getInstance("X25519")
+        return kpg.generateKeyPair()
+    }
+
+    /** Convert raw 32-byte X25519 public key to JCA PublicKey. */
+    fun x25519PublicKeyFromRaw(rawBytes: ByteArray): PublicKey {
+        require(rawBytes.size == 32) { "X25519 public key must be 32 bytes" }
+        // X.509 SubjectPublicKeyInfo header for X25519
+        val x509Header = byteArrayOf(
+            0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00
+        )
+        val encoded = x509Header + rawBytes
+        return KeyFactory.getInstance("X25519").generatePublic(X509EncodedKeySpec(encoded))
+    }
+
+    /** Extract raw 32-byte public key from JCA PublicKey. */
+    fun x25519PublicKeyToRaw(publicKey: PublicKey): ByteArray {
+        val encoded = publicKey.encoded
+        return encoded.copyOfRange(encoded.size - 32, encoded.size)
+    }
+
+    /** Compute ECDH shared secret and derive root secret via HKDF. */
+    fun ecdhSharedSecret(privateKey: PrivateKey, remotePublicKeyRaw: ByteArray): ByteArray {
+        val remotePub = x25519PublicKeyFromRaw(remotePublicKeyRaw)
+        val ka = JKeyAgreement.getInstance("X25519")
+        ka.init(privateKey)
+        ka.doPhase(remotePub, true)
+        val rawSecret = ka.generateSecret()
+        // Derive root secret using HKDF with domain separator (matches macOS)
+        return hkdf(rawSecret, "cliprelay-ecdh-v1", 32)
     }
 
     fun seal(plaintext: ByteArray, key: SecretKey): ByteArray {
@@ -69,7 +115,7 @@ object E2ECrypto {
         return okm
     }
 
-    private fun hexToBytes(hex: String): ByteArray {
+    internal fun hexToBytes(hex: String): ByteArray {
         val len = hex.length
         val data = ByteArray(len / 2)
         for (i in 0 until len step 2) {
