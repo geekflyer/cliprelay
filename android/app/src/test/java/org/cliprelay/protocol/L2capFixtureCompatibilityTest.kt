@@ -20,6 +20,12 @@ class L2capFixtureCompatibilityTest {
     fun encodeMatchesFixtureWelcome() = assertEncodeMatchesFixture("WELCOME")
 
     @Test
+    fun encodeMatchesFixtureKeyExchange() = assertEncodeMatchesFixture("KEY_EXCHANGE")
+
+    @Test
+    fun encodeMatchesFixtureKeyConfirm() = assertEncodeMatchesFixture("KEY_CONFIRM")
+
+    @Test
     fun encodeMatchesFixtureOffer() = assertEncodeMatchesFixture("OFFER")
 
     @Test
@@ -36,6 +42,12 @@ class L2capFixtureCompatibilityTest {
 
     @Test
     fun decodeMatchesFixtureWelcome() = assertDecodeMatchesFixture("WELCOME")
+
+    @Test
+    fun decodeMatchesFixtureKeyExchange() = assertDecodeMatchesFixture("KEY_EXCHANGE")
+
+    @Test
+    fun decodeMatchesFixtureKeyConfirm() = assertDecodeMatchesFixture("KEY_CONFIRM")
 
     @Test
     fun decodeMatchesFixtureOffer() = assertDecodeMatchesFixture("OFFER")
