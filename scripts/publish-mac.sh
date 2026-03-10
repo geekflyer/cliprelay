@@ -194,12 +194,18 @@ codesign -dvv "$APP_DIR" 2>&1 | grep -E "Authority|TeamIdentifier"
 
 # ── 2. Create DMG ──
 
-echo "==> Creating DMG"
+echo "==> Creating DMG with Applications shortcut"
 rm -f "$DMG_PATH"
+DMG_STAGING="$DIST_DIR/.dmg-staging"
+rm -rf "$DMG_STAGING"
+mkdir -p "$DMG_STAGING"
+cp -R "$APP_DIR" "$DMG_STAGING/"
+ln -s /Applications "$DMG_STAGING/Applications"
 hdiutil create -volname "ClipRelay" \
-    -srcfolder "$APP_DIR" \
+    -srcfolder "$DMG_STAGING" \
     -ov -format UDZO \
     "$DMG_PATH"
+rm -rf "$DMG_STAGING"
 echo "DMG created: $DMG_PATH"
 
 # ── 3. Submit for notarization ──
