@@ -452,4 +452,5 @@ final class TestSessionDelegate: SessionDelegate {
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool {
         knownHashes.contains(hash)
     }
+    func session(_ session: Session, didCompletePairingWithSecret sharedSecret: Data, remoteName: String?) {}
 }

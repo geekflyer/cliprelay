@@ -1,11 +1,11 @@
 package org.cliprelay.pairing
 
-// Parses cliprelay:// pairing URIs from QR codes into a token and optional device name.
+// Parses cliprelay:// pairing URIs from QR codes into a public key hex and optional device name.
 
 import java.net.URI
 import java.net.URLDecoder
 
-data class PairingInfo(val token: String, val deviceName: String?)
+data class PairingInfo(val publicKeyHex: String, val deviceName: String?)
 
 object PairingUriParser {
     fun parse(rawValue: String): PairingInfo? {
@@ -14,11 +14,11 @@ object PairingUriParser {
         if (!uri.host.equals("pair", ignoreCase = true)) return null
 
         val params = parseQuery(uri.rawQuery ?: return null)
-        val token = params["t"] ?: return null
-        if (token.length != 64) return null
-        if (!token.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+        val publicKeyHex = params["k"] ?: return null
+        if (publicKeyHex.length != 64) return null
+        if (!publicKeyHex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
         val deviceName = params["n"]?.takeIf { it.isNotBlank() }
-        return PairingInfo(token.lowercase(), deviceName)
+        return PairingInfo(publicKeyHex.lowercase(), deviceName)
     }
 
     private fun parseQuery(rawQuery: String): Map<String, String> {

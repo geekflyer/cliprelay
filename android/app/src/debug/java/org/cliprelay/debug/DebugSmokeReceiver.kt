@@ -1,6 +1,6 @@
 package org.cliprelay.debug
 
-// BroadcastReceiver for smoke-test intents: import/clear pairing tokens and reset the probe.
+// BroadcastReceiver for smoke-test intents: import/clear pairing secrets and reset the probe.
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -30,7 +30,7 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                 val deviceName = intent.getStringExtra(EXTRA_DEVICE_NAME)
 
                 runCatching {
-                    if (!PairingStore(context).saveToken(normalizedToken)) {
+                    if (!PairingStore(context).saveSharedSecret(normalizedToken)) {
                         setResultCode(3)
                         return
                     }

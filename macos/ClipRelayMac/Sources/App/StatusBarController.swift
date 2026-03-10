@@ -186,7 +186,7 @@ final class StatusBarController {
                 keyEquivalent: ""
             )
             forgetItem.target = self
-            forgetItem.representedObject = peer.token
+            forgetItem.representedObject = peer.secret
             submenu.addItem(forgetItem)
 
             item.submenu = submenu

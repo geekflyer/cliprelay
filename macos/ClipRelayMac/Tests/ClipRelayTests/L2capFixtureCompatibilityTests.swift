@@ -13,6 +13,14 @@ final class L2capFixtureCompatibilityTests: XCTestCase {
         try assertEncodeMatchesFixture(name: "WELCOME")
     }
 
+    func testEncodeMatchesFixtureKeyExchange() throws {
+        try assertEncodeMatchesFixture(name: "KEY_EXCHANGE")
+    }
+
+    func testEncodeMatchesFixtureKeyConfirm() throws {
+        try assertEncodeMatchesFixture(name: "KEY_CONFIRM")
+    }
+
     func testEncodeMatchesFixtureOffer() throws {
         try assertEncodeMatchesFixture(name: "OFFER")
     }
@@ -37,6 +45,14 @@ final class L2capFixtureCompatibilityTests: XCTestCase {
 
     func testDecodeMatchesFixtureWelcome() throws {
         try assertDecodeMatchesFixture(name: "WELCOME")
+    }
+
+    func testDecodeMatchesFixtureKeyExchange() throws {
+        try assertDecodeMatchesFixture(name: "KEY_EXCHANGE")
+    }
+
+    func testDecodeMatchesFixtureKeyConfirm() throws {
+        try assertDecodeMatchesFixture(name: "KEY_CONFIRM")
     }
 
     func testDecodeMatchesFixtureOffer() throws {

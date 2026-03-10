@@ -10,6 +10,8 @@ import java.nio.ByteOrder
 enum class MessageType(val byte: Byte) {
     HELLO(0x01),
     WELCOME(0x02),
+    KEY_EXCHANGE(0x03),
+    KEY_CONFIRM(0x04),
     OFFER(0x10),
     ACCEPT(0x11),
     PAYLOAD(0x12),

@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var connectionManager: ConnectionManager!
     private var activeSession: Session?
     private var sessionThread: Thread?
-    private var connectedToken: String?
+    private var connectedSecret: String?
     private var pendingClipboardPayload: Data?
 
     // Dedup: hash of the last clipboard we received from the remote side
@@ -62,8 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connectionManager.pairedDevices = { [weak self] in
             guard let self else { return [] }
             return self.pairingManager.loadDevices().compactMap { device in
-                guard let tag = self.pairingManager.deviceTag(for: device.token) else { return nil }
-                return (token: device.token, tag: tag)
+                guard let tag = self.pairingManager.deviceTag(for: device.sharedSecret) else { return nil }
+                return (token: device.sharedSecret, tag: tag)
             }
         }
 
@@ -103,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Clipboard Change → Session
 
     private func onClipboardChange(_ text: String) {
-        guard let token = connectedToken else {
+        guard let token = connectedSecret else {
             appLogger.debug("[App] Clipboard changed but no connected device")
             return
         }
@@ -143,40 +143,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startPairing() {
         pairingManager.removePendingDevices()
 
-        guard let token = pairingManager.generateToken() else {
-            appLogger.error("[Pairing] Failed to generate secure token")
-            return
-        }
-        let device = PairedDevice(
-            token: token,
-            displayName: "Pending pairing\u{2026}",
-            datePaired: Date()
-        )
-        pairingManager.addDevice(device)
+        let privateKey = pairingManager.generateKeyPair()
+        let publicKey = privateKey.publicKey
 
         awaitingNewPairingConnection = true
 
-        guard let uri = pairingManager.pairingURI(token: token) else { return }
+        guard let uri = pairingManager.pairingURI(publicKey: publicKey) else { return }
         pairingWindowController.showPairingQR(uri: uri)
 
-        // Refresh trusted list to show pending device
+        // Tell ConnectionManager to scan for pairing tag
+        let pairingTag = PairingManager.pairingTag(from: publicKey.rawRepresentation)
+        connectionManager.pairingTag = pairingTag
+
         refreshTrustedPeersMenu()
     }
 
     private func handlePairingWindowClosed() {
         guard awaitingNewPairingConnection else { return }
+        pairingManager.clearEphemeralKey()
+        connectionManager.pairingTag = nil
         cancelPendingPairingFlow(removePendingDevice: true)
     }
 
-    private func completePairing(token: String, deviceName: String?) {
+    private func completePairing(secret: String, deviceName: String?) {
         awaitingNewPairingConnection = false
 
         // Update the pending device's display name from "Pending pairing…"
         let devices = pairingManager.loadDevices()
-        if let pending = devices.first(where: { $0.token == token && $0.displayName.contains("Pending") }) {
-            pairingManager.removeDevice(token: token)
+        if let pending = devices.first(where: { $0.sharedSecret == secret && $0.displayName.contains("Pending") }) {
+            pairingManager.removeDevice(secret: secret)
             let updated = PairedDevice(
-                token: pending.token,
+                sharedSecret: pending.sharedSecret,
                 displayName: deviceName ?? "Android",
                 datePaired: pending.datePaired
             )
@@ -185,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         pairingWindowController.close()
         refreshTrustedPeersMenu()
-        appLogger.info("[App] Pairing completed for token")
+        appLogger.info("[App] Pairing completed")
     }
 
     private func cancelPendingPairingFlow(removePendingDevice: Bool) {
@@ -199,13 +196,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Device Management
 
     private func forgetDevice(token: String) {
-        pairingManager.removeDevice(token: token)
+        pairingManager.removeDevice(secret: token)
 
         // If the forgotten device is currently connected, disconnect
-        if connectedToken == token {
+        if connectedSecret == token {
             activeSession?.close()
             activeSession = nil
-            connectedToken = nil
+            connectedSecret = nil
             connectionManager?.disconnect()
             statusBarController.setConnectedPeers([])
         }
@@ -222,10 +219,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let devices = pairingManager.loadDevices()
         let peers = devices.map { device in
             PeerSummary(
-                id: deviceStableID(token: device.token),
+                id: deviceStableID(token: device.sharedSecret),
                 description: device.displayName,
-                token: device.token,
-                deviceTagHex: formattedDeviceTagHex(token: device.token)
+                secret: device.sharedSecret,
+                deviceTagHex: formattedDeviceTagHex(token: device.sharedSecret)
             )
         }
         .sorted { $0.description.localizedCaseInsensitiveCompare($1.description) == .orderedAscending }
@@ -261,7 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: ConnectionManagerDelegate {
     func connectionManager(_ manager: ConnectionManager, didEstablishChannel inputStream: InputStream,
                            outputStream: OutputStream, for token: String) {
-        connectedToken = token
+        connectedSecret = token
 
         // Remove streams from the main RunLoop — Session runs them on its own background thread
         inputStream.remove(from: .main, forMode: .common)
@@ -302,7 +299,7 @@ extension AppDelegate: ConnectionManagerDelegate {
 
         activeSession?.close()
         activeSession = nil
-        connectedToken = nil
+        connectedSecret = nil
         sessionThread = nil
 
         DispatchQueue.main.async { [weak self] in
@@ -310,6 +307,46 @@ extension AppDelegate: ConnectionManagerDelegate {
         }
 
         // ConnectionManager handles reconnect automatically via scheduleReconnect
+    }
+
+    func connectionManager(_ manager: ConnectionManager, didEstablishPairingChannel inputStream: InputStream,
+                           outputStream: OutputStream) {
+        // Remove streams from main RunLoop
+        inputStream.remove(from: .main, forMode: .common)
+        outputStream.remove(from: .main, forMode: .common)
+
+        guard let privateKey = pairingManager.ephemeralPrivateKey else {
+            appLogger.error("[App] Pairing channel established but no ephemeral key")
+            inputStream.close()
+            outputStream.close()
+            return
+        }
+
+        // Create session in pairing mode
+        let session = Session(inputStream: inputStream, outputStream: outputStream,
+                              isInitiator: true, delegate: self,
+                              mode: .pairing(privateKey: privateKey))
+        session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        activeSession = session
+
+        // Run session on background thread (same pattern as normal connections)
+        let thread = Thread { [weak self] in
+            let runLoop = RunLoop.current
+            inputStream.schedule(in: runLoop, forMode: .common)
+            outputStream.schedule(in: runLoop, forMode: .common)
+
+            session.performHandshake()
+            session.listenForMessages()
+
+            DispatchQueue.main.async {
+                self?.handleSessionEnded()
+            }
+        }
+        thread.name = "L2CAP-Pairing"
+        thread.start()
+        sessionThread = thread
+
+        appLogger.info("[App] Pairing L2CAP channel established, starting ECDH handshake")
     }
 
     private func handleSessionEnded() {
@@ -324,7 +361,7 @@ extension AppDelegate: ConnectionManagerDelegate {
             let peer = PeerSummary(
                 id: deviceStableID(token: token),
                 description: deviceName,
-                token: token,
+                secret: token,
                 deviceTagHex: formattedDeviceTagHex(token: token)
             )
             statusBarController.setConnectedPeers([peer])
@@ -342,19 +379,19 @@ extension AppDelegate: SessionDelegate {
         appLogger.info("[App] Session handshake complete — remote device: \(remoteName ?? "unknown", privacy: .private)")
 
         // Update stored device name from handshake and refresh UI
-        if let token = connectedToken {
+        if let token = connectedSecret {
             // Update the persisted device name if the remote sent one
             if let name = remoteName {
                 let devices = pairingManager.loadDevices()
-                if let existing = devices.first(where: { $0.token == token && $0.displayName != name }) {
-                    pairingManager.removeDevice(token: token)
-                    let updated = PairedDevice(token: existing.token, displayName: name, datePaired: existing.datePaired)
+                if let existing = devices.first(where: { $0.sharedSecret == token && $0.displayName != name }) {
+                    pairingManager.removeDevice(secret: token)
+                    let updated = PairedDevice(sharedSecret: existing.sharedSecret, displayName: name, datePaired: existing.datePaired)
                     pairingManager.addDevice(updated)
                 }
             }
 
             let deviceName = remoteName
-                ?? pairingManager.loadDevices().first(where: { $0.token == token })?.displayName
+                ?? pairingManager.loadDevices().first(where: { $0.sharedSecret == token })?.displayName
                 ?? "Android"
 
             DispatchQueue.main.async { [weak self] in
@@ -362,7 +399,7 @@ extension AppDelegate: SessionDelegate {
 
                 // Complete pairing if we were waiting for a new connection
                 if self?.awaitingNewPairingConnection == true {
-                    self?.completePairing(token: token, deviceName: remoteName)
+                    self?.completePairing(secret: token, deviceName: remoteName)
                     self?.refreshTrustedPeersMenu()
                 }
             }
@@ -376,7 +413,7 @@ extension AppDelegate: SessionDelegate {
     }
 
     func session(_ session: Session, didReceiveClipboard encryptedBlob: Data, hash: String) {
-        guard let token = connectedToken else {
+        guard let token = connectedSecret else {
             appLogger.error("[App] Received clipboard but no connected token")
             return
         }
@@ -405,6 +442,27 @@ extension AppDelegate: SessionDelegate {
             self?.clipboardWriter.writeText(text)
             self?.notificationManager.postClipboardReceived(text: text)
             self?.statusBarController.flashSyncIndicator()
+        }
+    }
+
+    func session(_ session: Session, didCompletePairingWithSecret sharedSecret: Data, remoteName: String?) {
+        let secretHex = sharedSecret.map { String(format: "%02x", $0) }.joined()
+
+        // Store the paired device
+        let device = PairedDevice(
+            sharedSecret: secretHex,
+            displayName: remoteName ?? "Android",
+            datePaired: Date()
+        )
+        pairingManager.addDevice(device)
+        pairingManager.clearEphemeralKey()
+
+        // Clear pairing mode on ConnectionManager
+        connectionManager.pairingTag = nil
+        connectedSecret = secretHex
+
+        DispatchQueue.main.async { [weak self] in
+            self?.completePairing(secret: secretHex, deviceName: remoteName)
         }
     }
 

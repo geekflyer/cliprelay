@@ -2,12 +2,25 @@ package org.cliprelay.protocol
 
 // Manages a single L2CAP protocol session: handshake, clipboard offer/accept, and payload transfer.
 
+import org.cliprelay.crypto.E2ECrypto
 import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.PrivateKey
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+
+// ── Session Mode ──────────────────────────────────────────────────────
+
+sealed class SessionMode {
+    object Normal : SessionMode()
+    class Pairing(
+        val ownPrivateKey: PrivateKey,
+        val ownPublicKeyRaw: ByteArray,
+        val remotePublicKeyRaw: ByteArray
+    ) : SessionMode()
+}
 
 /**
  * Session manages the L2CAP protocol conversation over a pair of streams.
@@ -27,8 +40,10 @@ class Session(
     private val output: OutputStream,
     private val isInitiator: Boolean,
     private val callback: SessionCallback,
+    val mode: SessionMode = SessionMode.Normal,
     internal var handshakeTimeoutMs: Long = 5_000L,
-    internal var transferTimeoutMs: Long = 30_000L
+    internal var transferTimeoutMs: Long = 30_000L,
+    internal var pairingTimeoutMs: Long = 60_000L
 ) {
     private val closed = AtomicBoolean(false)
 
@@ -62,10 +77,21 @@ class Session(
      */
     fun performHandshake() {
         try {
-            if (isInitiator) {
-                initiatorHandshake()
-            } else {
-                responderHandshake()
+            when (val m = mode) {
+                is SessionMode.Normal -> {
+                    if (isInitiator) {
+                        initiatorHandshake()
+                    } else {
+                        responderHandshake()
+                    }
+                }
+                is SessionMode.Pairing -> {
+                    if (isInitiator) {
+                        throw ProtocolException("Android cannot be pairing initiator")
+                    } else {
+                        pairingResponderHandshake(m)
+                    }
+                }
             }
             callback.onSessionReady()
         } catch (e: Exception) {
@@ -101,6 +127,47 @@ class Session(
         // Send WELCOME
         val welcome = Message(MessageType.WELCOME, helloPayload())
         MessageCodec.write(output, welcome)
+    }
+
+    // ── Pairing handshake ────────────────────────────────────────────
+
+    private fun pairingResponderHandshake(pairing: SessionMode.Pairing) {
+        // Send KEY_EXCHANGE with our public key (and optional name)
+        val pubkeyHex = pairing.ownPublicKeyRaw.joinToString("") { "%02x".format(it) }
+        val exchangeJson = JSONObject().apply {
+            put("pubkey", pubkeyHex)
+            localName?.let { put("name", it) }
+        }
+        val keyExchange = Message(MessageType.KEY_EXCHANGE, exchangeJson.toString().toByteArray())
+        MessageCodec.write(output, keyExchange)
+
+        // Compute ECDH shared secret
+        val sharedSecret = E2ECrypto.ecdhSharedSecret(pairing.ownPrivateKey, pairing.remotePublicKeyRaw)
+
+        // Wait for KEY_CONFIRM from Mac (60s pairing timeout)
+        val confirm = readWithTimeout(pairingTimeoutMs)
+        if (confirm.type != MessageType.KEY_CONFIRM) {
+            throw ProtocolException("Expected KEY_CONFIRM, got ${confirm.type}")
+        }
+
+        // Derive encryption key and verify confirmation
+        val encKey = E2ECrypto.deriveKey(sharedSecret)
+        val decrypted = try {
+            E2ECrypto.open(confirm.payload, encKey)
+        } catch (e: Exception) {
+            throw ProtocolException("KEY_CONFIRM decryption failed: ${e.message}")
+        }
+
+        val expected = "cliprelay-paired".toByteArray()
+        if (!decrypted.contentEquals(expected)) {
+            throw ProtocolException("KEY_CONFIRM verification failed: unexpected plaintext")
+        }
+
+        // Notify callback of completed pairing
+        callback.onPairingComplete(sharedSecret, remoteName = null)
+
+        // Continue with normal HELLO/WELCOME handshake
+        responderHandshake()
     }
 
     // ── Message loop ─────────────────────────────────────────────────
@@ -349,4 +416,5 @@ interface SessionCallback {
     fun onTransferComplete(hash: String)
     fun onSessionError(error: Exception)
     fun hasHash(hash: String): Boolean
+    fun onPairingComplete(sharedSecret: ByteArray, remoteName: String?) {}
 }

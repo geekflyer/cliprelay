@@ -28,7 +28,7 @@ enum SmokeAutomationCLI {
 
         let displayName = value(for: "--name", in: arguments) ?? "Smoke Test Android"
         let paired = PairedDevice(
-            token: token.lowercased(),
+            sharedSecret: token.lowercased(),
             displayName: displayName,
             datePaired: Date()
         )
@@ -49,7 +49,7 @@ enum SmokeAutomationCLI {
             return 2
         }
 
-        PairingManager().removeDevice(token: token.lowercased())
+        PairingManager().removeDevice(secret: token.lowercased())
         print("Removed pairing token")
         return 0
     }

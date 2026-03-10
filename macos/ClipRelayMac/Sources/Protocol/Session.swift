@@ -2,6 +2,7 @@
 
 import Foundation
 import CommonCrypto
+import CryptoKit
 
 // MARK: - Session Delegate
 
@@ -11,6 +12,7 @@ protocol SessionDelegate: AnyObject {
     func session(_ session: Session, didCompleteTransfer hash: String)
     func session(_ session: Session, didFailWithError error: Error)
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool
+    func session(_ session: Session, didCompletePairingWithSecret sharedSecret: Data, remoteName: String?)
 }
 
 // MARK: - Session Errors
@@ -22,6 +24,13 @@ enum SessionError: Error, Equatable {
     case hashMismatch(expected: String, actual: String)
     case sessionClosed
     case protocolError(String)
+}
+
+// MARK: - Session Mode
+
+enum SessionMode {
+    case normal
+    case pairing(privateKey: Curve25519.KeyAgreement.PrivateKey)
 }
 
 // MARK: - Session
@@ -41,6 +50,7 @@ final class Session {
     private let inputStream: InputStream
     private let outputStream: OutputStream
     private let isInitiator: Bool
+    let mode: SessionMode
     weak var delegate: SessionDelegate?
 
     var handshakeTimeoutSeconds: TimeInterval = 5.0
@@ -64,10 +74,12 @@ final class Session {
     private let queueLock = NSLock()
 
     init(inputStream: InputStream, outputStream: OutputStream,
-         isInitiator: Bool, delegate: SessionDelegate) {
+         isInitiator: Bool, delegate: SessionDelegate,
+         mode: SessionMode = .normal) {
         self.inputStream = inputStream
         self.outputStream = outputStream
         self.isInitiator = isInitiator
+        self.mode = mode
         self.delegate = delegate
     }
 
@@ -77,10 +89,19 @@ final class Session {
     /// Must be called before `listenForMessages()`.
     func performHandshake() {
         do {
-            if isInitiator {
-                try initiatorHandshake()
-            } else {
-                try responderHandshake()
+            switch mode {
+            case .normal:
+                if isInitiator {
+                    try initiatorHandshake()
+                } else {
+                    try responderHandshake()
+                }
+            case .pairing(let privateKey):
+                if isInitiator {
+                    try pairingInitiatorHandshake(privateKey: privateKey)
+                } else {
+                    try pairingResponderHandshake(privateKey: privateKey)
+                }
             }
             delegate?.sessionDidBecomeReady(self)
         } catch {
@@ -118,6 +139,56 @@ final class Session {
         // Send WELCOME
         let welcome = Message(type: .welcome, payload: helloPayload())
         try writeMessage(welcome)
+    }
+
+    // MARK: - Pairing Handshake
+
+    private func pairingInitiatorHandshake(privateKey: Curve25519.KeyAgreement.PrivateKey) throws {
+        // Wait for KEY_EXCHANGE from Android (60s timeout for pairing)
+        let keyExchange = try readWithTimeout(60.0)
+        guard keyExchange.type == .keyExchange else {
+            throw SessionError.unexpectedMessage("Expected KEY_EXCHANGE, got \(keyExchange.type)")
+        }
+
+        // Parse Android's public key and optional name
+        guard let json = try JSONSerialization.jsonObject(with: keyExchange.payload) as? [String: Any],
+              let pubkeyHex = json["pubkey"] as? String else {
+            throw SessionError.protocolError("Invalid KEY_EXCHANGE payload")
+        }
+        guard let remoteKeyBytes = E2ECrypto.hexToData(pubkeyHex) else {
+            throw SessionError.protocolError("Invalid public key hex")
+        }
+
+        // Compute ECDH shared secret
+        let sharedSecret = try E2ECrypto.ecdhSharedSecret(
+            privateKey: privateKey,
+            remotePublicKeyBytes: remoteKeyBytes
+        )
+
+        // Derive encryption key for confirmation
+        guard let encKey = E2ECrypto.deriveKey(secretBytes: sharedSecret) else {
+            throw SessionError.protocolError("Key derivation failed")
+        }
+
+        // Send KEY_CONFIRM: encrypt "cliprelay-paired" with derived key
+        let confirmPlaintext = Data("cliprelay-paired".utf8)
+        let confirmEncrypted = try E2ECrypto.seal(confirmPlaintext, key: encKey)
+        let confirm = Message(type: .keyConfirm, payload: confirmEncrypted)
+        try writeMessage(confirm)
+
+        // Extract remote name from KEY_EXCHANGE if present
+        let exchangeRemoteName = json["name"] as? String
+
+        // Notify delegate of completed pairing
+        delegate?.session(self, didCompletePairingWithSecret: sharedSecret, remoteName: exchangeRemoteName)
+
+        // Continue with normal HELLO/WELCOME handshake
+        try initiatorHandshake()
+    }
+
+    private func pairingResponderHandshake(privateKey: Curve25519.KeyAgreement.PrivateKey) throws {
+        // Not used in current architecture (Mac is always initiator)
+        throw SessionError.protocolError("Mac cannot be pairing responder")
     }
 
     // MARK: - Message Loop

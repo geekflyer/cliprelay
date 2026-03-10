@@ -38,6 +38,26 @@ final class MessageCodecTests: XCTestCase {
         try assertRoundTrip(msg)
     }
 
+    func testKeyExchangeRoundTrip() {
+        let pubkeyJSON = #"{"pubkey":"de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"}"#
+        let message = Message(type: .keyExchange, payload: Data(pubkeyJSON.utf8))
+        let encoded = MessageCodec.encode(message)
+        var offset = 0
+        let decoded = try! MessageCodec.decode(from: encoded, offset: &offset)
+        XCTAssertEqual(decoded.type, .keyExchange)
+        XCTAssertEqual(String(data: decoded.payload, encoding: .utf8), pubkeyJSON)
+    }
+
+    func testKeyConfirmRoundTrip() {
+        let payload = Data("encrypted-confirm-data".utf8)
+        let message = Message(type: .keyConfirm, payload: payload)
+        let encoded = MessageCodec.encode(message)
+        var offset = 0
+        let decoded = try! MessageCodec.decode(from: encoded, offset: &offset)
+        XCTAssertEqual(decoded.type, .keyConfirm)
+        XCTAssertEqual(decoded.payload, payload)
+    }
+
     // MARK: - Error cases
 
     func testDecodeUnknownTypeThrows() {

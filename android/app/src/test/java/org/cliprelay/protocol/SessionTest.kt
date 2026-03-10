@@ -470,6 +470,7 @@ class SessionTest {
         var onReceived: (ByteArray, String) -> Unit = { _, _ -> }
         var onTransfer: (String) -> Unit = {}
         var onError: (Exception) -> Unit = {}
+        var onPairing: (ByteArray, String?) -> Unit = { _, _ -> }
         val knownHashes = CopyOnWriteArrayList<String>()
 
         override fun onSessionReady() = onReady()
@@ -478,5 +479,7 @@ class SessionTest {
         override fun onTransferComplete(hash: String) = onTransfer(hash)
         override fun onSessionError(error: Exception) = onError(error)
         override fun hasHash(hash: String): Boolean = hash in knownHashes
+        override fun onPairingComplete(sharedSecret: ByteArray, remoteName: String?) =
+            onPairing(sharedSecret, remoteName)
     }
 }

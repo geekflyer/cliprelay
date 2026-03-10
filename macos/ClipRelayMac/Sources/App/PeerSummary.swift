@@ -5,6 +5,6 @@ import Foundation
 struct PeerSummary {
     let id: UUID
     let description: String
-    var token: String?
+    var secret: String?
     var deviceTagHex: String?
 }

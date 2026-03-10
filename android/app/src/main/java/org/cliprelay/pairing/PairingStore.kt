@@ -1,6 +1,6 @@
 package org.cliprelay.pairing
 
-// Persists the pairing token in EncryptedSharedPreferences.
+// Persists the shared secret in EncryptedSharedPreferences.
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -12,7 +12,7 @@ class PairingStore(context: Context) {
     companion object {
         private const val TAG = "PairingStore"
         private const val PREFS_NAME = "cliprelay_pairing"
-        private const val KEY_TOKEN = "pairing_token"
+        private const val KEY_SHARED_SECRET = "shared_secret"
     }
 
     private val encryptedPrefs: SharedPreferences? = try {
@@ -31,35 +31,35 @@ class PairingStore(context: Context) {
         null
     }
 
-    fun saveToken(token: String): Boolean {
+    fun saveSharedSecret(secret: String): Boolean {
         val prefs = encryptedPrefs
         if (prefs == null) {
-            Log.e(TAG, "Cannot save pairing token: encrypted storage unavailable")
+            Log.e(TAG, "Cannot save shared secret: encrypted storage unavailable")
             return false
         }
         return runCatching {
-            prefs.edit().putString(KEY_TOKEN, token).apply()
+            prefs.edit().putString(KEY_SHARED_SECRET, secret).apply()
             true
         }.getOrDefault(false)
     }
 
-    fun loadToken(): String? {
-        return readToken(encryptedPrefs)
+    fun loadSharedSecret(): String? {
+        return readSecret(encryptedPrefs)
     }
 
     fun clear() {
-        clearToken(encryptedPrefs)
+        clearSecret(encryptedPrefs)
     }
 
-    private fun readToken(prefs: SharedPreferences?): String? {
+    private fun readSecret(prefs: SharedPreferences?): String? {
         if (prefs == null) return null
-        return runCatching { prefs.getString(KEY_TOKEN, null) }.getOrNull()
+        return runCatching { prefs.getString(KEY_SHARED_SECRET, null) }.getOrNull()
     }
 
-    private fun clearToken(prefs: SharedPreferences?) {
+    private fun clearSecret(prefs: SharedPreferences?) {
         if (prefs == null) return
         runCatching {
-            prefs.edit().remove(KEY_TOKEN).apply()
+            prefs.edit().remove(KEY_SHARED_SECRET).apply()
         }
     }
 }

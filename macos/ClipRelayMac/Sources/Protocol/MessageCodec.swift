@@ -5,6 +5,8 @@ import Foundation
 enum MessageType: UInt8 {
     case hello = 0x01
     case welcome = 0x02
+    case keyExchange = 0x03
+    case keyConfirm = 0x04
     case offer = 0x10
     case accept = 0x11
     case payload = 0x12

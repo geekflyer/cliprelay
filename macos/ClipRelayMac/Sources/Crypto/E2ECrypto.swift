@@ -10,7 +10,17 @@ enum E2ECrypto {
 
     static func deriveKey(tokenHex: String) -> SymmetricKey? {
         guard let tokenData = hexToData(tokenHex) else { return nil }
-        let ikm = SymmetricKey(data: tokenData)
+        return deriveKey(secretBytes: tokenData)
+    }
+
+    static func deviceTag(tokenHex: String) -> Data? {
+        guard let tokenData = hexToData(tokenHex) else { return nil }
+        return deviceTag(secretBytes: tokenData)
+    }
+
+    static func deriveKey(secretBytes: Data) -> SymmetricKey? {
+        guard secretBytes.count == 32 else { return nil }
+        let ikm = SymmetricKey(data: secretBytes)
         return HKDF<SHA256>.deriveKey(
             inputKeyMaterial: ikm,
             info: Data("cliprelay-enc-v1".utf8),
@@ -18,15 +28,33 @@ enum E2ECrypto {
         )
     }
 
-    static func deviceTag(tokenHex: String) -> Data? {
-        guard let tokenData = hexToData(tokenHex) else { return nil }
-        let ikm = SymmetricKey(data: tokenData)
+    static func deviceTag(secretBytes: Data) -> Data? {
+        guard secretBytes.count == 32 else { return nil }
+        let ikm = SymmetricKey(data: secretBytes)
         let tagKey = HKDF<SHA256>.deriveKey(
             inputKeyMaterial: ikm,
             info: Data("cliprelay-tag-v1".utf8),
             outputByteCount: 8
         )
         return tagKey.withUnsafeBytes { Data($0) }
+    }
+
+    // MARK: - ECDH
+
+    static func ecdhSharedSecret(
+        privateKey: Curve25519.KeyAgreement.PrivateKey,
+        remotePublicKeyBytes: Data
+    ) throws -> Data {
+        let remotePublic = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: remotePublicKeyBytes)
+        let shared = try privateKey.sharedSecretFromKeyAgreement(with: remotePublic)
+        // Derive root secret using HKDF with domain separator
+        let key = shared.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: Data(),
+            sharedInfo: Data("cliprelay-ecdh-v1".utf8),
+            outputByteCount: 32
+        )
+        return key.withUnsafeBytes { Data($0) }
     }
 
     // MARK: - Encryption
@@ -49,7 +77,7 @@ enum E2ECrypto {
 
     // MARK: - Helpers
 
-    private static func hexToData(_ hex: String) -> Data? {
+    static func hexToData(_ hex: String) -> Data? {
         let chars = Array(hex)
         guard chars.count.isMultiple(of: 2) else { return nil }
         var data = Data(capacity: chars.count / 2)
