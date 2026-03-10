@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 sealed class SessionMode {
     object Normal : SessionMode()
-    data class Pairing(
+    class Pairing(
         val ownPrivateKey: PrivateKey,
         val ownPublicKeyRaw: ByteArray,
         val remotePublicKeyRaw: ByteArray
@@ -42,7 +42,8 @@ class Session(
     private val callback: SessionCallback,
     val mode: SessionMode = SessionMode.Normal,
     internal var handshakeTimeoutMs: Long = 5_000L,
-    internal var transferTimeoutMs: Long = 30_000L
+    internal var transferTimeoutMs: Long = 30_000L,
+    internal var pairingTimeoutMs: Long = 60_000L
 ) {
     private val closed = AtomicBoolean(false)
 
@@ -131,8 +132,6 @@ class Session(
     // ── Pairing handshake ────────────────────────────────────────────
 
     private fun pairingResponderHandshake(pairing: SessionMode.Pairing) {
-        val pairingTimeoutMs = 60_000L
-
         // Send KEY_EXCHANGE with our public key (and optional name)
         val pubkeyHex = pairing.ownPublicKeyRaw.joinToString("") { "%02x".format(it) }
         val exchangeJson = JSONObject().apply {
