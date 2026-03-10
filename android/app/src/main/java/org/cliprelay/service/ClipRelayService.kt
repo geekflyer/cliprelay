@@ -29,6 +29,7 @@ import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.protocol.Session
 import org.cliprelay.protocol.SessionCallback
+import org.cliprelay.protocol.SessionMode
 import org.cliprelay.settings.ClipboardSettingsStore
 import java.io.IOException
 import java.security.MessageDigest
@@ -40,6 +41,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val ACTION_PUSH_TEXT = "org.cliprelay.action.PUSH_TEXT"
         const val ACTION_RELOAD_PAIRING = "org.cliprelay.action.RELOAD_PAIRING"
         const val ACTION_UNPAIR = "org.cliprelay.action.UNPAIR"
+        const val ACTION_START_PAIRING = "org.cliprelay.action.START_PAIRING"
         const val ACTION_CONNECTION_STATE = "org.cliprelay.action.CONNECTION_STATE"
         const val ACTION_QUERY_CONNECTION = "org.cliprelay.action.QUERY_CONNECTION"
         const val ACTION_CLIPBOARD_TRANSFER = "org.cliprelay.action.CLIPBOARD_TRANSFER"
@@ -82,6 +84,10 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private var bleStarted = false
     @Volatile
     private var isDestroyed = false
+    @Volatile
+    private var pairingInProgress = false
+    private var pendingPairingKeyPair: java.security.KeyPair? = null
+    private var pendingMacPublicKeyRaw: ByteArray? = null
 
     private val bluetoothStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -133,6 +139,10 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 handleUnpairRequest()
                 return START_STICKY
             }
+            ACTION_START_PAIRING -> {
+                handleStartPairing()
+                return START_STICKY
+            }
             ACTION_RELOAD_PAIRING -> {
                 // RELOAD_PAIRING handles its own BLE lifecycle — skip the
                 // general ensureBleComponentsState() to avoid a double-start.
@@ -176,9 +186,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     // ── BLE stack management ──────────────────────────────────────────
 
     private fun ensureBleComponentsState(restartIfRunning: Boolean = false) {
-        if (encryptionKey == null) {
+        if (encryptionKey == null && !pairingInProgress) {
             if (bleStarted) {
-                Log.w(TAG, "Pairing token missing; stopping BLE components")
+                Log.w(TAG, "Shared secret missing; stopping BLE components")
                 stopBleComponents()
             }
             return
@@ -226,9 +236,17 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             //    (No GATT server needed — Mac reads PSM from scan response)
             val adv = Advertiser(this, ParcelUuid(serviceUUID))
             adv.psm = psm
-            adv.deviceTag = encryptionKey?.let {
-                val token = pairingStore.loadToken()
-                if (token != null) E2ECrypto.deviceTag(token) else null
+            adv.deviceTag = if (pairingInProgress) {
+                pendingMacPublicKeyRaw?.let { macPub ->
+                    java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(macPub)
+                        .copyOfRange(0, 8)
+                }
+            } else {
+                encryptionKey?.let {
+                    val secret = pairingStore.loadSharedSecret()
+                    if (secret != null) E2ECrypto.deviceTag(E2ECrypto.hexToBytes(secret)) else null
+                }
             }
             adv.start()
             advertiser = adv
@@ -277,10 +295,11 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     }
 
     private fun loadPairingState() {
-        val token = pairingStore.loadToken()
-        if (token != null) {
-            encryptionKey = E2ECrypto.deriveKey(token)
-            advertiser?.deviceTag = E2ECrypto.deviceTag(token)
+        val secret = pairingStore.loadSharedSecret()
+        if (secret != null) {
+            val secretBytes = E2ECrypto.hexToBytes(secret)
+            encryptionKey = E2ECrypto.deriveKey(secretBytes)
+            advertiser?.deviceTag = E2ECrypto.deviceTag(secretBytes)
         } else {
             encryptionKey = null
             advertiser?.deviceTag = null
@@ -299,11 +318,31 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             try { thread.join(2000) } catch (_: InterruptedException) {}
         }
 
+        // Determine session mode
+        val mode = if (pairingInProgress) {
+            val keyPair = pendingPairingKeyPair ?: run {
+                Log.e(TAG, "Pairing in progress but no key pair available")
+                return
+            }
+            val macPub = pendingMacPublicKeyRaw ?: run {
+                Log.e(TAG, "Pairing in progress but no Mac public key available")
+                return
+            }
+            SessionMode.Pairing(
+                ownPrivateKey = keyPair.private,
+                ownPublicKeyRaw = E2ECrypto.x25519PublicKeyToRaw(keyPair.public),
+                remotePublicKeyRaw = macPub
+            )
+        } else {
+            SessionMode.Normal
+        }
+
         // Create new session (Android is the responder)
         val session = Session(
             socket.inputStream, socket.outputStream,
             isInitiator = false,
-            this  // SessionCallback
+            this,  // SessionCallback
+            mode = mode
         )
         session.localName = android.os.Build.MODEL
         activeSession = session
@@ -382,6 +421,36 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         return hash == lastInboundHash
     }
 
+    override fun onPairingComplete(sharedSecret: ByteArray, remoteName: String?) {
+        val secretHex = sharedSecret.joinToString("") { "%02x".format(it) }
+        Log.w(TAG, "ECDH pairing complete, storing shared secret")
+
+        // Store the shared secret
+        pairingStore.saveSharedSecret(secretHex)
+
+        // Update encryption key
+        encryptionKey = E2ECrypto.deriveKey(sharedSecret)
+
+        // Switch advertiser from pairing tag to device tag
+        advertiser?.deviceTag = E2ECrypto.deviceTag(sharedSecret)
+        advertiser?.restart()
+
+        // Clear pairing state
+        pairingInProgress = false
+        pendingPairingKeyPair = null
+        pendingMacPublicKeyRaw = null
+
+        // Clean up temporary prefs
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .remove("pending_pairing_pubkey")
+            .apply()
+
+        // Save device name
+        if (remoteName != null) {
+            saveConnectedDeviceName(remoteName)
+        }
+    }
+
     // ── Outbound (Android → Mac) ─────────────────────────────────────
 
     private fun pushPlainTextToMac(text: String) {
@@ -412,6 +481,30 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
         session.sendClipboard(encrypted)
         DebugSmokeProbe.onOutboundClipboardPublished(this, text)
+    }
+
+    // ── Pairing ────────────────────────────────────────────────────────
+
+    private fun handleStartPairing() {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val macPubKeyHex = prefs.getString("pending_pairing_pubkey", null) ?: return
+        val macPubKeyRaw = E2ECrypto.hexToBytes(macPubKeyHex)
+
+        // Generate ephemeral X25519 key pair
+        val keyPair = E2ECrypto.generateX25519KeyPair()
+
+        // Store pairing state for session creation
+        pendingPairingKeyPair = keyPair
+        pendingMacPublicKeyRaw = macPubKeyRaw
+        pairingInProgress = true
+
+        Log.w(TAG, "Started pairing mode with pairing tag")
+
+        // Restart BLE components with pairing tag
+        if (bleStarted) {
+            stopBleComponents(broadcastDisconnected = false)
+        }
+        ensureBleComponentsState()
     }
 
     // ── Unpair ────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ package org.cliprelay.ui
 
 // Launches the ML Kit barcode scanner for QR-based pairing with the Mac app.
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -10,7 +11,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import org.cliprelay.R
-import org.cliprelay.pairing.PairingStore
 import org.cliprelay.pairing.PairingUriParser
 import org.cliprelay.service.ClipRelayService
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
@@ -109,25 +109,19 @@ class QrScannerActivity : AppCompatActivity() {
             return
         }
 
-        val stored = runCatching {
-            if (!PairingStore(this).saveToken(info.token)) return@runCatching false
+        // Store Mac's public key and device name for the service to use
+        val prefs = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
+        prefs.edit()
+            .putString("pending_pairing_pubkey", info.publicKeyHex)
+            .putString(ClipRelayService.KEY_CONNECTED_DEVICE, info.deviceName ?: "")
+            .apply()
 
-            if (info.deviceName != null) {
-                getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
-                    .edit()
-                    .putString(ClipRelayService.KEY_CONNECTED_DEVICE, info.deviceName)
-                    .apply()
-            }
-            true
-        }.getOrDefault(false)
+        // Signal the service to start pairing mode
+        val intent = Intent(this, ClipRelayService::class.java)
+        intent.action = ClipRelayService.ACTION_START_PAIRING
+        startForegroundService(intent)
 
-        if (!stored) {
-            Toast.makeText(this, "Pairing failed. Please try again.", Toast.LENGTH_LONG).show()
-            finish()
-            return
-        }
-
-        Toast.makeText(this, "Paired successfully!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Pairing\u2026", Toast.LENGTH_SHORT).show()
         setResult(RESULT_OK)
         finish()
     }
