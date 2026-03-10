@@ -28,4 +28,20 @@ final class E2ECryptoKeyDerivationTests: XCTestCase {
         XCTAssertNil(E2ECrypto.deriveKey(tokenHex: "not-hex"))
         XCTAssertNil(E2ECrypto.deviceTag(tokenHex: "abc"))  // odd length
     }
+
+    func testDeriveKeyFromSecretBytes() {
+        // Use a known 32-byte secret
+        let secretBytes = Data(repeating: 0x42, count: 32)
+        let key = E2ECrypto.deriveKey(secretBytes: secretBytes)
+        XCTAssertNotNil(key)
+
+        let tag = E2ECrypto.deviceTag(secretBytes: secretBytes)
+        XCTAssertNotNil(tag)
+        XCTAssertEqual(tag!.count, 8)
+    }
+
+    func testDeriveKeyFromSecretBytesRejectsWrongSize() {
+        XCTAssertNil(E2ECrypto.deriveKey(secretBytes: Data(repeating: 0, count: 16)))
+        XCTAssertNil(E2ECrypto.deviceTag(secretBytes: Data(repeating: 0, count: 16)))
+    }
 }

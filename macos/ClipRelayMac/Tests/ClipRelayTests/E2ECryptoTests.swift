@@ -22,4 +22,27 @@ final class E2ECryptoTests: XCTestCase {
 
         XCTAssertThrowsError(try E2ECrypto.open(blob, key: key))
     }
+
+    func testECDHSharedSecret() {
+        let macKey = Curve25519.KeyAgreement.PrivateKey()
+        let androidKey = Curve25519.KeyAgreement.PrivateKey()
+        let secret1 = try! E2ECrypto.ecdhSharedSecret(
+            privateKey: macKey,
+            remotePublicKeyBytes: androidKey.publicKey.rawRepresentation
+        )
+        let secret2 = try! E2ECrypto.ecdhSharedSecret(
+            privateKey: androidKey,
+            remotePublicKeyBytes: macKey.publicKey.rawRepresentation
+        )
+        XCTAssertEqual(secret1, secret2)
+        XCTAssertEqual(secret1.count, 32)
+    }
+
+    func testECDHSharedSecretInvalidKey() {
+        let key = Curve25519.KeyAgreement.PrivateKey()
+        XCTAssertThrowsError(try E2ECrypto.ecdhSharedSecret(
+            privateKey: key,
+            remotePublicKeyBytes: Data(repeating: 0xFF, count: 10) // wrong size
+        ))
+    }
 }
