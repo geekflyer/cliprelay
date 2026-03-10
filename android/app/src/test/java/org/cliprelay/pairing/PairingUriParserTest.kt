@@ -8,22 +8,22 @@ class PairingUriParserTest {
     @Test
     fun parsesValidUri_andNormalizesToken() {
         val info = PairingUriParser.parse(
-            "cliprelay://pair?t=AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899&n=Mac%20Mini"
+            "cliprelay://pair?k=AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899&n=Mac%20Mini"
         )
 
         requireNotNull(info)
-        assertEquals("aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899", info.token)
+        assertEquals("aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899", info.publicKeyHex)
         assertEquals("Mac Mini", info.deviceName)
     }
 
     @Test
     fun rejectsInvalidSchemeHostAndToken() {
-        assertNull(PairingUriParser.parse("https://pair?t=abcd"))
-        assertNull(PairingUriParser.parse("cliprelay://wrong?t=abcd"))
-        assertNull(PairingUriParser.parse("cliprelay://pair?t=abcd"))
+        assertNull(PairingUriParser.parse("https://pair?k=abcd"))
+        assertNull(PairingUriParser.parse("cliprelay://wrong?k=abcd"))
+        assertNull(PairingUriParser.parse("cliprelay://pair?k=abcd"))
         assertNull(
             PairingUriParser.parse(
-                "cliprelay://pair?t=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+                "cliprelay://pair?k=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
             )
         )
     }
@@ -31,7 +31,7 @@ class PairingUriParserTest {
     @Test
     fun blankDeviceNameBecomesNull() {
         val info = PairingUriParser.parse(
-            "cliprelay://pair?t=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff&n="
+            "cliprelay://pair?k=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff&n="
         )
 
         requireNotNull(info)
@@ -41,7 +41,7 @@ class PairingUriParserTest {
     @Test
     fun malformedQueryEncoding_returnsNullWithoutCrashing() {
         val info = PairingUriParser.parse(
-            "cliprelay://pair?t=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff&n=%"
+            "cliprelay://pair?k=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff&n=%"
         )
 
         assertNull(info)
@@ -60,5 +60,11 @@ class PairingUriParserTest {
                 "cliprelay://pair?token=ffeeddccbbaa00998877665544332211ffeeddccbbaa00998877665544332211&name=Mac Book"
             )
         )
+    }
+
+    @Test
+    fun rejectsOldTokenFormat() {
+        val uri = "cliprelay://pair?t=${"ab".repeat(32)}"
+        assertNull(PairingUriParser.parse(uri))
     }
 }
