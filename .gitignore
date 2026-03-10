@@ -20,3 +20,4 @@ android/*service-account*.json
 dist/
 notes.md
 .worktrees/
+website/downloads/
