@@ -282,7 +282,7 @@ extension AppDelegate: ConnectionManagerDelegate {
 
             // If we get here, the session has ended
             DispatchQueue.main.async {
-                self?.handleSessionEnded()
+                self?.handleSessionEnded(session)
             }
         }
         thread.name = "L2CAP-Session"
@@ -339,7 +339,7 @@ extension AppDelegate: ConnectionManagerDelegate {
             session.listenForMessages()
 
             DispatchQueue.main.async {
-                self?.handleSessionEnded()
+                self?.handleSessionEnded(session)
             }
         }
         thread.name = "L2CAP-Pairing"
@@ -349,9 +349,11 @@ extension AppDelegate: ConnectionManagerDelegate {
         appLogger.info("[App] Pairing L2CAP channel established, starting ECDH handshake")
     }
 
-    private func handleSessionEnded() {
-        // The session listen loop exited — could be error or clean close
-        // ConnectionManager will detect the BLE disconnect and trigger reconnect
+    private func handleSessionEnded(_ endedSession: Session) {
+        // Only clear if the ended session is still the active one.
+        // A rapid reconnect may have already replaced activeSession
+        // with a new session before this async dispatch runs.
+        guard activeSession === endedSession else { return }
         activeSession = nil
         sessionThread = nil
     }
@@ -457,8 +459,11 @@ extension AppDelegate: SessionDelegate {
         pairingManager.addDevice(device)
         pairingManager.clearEphemeralKey()
 
-        // Clear pairing mode on ConnectionManager
+        // Clear pairing mode and set the matched token so that if the BLE
+        // connection drops, didDisconnectPeripheral properly notifies us
+        // (matchedToken was nil during pairing discovery).
         connectionManager.pairingTag = nil
+        connectionManager.setMatchedToken(secretHex)
         connectedSecret = secretHex
 
         DispatchQueue.main.async { [weak self] in

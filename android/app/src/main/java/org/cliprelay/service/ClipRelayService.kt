@@ -376,6 +376,13 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     override fun onSessionReady() {
         Log.w(TAG, "L2CAP session ready")
+
+        // If the advertiser's device tag was updated during pairing (without a
+        // restart), restart it now so future reconnections use the correct tag.
+        // The HELLO/WELCOME handshake is complete, so it's safe to cycle BLE
+        // advertising without risking the active L2CAP connection.
+        advertiser?.restart()
+
         val name = loadConnectedDeviceName()
         sendConnectionBroadcast(true, name)
         DebugSmokeProbe.onConnectionChanged(this, true)
@@ -433,9 +440,13 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         // Update encryption key
         encryptionKey = E2ECrypto.deriveKey(sharedSecret)
 
-        // Switch advertiser from pairing tag to device tag
+        // Update the device tag for future advertisements, but do NOT restart
+        // advertising now — the HELLO/WELCOME handshake is still in progress on
+        // this same L2CAP connection.  Restarting BLE advertising mid-handshake
+        // can disrupt the active connection on some Android devices.  The
+        // advertiser will be restarted in onSessionReady() once the full
+        // handshake completes.
         advertiser?.deviceTag = E2ECrypto.deviceTag(sharedSecret)
-        advertiser?.restart()
 
         // Clear pairing state
         pairingInProgress = false

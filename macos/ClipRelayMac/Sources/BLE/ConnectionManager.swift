@@ -80,6 +80,12 @@ class ConnectionManager: NSObject {
         }
     }
 
+    /// Set the matched token after pairing completes so that disconnect
+    /// handling properly notifies the delegate.
+    func setMatchedToken(_ token: String) {
+        matchedToken = token
+    }
+
     func startScanning() {
         guard centralManager?.state == .poweredOn else { return }
         guard case .idle = state else { return }
