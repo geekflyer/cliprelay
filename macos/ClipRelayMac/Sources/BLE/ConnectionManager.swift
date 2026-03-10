@@ -14,6 +14,14 @@ protocol ConnectionManagerDelegate: AnyObject {
                            outputStream: OutputStream, for token: String)
     /// Called when connection is lost. Caller should clean up the Session.
     func connectionManager(_ manager: ConnectionManager, didDisconnectFor token: String)
+    /// Called when an L2CAP channel is established during pairing (no token yet).
+    func connectionManager(_ manager: ConnectionManager, didEstablishPairingChannel inputStream: InputStream,
+                           outputStream: OutputStream)
+}
+
+extension ConnectionManagerDelegate {
+    func connectionManager(_ manager: ConnectionManager, didEstablishPairingChannel inputStream: InputStream,
+                           outputStream: OutputStream) {}
 }
 
 // MARK: - ConnectionManager
@@ -32,6 +40,18 @@ class ConnectionManager: NSObject {
     /// Provide paired device info for tag matching.
     /// Returns array of (token, tag) tuples where tag is 8-byte Data.
     var pairedDevices: () -> [(token: String, tag: Data)] = { [] }
+
+    /// When set, scan for this pairing tag instead of paired device tags.
+    var pairingTag: Data? {
+        didSet {
+            if pairingTag != nil {
+                // Restart scanning in pairing mode
+                if case .scanning = state { centralManager?.stopScan() }
+                state = .idle
+                startScanning()
+            }
+        }
+    }
 
     private(set) var state: State = .idle
     private var centralManager: CBCentralManager!
@@ -176,6 +196,20 @@ extension ConnectionManager: CBCentralManagerDelegate {
         guard let tag = Self.extractDeviceTag(from: mfgData) else { return }
         guard let psm = Self.extractPSM(from: mfgData) else { return }
 
+        // Check pairing mode first
+        if let expectedPairingTag = pairingTag {
+            if tag == expectedPairingTag {
+                matchedToken = nil  // no token yet — will be set after ECDH
+                connLogger.info("Matched pairing tag, PSM=\(psm)")
+
+                central.stopScan()
+                state = .connecting(peripheral, psm)
+                peripheral.delegate = self
+                central.connect(peripheral)
+            }
+            return  // in pairing mode, only match pairing tag
+        }
+
         // Match against paired tokens
         guard let matched = pairedDevices().first(where: { $0.tag == tag }) else { return }
         matchedToken = matched.token
@@ -245,6 +279,10 @@ extension ConnectionManager: CBPeripheralDelegate {
         if let token = matchedToken {
             delegate?.connectionManager(self, didEstablishChannel: channel.inputStream,
                                         outputStream: channel.outputStream, for: token)
+        } else if pairingTag != nil {
+            // Pairing mode — no token yet
+            delegate?.connectionManager(self, didEstablishPairingChannel: channel.inputStream,
+                                        outputStream: channel.outputStream)
         }
     }
 }
