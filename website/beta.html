@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join the Beta — ClipRelay</title>
+  <meta name="description" content="Join the ClipRelay Android beta to get early access. Help us test clipboard sharing between Mac and Android.">
+  <meta name="theme-color" content="#111820">
+
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    .beta-content {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 140px 20px 80px;
+    }
+    .beta-content h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 400;
+      margin-bottom: 16px;
+      background: var(--gradient-title);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .beta-content .subtitle {
+      color: var(--text-dim);
+      font-size: 1.1rem;
+      margin-bottom: 48px;
+      line-height: 1.6;
+    }
+    .beta-content h2 {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 400;
+      margin-top: 40px;
+      margin-bottom: 12px;
+    }
+    .beta-content p,
+    .beta-content li {
+      color: var(--text-dim);
+      line-height: 1.8;
+      margin-bottom: 16px;
+    }
+    .beta-content ol {
+      padding-left: 24px;
+      margin-bottom: 16px;
+    }
+    .beta-content li { margin-bottom: 12px; }
+    .beta-content a { color: var(--aqua); }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--aqua);
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+    }
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(0, 255, 213, 0.12);
+      color: var(--aqua);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+    .step-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 12px 20px;
+      background: rgba(0, 255, 213, 0.08);
+      border: 1px solid rgba(0, 255, 213, 0.2);
+      border-radius: 8px;
+      color: var(--aqua);
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: background 0.2s;
+    }
+    .step-action:hover {
+      background: rgba(0, 255, 213, 0.15);
+      text-decoration: none;
+    }
+    .step-action svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+    .note {
+      margin-top: 48px;
+      padding: 20px 24px;
+      background: rgba(255, 255, 255, 0.03);
+      border-left: 3px solid var(--aqua);
+      border-radius: 0 8px 8px 0;
+    }
+    .note p {
+      margin-bottom: 0;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="nav scrolled">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo">
+        <svg width="28" height="28" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="navBoardGrad" x1="0" y1="0" x2="0.3" y2="1"><stop stop-color="#0A3A34"/><stop offset="1" stop-color="#082A26"/></linearGradient>
+            <linearGradient id="navArcGrad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00FFD5"/><stop offset="1" stop-color="#00DDC0"/></linearGradient>
+          </defs>
+          <rect x="14" y="26" width="58" height="78" rx="12" fill="url(#navBoardGrad)" stroke="#00FFD5" stroke-width="1.5" opacity="0.9"/>
+          <rect x="24" y="18" width="38" height="14" rx="5" fill="#082A26" stroke="#00FFD5" stroke-width="1.2"/>
+          <rect x="30" y="14" width="26" height="8" rx="4" fill="#0A3A34" stroke="#00DDC0" stroke-width="1"/>
+          <rect x="39" y="22" width="8" height="3" rx="1.5" fill="#00FFD5" opacity="0.55"/>
+          <rect x="24" y="42" width="38" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.35"/>
+          <rect x="24" y="51" width="27" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+          <rect x="24" y="60" width="33" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.22"/>
+          <rect x="24" y="69" width="20" height="4.5" rx="2.25" fill="#00FFD5" opacity="0.15"/>
+          <path d="M80 48 A 20 20 0 0 1 80 78" stroke="url(#navArcGrad)" stroke-width="4" stroke-linecap="round" fill="none"/>
+          <path d="M90 39 A 32 32 0 0 1 90 87" stroke="url(#navArcGrad)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+          <path d="M100 30 A 44 44 0 0 1 100 96" stroke="url(#navArcGrad)" stroke-width="3" stroke-linecap="round" fill="none"/>
+        </svg>
+        ClipRelay
+      </a>
+    </div>
+  </nav>
+
+  <div class="beta-content">
+    <a href="index.html" class="back-link">&larr; Back to home</a>
+
+    <h1>Join the Android Beta</h1>
+    <p class="subtitle">ClipRelay for Android is currently in closed beta. Follow the two steps below to get early access and help us shape the app before public release.</p>
+
+    <h2><span class="step-number">1</span> Join the tester group</h2>
+    <p>First, join our Google Group with the same Google account you use on your Android device. This registers you as a beta tester.</p>
+    <a href="https://groups.google.com/g/cliprelay-beta" class="step-action" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12.75c1.63 0 3.07.39 4.24.9 1.08.48 1.76 1.56 1.76 2.73V18H6v-1.61c0-1.18.68-2.26 1.76-2.73 1.17-.52 2.61-.91 4.24-.91zM4 13c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm1.13 1.1c-.37-.06-.74-.1-1.13-.1-.99 0-1.93.21-2.78.58A2.01 2.01 0 000 16.43V18h4.5v-1.61c0-.83.23-1.61.63-2.29zM20 13c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm4 3.43c0-.81-.48-1.53-1.22-1.85A6.95 6.95 0 0020 14c-.39 0-.76.04-1.13.1.4.68.63 1.46.63 2.29V18H24v-1.57zM12 6c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"/></svg>
+      Join cliprelay-beta Google Group
+    </a>
+
+    <h2><span class="step-number">2</span> Install the app</h2>
+    <p>Once you've joined the group, open the link below to access ClipRelay on Google Play. It may take a few minutes for your tester status to activate after joining the group.</p>
+    <a href="https://play.google.com/apps/testing/org.cliprelay" class="step-action" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.61 1.814L13.793 12 3.61 22.186a.996.996 0 01-.61-.92V2.734c0-.387.225-.725.61-.92zm.503-.386l11.27 6.39L12.1 11.1 4.113 1.428zM15.383 8.818L17.93 10.26c.8.45 1.27 1.16 1.27 1.74s-.47 1.29-1.27 1.74l-2.547 1.442L12.1 12l3.283-3.182zM4.113 22.572L12.1 12.9l3.283 3.282-11.27 6.39z"/></svg>
+      Install ClipRelay from Google Play
+    </a>
+
+    <div class="note">
+      <p><strong>Note:</strong> You must use the same Google account for both steps. If the Play Store says the app isn't available, wait a few minutes and try again — it can take up to 15 minutes for Google to sync your tester status.</p>
+    </div>
+
+    <h2>Also need the Mac app?</h2>
+    <p>The Mac companion app is available as a direct download — no beta signup needed.</p>
+    <a href="/downloads/ClipRelay.dmg" class="step-action">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      Download ClipRelay for Mac
+    </a>
+  </div>
+
+</body>
+</html>

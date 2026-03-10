@@ -233,6 +233,14 @@ body::after {
 .store-badge:hover { opacity: 0.85; text-decoration: none; }
 .store-badge img { display: block; height: 80px; }
 
+.hero-beta-note {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  position: relative;
+  z-index: 1;
+}
+
 /* ── Device Showcase ── */
 .hero-showcase {
   display: flex;
@@ -578,6 +586,17 @@ body::after {
 
 .btn:hover { transform: translateY(-2px); }
 
+
+.btn-primary {
+  background: var(--aqua);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: #00e6c0;
+  color: var(--bg);
+}
 
 .btn-outline {
   background: transparent;
