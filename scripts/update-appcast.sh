@@ -3,10 +3,7 @@
 # Usage: ./scripts/update-appcast.sh --version 0.3.2 --signature "..." --size 12345 --url "https://..."
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APPCAST="$ROOT_DIR/sparkle/appcast.xml"
-
-VERSION="" SIGNATURE="" SIZE="" URL="" BUILD_NUMBER=""
+VERSION="" SIGNATURE="" SIZE="" URL="" BUILD_NUMBER="" APPCAST=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --version) VERSION="$2"; shift 2 ;;
@@ -14,12 +11,15 @@ while [[ $# -gt 0 ]]; do
         --signature) SIGNATURE="$2"; shift 2 ;;
         --size) SIZE="$2"; shift 2 ;;
         --url) URL="$2"; shift 2 ;;
+        --appcast) APPCAST="$2"; shift 2 ;;
         *) echo "Unknown: $1" >&2; exit 1 ;;
     esac
 done
 
+[[ -z "$APPCAST" ]] && APPCAST="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/sparkle/appcast.xml"
+
 [[ -z "$VERSION" || -z "$SIGNATURE" || -z "$SIZE" || -z "$URL" || -z "$BUILD_NUMBER" ]] && {
-    echo "Usage: $0 --version VER --build-number NUM --signature SIG --size BYTES --url URL" >&2
+    echo "Usage: $0 --version VER --build-number NUM --signature SIG --size BYTES --url URL [--appcast PATH]" >&2
     exit 1
 }
 

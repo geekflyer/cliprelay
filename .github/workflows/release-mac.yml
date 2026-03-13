@@ -109,21 +109,22 @@ jobs:
           echo "build_number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
           echo "git_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Update appcast.xml
+      - name: Update appcast.xml on sparkle branch
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin sparkle
+          git worktree add /tmp/sparkle-branch origin/sparkle
           ./scripts/update-appcast.sh \
+            --appcast /tmp/sparkle-branch/appcast.xml \
             --version "${{ steps.version.outputs.version }} (${{ steps.build-meta.outputs.git_hash }})" \
             --build-number "${{ steps.build-meta.outputs.build_number }}" \
             --signature "${{ steps.sparkle-sign.outputs.signature }}" \
             --size "${{ steps.sparkle-sign.outputs.size }}" \
             --url "https://github.com/geekflyer/cliprelay/releases/download/mac/v${{ steps.version.outputs.version }}/ClipRelay-${{ steps.version.outputs.version }}.dmg"
-
-      - name: Commit updated appcast
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout main
-          git add sparkle/appcast.xml
-          git commit -m "chore: update Sparkle appcast for v${{ steps.version.outputs.version }}"
-          git push origin main
+          cd /tmp/sparkle-branch
+          git add appcast.xml
+          git commit -m "update appcast for v${{ steps.version.outputs.version }}"
+          git push origin HEAD:sparkle
+          cd -
+          git worktree remove /tmp/sparkle-branch

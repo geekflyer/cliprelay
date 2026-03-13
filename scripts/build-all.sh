@@ -146,7 +146,7 @@ build_mac() {
   <key>LSUIElement</key>
   <true/>
   <key>SUFeedURL</key>
-  <string>https://raw.githubusercontent.com/geekflyer/cliprelay/main/sparkle/appcast.xml</string>
+  <string>https://raw.githubusercontent.com/geekflyer/cliprelay/sparkle/appcast.xml</string>
   ${SPARKLE_PLIST_KEYS}
 </dict>
 </plist>
