@@ -4,15 +4,23 @@ import AppKit
 import CryptoKit
 import os
 import ServiceManagement
+import Sparkle
 
 private let appLogger = Logger(subsystem: "org.cliprelay", category: "App")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let updaterController: SPUStandardUpdaterController
     private let pairingManager = PairingManager()
-    private let statusBarController = StatusBarController()
+    private let statusBarController: StatusBarController
     private let clipboardWriter = ClipboardWriter()
     private let notificationManager = ReceiveNotificationManager()
     private let pairingWindowController = PairingWindowController()
+
+    override init() {
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        statusBarController = StatusBarController(updaterController: updaterController)
+        super.init()
+    }
 
     private var connectionManager: ConnectionManager!
     private var activeSession: Session?
