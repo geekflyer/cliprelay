@@ -29,4 +29,4 @@ end-to-end encrypted with AES-256-GCM using keys established during
 local QR-code pairing. No analytics, crash reporting, or telemetry is
 included.
 
-Privacy policy: https://cliprelay.pages.dev/privacy.html
+Privacy policy: https://cliprelay.org/privacy.html

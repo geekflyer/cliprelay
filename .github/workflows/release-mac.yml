@@ -5,11 +5,14 @@ on:
     tags:
       - 'mac/v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -76,13 +79,13 @@ jobs:
         with:
           name: "macOS v${{ steps.version.outputs.version }}"
           body: ${{ steps.changelog.outputs.body }}
-          files: dist/ClipRelay.dmg
+          files: dist/ClipRelay-${{ steps.version.outputs.version }}.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Sparkle tools
         run: |
-          SPARKLE_VERSION="2.6.0"
+          SPARKLE_VERSION="2.9.0"
           curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o /tmp/sparkle.tar.xz
           mkdir -p /tmp/sparkle-tools
           tar xf /tmp/sparkle.tar.xz -C /tmp/sparkle-tools
@@ -90,18 +93,30 @@ jobs:
       - name: Generate Sparkle EdDSA signature
         id: sparkle-sign
         run: |
-          DMG_SIZE=$(stat -f%z dist/ClipRelay.dmg)
-          SIGNATURE=$(echo "$SPARKLE_PRIVATE_KEY" | /tmp/sparkle-tools/bin/sign_update dist/ClipRelay.dmg)
+          DMG_SIZE=$(stat -f%z dist/ClipRelay-${{ steps.version.outputs.version }}.dmg)
+          KEY_FILE=$(mktemp)
+          echo "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          RAW=$(/tmp/sparkle-tools/bin/sign_update dist/ClipRelay-${{ steps.version.outputs.version }}.dmg -f "$KEY_FILE")
+          rm -f "$KEY_FILE"
+          # sign_update outputs: sparkle:edSignature=<base64> length=<n>
+          SIGNATURE=$(echo "$RAW" | sed -E 's/^sparkle:edSignature=//; s/ length=.*//')
           echo "signature=$SIGNATURE" >> "$GITHUB_OUTPUT"
           echo "size=$DMG_SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Compute build metadata
+        id: build-meta
+        run: |
+          echo "build_number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "git_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Update appcast.xml
         run: |
           ./scripts/update-appcast.sh \
-            --version "${{ steps.version.outputs.version }}" \
+            --version "${{ steps.version.outputs.version }} (${{ steps.build-meta.outputs.git_hash }})" \
+            --build-number "${{ steps.build-meta.outputs.build_number }}" \
             --signature "${{ steps.sparkle-sign.outputs.signature }}" \
             --size "${{ steps.sparkle-sign.outputs.size }}" \
-            --url "https://github.com/geekflyer/cliprelay/releases/download/mac/v${{ steps.version.outputs.version }}/ClipRelay.dmg"
+            --url "https://github.com/geekflyer/cliprelay/releases/download/mac/v${{ steps.version.outputs.version }}/ClipRelay-${{ steps.version.outputs.version }}.dmg"
 
       - name: Commit updated appcast
         run: |

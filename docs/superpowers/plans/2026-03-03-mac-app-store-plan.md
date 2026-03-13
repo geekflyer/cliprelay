@@ -314,7 +314,7 @@ Save to `appstore/metadata/en-US/whats_new.txt`.
 **Step 7: Write `privacy_url.txt`**
 
 ```
-https://cliprelay.pages.dev/privacy.html
+https://cliprelay.org/privacy.html
 ```
 
 Save to `appstore/metadata/en-US/privacy_url.txt`.
@@ -322,7 +322,7 @@ Save to `appstore/metadata/en-US/privacy_url.txt`.
 **Step 8: Write `support_url.txt`**
 
 ```
-https://cliprelay.pages.dev
+https://cliprelay.org
 ```
 
 Save to `appstore/metadata/en-US/support_url.txt`.
@@ -499,8 +499,8 @@ In App Store Connect > My Apps > ClipRelay > macOS > Prepare for Submission:
 2. **Description**: Copy from `appstore/metadata/en-US/description.txt`
 3. **Keywords**: Copy from `appstore/metadata/en-US/keywords.txt`
 4. **Subtitle**: Copy from `appstore/metadata/en-US/subtitle.txt`
-5. **Support URL**: `https://cliprelay.pages.dev`
-6. **Privacy Policy URL**: `https://cliprelay.pages.dev/privacy.html`
+5. **Support URL**: `https://cliprelay.org`
+6. **Privacy Policy URL**: `https://cliprelay.org/privacy.html`
 7. **Category**: Utilities
 8. **App icon**: Upload from `appstore/AppIcon.png`
 9. **What's New**: "Initial release."

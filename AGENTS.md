@@ -1,8 +1,6 @@
 # AGENTS Instructions
 
-## Auto-Commit Policy
-- Every user request that results in code or documentation changes is explicit authorization to commit and push.
-- After completing each logical unit of work, immediately stage relevant files and commit with a conventional commit message. Do not wait for the user to ask.
+## Commit Policy
 - When the worktree has unrelated changes, commit only files relevant to the task.
 
 ## Build Verification

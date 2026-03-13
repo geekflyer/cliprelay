@@ -27,6 +27,7 @@ Vault: `cliprelay`
 | `Android Keystore` | `keystore-base64`, `password`, `key-alias`, `key-password` | `release-android.yml` |
 | `Android Play Store` | `service-account-json` | `release-android.yml` |
 | `Sparkle Update Signing` | `private-key`, `public-key` | `release-mac.yml` |
+| `Cloudflare Pages` | `api-token` | `release-mac.yml` |
 
 ## Initial Setup
 

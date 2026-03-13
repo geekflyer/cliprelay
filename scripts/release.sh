@@ -96,7 +96,11 @@ for platform in "${PLATFORMS[@]}"; do
     esac
 done
 git -C "$ROOT_DIR" add "${FILES_TO_ADD[@]}"
-git -C "$ROOT_DIR" commit -m "release: bump version to $VERSION for ${PLATFORMS[*]}"
+if git -C "$ROOT_DIR" diff --cached --quiet; then
+    echo "==> VERSION already at $VERSION, skipping commit"
+else
+    git -C "$ROOT_DIR" commit -m "release: bump version to $VERSION for ${PLATFORMS[*]}"
+fi
 
 # Create tags
 for tag in "${TAGS[@]}"; do
@@ -104,7 +108,29 @@ for tag in "${TAGS[@]}"; do
     echo "==> Created tag $tag"
 done
 
-# Push commit and tags
+# Push commit and newly created tags
 git -C "$ROOT_DIR" push
-git -C "$ROOT_DIR" push --tags
-echo "==> Pushed to remote. CI will handle the rest."
+for tag in "${TAGS[@]}"; do
+    git -C "$ROOT_DIR" push origin "$tag"
+done
+# Detect GitHub repo from remote
+REPO=$(git -C "$ROOT_DIR" remote get-url origin | sed -E 's#.+github\.com[:/](.+)\.git$#\1#')
+
+echo "==> Pushed to remote. Waiting for CI workflows to start..."
+for tag in "${TAGS[@]}"; do
+    echo "    Polling for workflow triggered by $tag..."
+    RUN_URL=""
+    for i in $(seq 1 30); do
+        RUN_URL=$(gh run list --repo "$REPO" --limit 5 --json headBranch,url,event \
+            --jq ".[] | select(.headBranch == \"$tag\") | .url" 2>/dev/null | head -1)
+        if [[ -n "$RUN_URL" ]]; then
+            break
+        fi
+        sleep 2
+    done
+    if [[ -n "$RUN_URL" ]]; then
+        echo "    Release job: $RUN_URL"
+    else
+        echo "    Could not find workflow run for $tag. Check: https://github.com/$REPO/actions"
+    fi
+done

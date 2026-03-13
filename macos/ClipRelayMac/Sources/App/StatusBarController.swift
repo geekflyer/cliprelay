@@ -132,8 +132,7 @@ final class StatusBarController {
         menu.addItem(NSMenuItem.separator())
 
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let hash = Bundle.main.infoDictionary?["ClipRelayGitHash"] as? String ?? "?"
-        let versionItem = NSMenuItem(title: "ClipRelay v\(version) (\(hash))", action: nil, keyEquivalent: "")
+        let versionItem = NSMenuItem(title: "ClipRelay v\(version)", action: nil, keyEquivalent: "")
         versionItem.isEnabled = false
         menu.addItem(versionItem)
 
@@ -148,6 +147,17 @@ final class StatusBarController {
         let checkForUpdatesItem = NSMenuItem(title: "Check for Updates\u{2026}", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
         checkForUpdatesItem.target = updaterController
         menu.addItem(checkForUpdatesItem)
+
+        let autoUpdateItem = NSMenuItem(
+            title: "Automatically Check for Updates",
+            action: #selector(handleToggleAutoUpdates),
+            keyEquivalent: ""
+        )
+        autoUpdateItem.target = self
+        if updaterController.updater.automaticallyChecksForUpdates {
+            autoUpdateItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+        }
+        menu.addItem(autoUpdateItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -230,9 +240,15 @@ final class StatusBarController {
 
     @objc
     private func handleVisitWebsite() {
-        if let url = URL(string: "https://cliprelay.pages.dev") {
+        if let url = URL(string: "https://cliprelay.org") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @objc
+    private func handleToggleAutoUpdates() {
+        updaterController.updater.automaticallyChecksForUpdates.toggle()
+        renderMenu()
     }
 
     @objc

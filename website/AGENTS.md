@@ -18,7 +18,7 @@ open privacy.html
 The website is hosted on **Cloudflare Pages**.
 
 - **Project name**: `cliprelay`
-- **Production URL**: https://cliprelay.pages.dev
+- **Production URL**: https://cliprelay.org
 - **Source directory**: `website/`
 
 ### Deploy command

@@ -83,7 +83,7 @@ Extend `scripts/build-all.sh` with an `--app-store` flag:
 - **Bundle ID**: `org.cliprelay.mac`
 - **Category**: Utilities
 - **Pricing**: Free
-- **Privacy policy**: https://cliprelay.pages.dev/privacy.html
+- **Privacy policy**: https://cliprelay.org/privacy.html
 - **Privacy nutrition label**: No data collected (same as Android Data Safety)
 
 ## Store Listing Assets

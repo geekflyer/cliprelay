@@ -94,6 +94,19 @@ build_mac() {
 
   cp "$binary_path" "$app_dir/Contents/MacOS/ClipRelay"
 
+  # Copy Sparkle.framework into Frameworks/
+  local sparkle_fw
+  sparkle_fw=$(dirname "$binary_path")/Sparkle.framework
+  if [[ -d "$sparkle_fw" ]]; then
+    mkdir -p "$app_dir/Contents/Frameworks"
+    cp -a "$sparkle_fw" "$app_dir/Contents/Frameworks/Sparkle.framework"
+    install_name_tool -add_rpath @executable_path/../Frameworks "$app_dir/Contents/MacOS/ClipRelay"
+    echo "Copying Sparkle.framework"
+  else
+    echo "Error: Sparkle.framework not found at $sparkle_fw" >&2
+    exit 1
+  fi
+
   # Copy app icon and menu bar icon into Resources
   local resources_src="$MAC_PROJECT_DIR/Resources"
   if [[ -f "$resources_src/AppIcon.icns" ]]; then
@@ -123,7 +136,7 @@ build_mac() {
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleShortVersionString</key>
-  <string>${MAC_VERSION}</string>
+  <string>${MAC_VERSION} (${GIT_HASH})</string>
   <key>CFBundleVersion</key>
   <string>${MAC_BUILD_NUMBER}</string>
   <key>ClipRelayGitHash</key>

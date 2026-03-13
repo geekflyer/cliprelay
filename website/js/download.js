@@ -8,7 +8,7 @@
             const releases = await response.json();
             const macRelease = releases.find(r => r.tag_name.startsWith('mac/'));
             if (macRelease) {
-                const dmgAsset = macRelease.assets.find(a => a.name === 'ClipRelay.dmg');
+                const dmgAsset = macRelease.assets.find(a => a.name.endsWith('.dmg'));
                 if (dmgAsset) return dmgAsset.browser_download_url;
             }
         } catch (e) {
