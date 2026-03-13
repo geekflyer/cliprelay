@@ -4,5 +4,15 @@
         <title>ClipRelay</title>
         <link>https://cliprelay.org</link>
         <description>ClipRelay macOS updates</description>
+            <item>
+            <title>Version 0.1.0 (aa2d5c3)</title>
+            <pubDate>Fri, 13 Mar 2026 10:32:30 +0000</pubDate>
+            <sparkle:version>305</sparkle:version>
+            <sparkle:shortVersionString>0.1.0 (aa2d5c3)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.1.0/ClipRelay-0.1.0.dmg"
+                       sparkle:edSignature="PhDomcxZ6D4gqCXPa3jXfEWgoEpd6FADSsiWhTW4P5gGBxdRBu/d3Et2STjgA3e6KXET9OkaQpVYS1XsIojtBQ=="
+                       length="2132819"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
