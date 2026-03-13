@@ -6,6 +6,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID_PROJECT_DIR="$ROOT_DIR/android"
 
 TRACK="${PLAY_TRACK:-internal}"
+PROMOTE=false
+FROM_TRACK=""
+TO_TRACK=""
 
 usage() {
   cat <<'EOF'
@@ -15,6 +18,9 @@ Publishes the Android release AAB to Google Play using Gradle Play Publisher.
 
 Options:
   --track <name>    Play track to publish to (default: internal)
+  --promote         Promote existing artifact instead of publishing
+  --from <track>    Source track for promotion (default: internal)
+  --to <track>      Destination track for promotion (default: production)
   -h, --help        Show this help message
 
 Required configuration:
@@ -36,6 +42,9 @@ while [[ $# -gt 0 ]]; do
       TRACK="$2"
       shift 2
       ;;
+    --promote) PROMOTE=true; shift ;;
+    --from) FROM_TRACK="$2"; shift 2 ;;
+    --to) TO_TRACK="$2"; shift 2 ;;
     -h|--help)
       usage
       exit 0
@@ -56,6 +65,19 @@ fi
 if ! command -v java >/dev/null 2>&1; then
   echo "java not found. Install JDK 17+ first." >&2
   exit 1
+fi
+
+if [[ "$PROMOTE" == "true" ]]; then
+    FROM_TRACK="${FROM_TRACK:-internal}"
+    TO_TRACK="${TO_TRACK:-production}"
+    echo "==> Promoting from track '$FROM_TRACK' to '$TO_TRACK'"
+    (
+        cd "$ANDROID_PROJECT_DIR"
+        PLAY_TRACK="$TO_TRACK" ./gradlew :app:promoteReleaseArtifact \
+            -Pplay.fromTrack="$FROM_TRACK"
+    )
+    echo "==> Promotion complete"
+    exit 0
 fi
 
 echo "==> Publishing Android release bundle to track: $TRACK"
