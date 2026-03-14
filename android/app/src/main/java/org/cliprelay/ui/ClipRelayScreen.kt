@@ -726,7 +726,7 @@ private fun FooterSection() {
     ) {
         val shareIconId = "shareIcon"
         val instructionText = buildAnnotatedString {
-            append("To share with your Mac, tap ")
+            append("Select text in any app,\nthen tap ")
             appendInlineContent(shareIconId, "[share]")
             append(" or ")
             withStyle(SpanStyle(
@@ -737,7 +737,7 @@ private fun FooterSection() {
             )) {
                 append(" Share ")
             }
-            append(" in any app and look for:")
+            append(" and choose:")
         }
         Text(
             text = instructionText,
