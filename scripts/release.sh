@@ -106,14 +106,12 @@ git -C "$ROOT_DIR" push
 # Detect GitHub repo from remote
 REPO=$(git -C "$ROOT_DIR" remote get-url origin | sed -E 's#.+github\.com[:/](.+)\.git$#\1#')
 
-# Map platforms to workflow filenames
-declare -A WORKFLOW_FILES
-WORKFLOW_FILES[mac]="release-mac.yml"
-WORKFLOW_FILES[android]="release-android.yml"
-
 # Dispatch workflows and poll for run URLs
 for platform in "${PLATFORMS[@]}"; do
-    WORKFLOW="${WORKFLOW_FILES[$platform]}"
+    case "$platform" in
+        mac) WORKFLOW="release-mac.yml" ;;
+        android) WORKFLOW="release-android.yml" ;;
+    esac
     echo "==> Dispatching $WORKFLOW with version=$VERSION..."
     gh workflow run "$WORKFLOW" --repo "$REPO" -f version="$VERSION"
 
