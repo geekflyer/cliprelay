@@ -17,11 +17,14 @@ protocol ConnectionManagerDelegate: AnyObject {
     /// Called when an L2CAP channel is established during pairing (no token yet).
     func connectionManager(_ manager: ConnectionManager, didEstablishPairingChannel inputStream: InputStream,
                            outputStream: OutputStream)
+    /// Called when the Bluetooth hardware state changes.
+    func connectionManager(_ manager: ConnectionManager, didUpdateBluetoothState state: CBManagerState)
 }
 
 extension ConnectionManagerDelegate {
     func connectionManager(_ manager: ConnectionManager, didEstablishPairingChannel inputStream: InputStream,
                            outputStream: OutputStream) {}
+    func connectionManager(_ manager: ConnectionManager, didUpdateBluetoothState state: CBManagerState) {}
 }
 
 // MARK: - ConnectionManager
@@ -186,6 +189,7 @@ class ConnectionManager: NSObject {
 extension ConnectionManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         connLogger.info("Bluetooth state: \(central.state.rawValue)")
+        delegate?.connectionManager(self, didUpdateBluetoothState: central.state)
         if central.state == .poweredOn {
             reconnectDelay = 1.0  // reset backoff on BT power cycle
             startHealthCheck()

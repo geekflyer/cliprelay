@@ -17,6 +17,7 @@ final class StatusBarController {
 
     private var connectedPeers: [PeerSummary] = []
     private var trustedPeers: [PeerSummary] = []
+    private var bluetoothWarning: String?
 
     private static let brandAqua = NSColor(red: 0, green: 1, blue: 0.835, alpha: 1) // #00FFD5
 
@@ -70,6 +71,11 @@ final class StatusBarController {
         renderMenu()
     }
 
+    func setBluetoothWarning(_ warning: String?) {
+        bluetoothWarning = warning
+        renderMenu()
+    }
+
 
     /// Briefly pulses the status bar icon to indicate a clipboard sync.
     func flashSyncIndicator() {
@@ -104,6 +110,14 @@ final class StatusBarController {
 
     private func renderMenu() {
         menu.removeAllItems()
+
+        if let bluetoothWarning {
+            let warningItem = NSMenuItem(title: bluetoothWarning, action: nil, keyEquivalent: "")
+            warningItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "warning")
+            warningItem.isEnabled = false
+            menu.addItem(warningItem)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         renderTrustedDevicesSection()
         menu.addItem(NSMenuItem.separator())

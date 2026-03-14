@@ -1,6 +1,7 @@
 // Core app delegate: wires together BLE, clipboard, pairing, and UI subsystems.
 
 import AppKit
+import CoreBluetooth
 import CryptoKit
 import os
 import ServiceManagement
@@ -33,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var clipboardMonitor: ClipboardMonitor?
     private var awaitingNewPairingConnection = false
+    private var hasShownBluetoothAlert = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         notificationManager.requestAuthorization()
@@ -221,6 +223,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connectionManager?.startScanning()
     }
 
+    // MARK: - Bluetooth Alert
+
+    private func showBluetoothAlert(message: String, info: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Dismiss")
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
     // MARK: - Menu Helpers
 
     private func refreshTrustedPeersMenu() {
@@ -300,6 +321,37 @@ extension AppDelegate: ConnectionManagerDelegate {
         // UI update deferred to sessionDidBecomeReady (after handshake exchanges device name)
 
         appLogger.info("[App] L2CAP channel established, starting handshake")
+    }
+
+    func connectionManager(_ manager: ConnectionManager, didUpdateBluetoothState state: CBManagerState) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            switch state {
+            case .poweredOn:
+                self.statusBarController.setBluetoothWarning(nil)
+                self.hasShownBluetoothAlert = false
+            case .poweredOff:
+                self.statusBarController.setBluetoothWarning("Bluetooth is turned off")
+                if !self.hasShownBluetoothAlert {
+                    self.hasShownBluetoothAlert = true
+                    self.showBluetoothAlert(
+                        message: "Bluetooth is turned off",
+                        info: "ClipRelay needs Bluetooth to sync your clipboard. Please enable Bluetooth in System Settings."
+                    )
+                }
+            case .unauthorized:
+                self.statusBarController.setBluetoothWarning("Bluetooth permission denied")
+                if !self.hasShownBluetoothAlert {
+                    self.hasShownBluetoothAlert = true
+                    self.showBluetoothAlert(
+                        message: "Bluetooth access denied",
+                        info: "ClipRelay needs Bluetooth permission. Please grant access in System Settings > Privacy & Security > Bluetooth."
+                    )
+                }
+            default:
+                break
+            }
+        }
     }
 
     func connectionManager(_ manager: ConnectionManager, didDisconnectFor token: String) {
