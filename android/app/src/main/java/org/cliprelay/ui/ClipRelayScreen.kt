@@ -28,9 +28,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -719,22 +724,50 @@ private fun FooterSection() {
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
     ) {
+        val shareIconId = "shareIcon"
+        val instructionText = buildAnnotatedString {
+            append("To share with your Mac, tap ")
+            appendInlineContent(shareIconId, "[share]")
+            append(" or ")
+            withStyle(SpanStyle(
+                color = Teal,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                background = Aqua.copy(alpha = 0.12f)
+            )) {
+                append(" Share ")
+            }
+            append(" in any app and look for:")
+        }
         Text(
-            text = buildAnnotatedString {
-                append("To share with your Mac, tap ")
-                withStyle(SpanStyle(
-                    color = Teal,
-                    fontWeight = FontWeight.SemiBold,
-                    background = Aqua.copy(alpha = 0.12f)
-                )) {
-                    append(" Share ")
+            text = instructionText,
+            inlineContent = mapOf(
+                shareIconId to InlineTextContent(
+                    placeholder = androidx.compose.ui.text.Placeholder(
+                        width = 26.sp,
+                        height = 26.sp,
+                        placeholderVerticalAlign = androidx.compose.ui.text.PlaceholderVerticalAlign.TextCenter
+                    )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Aqua.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Share icon",
+                            tint = Teal,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
-                append(" in any app and look for:")
-            },
+            ),
             fontSize = 13.sp,
             color = Color(0x80000000),
             textAlign = TextAlign.Center,
-            lineHeight = 20.sp
+            lineHeight = 28.sp
         )
         Spacer(modifier = Modifier.height(12.dp))
         // Share sheet preview mock — vertical layout matching Android share sheet
