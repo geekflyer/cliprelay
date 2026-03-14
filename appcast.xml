@@ -14,5 +14,15 @@
                        length="2132819"
                        type="application/octet-stream" />
         </item>
+            <item>
+            <title>Version 0.1.2 (6e246c6)</title>
+            <pubDate>Sat, 14 Mar 2026 21:47:59 +0000</pubDate>
+            <sparkle:version>318</sparkle:version>
+            <sparkle:shortVersionString>0.1.2 (6e246c6)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.1.2/ClipRelay-0.1.2.dmg"
+                       sparkle:edSignature="KqqjL/3DOfbgxbjJFK03ddxX/+eH6Tc2Ao3fFrc6Av9ZAsPGdzuFLAFptIebRRNzYIwg/a/Rk9vZmCgjqGzGAQ=="
+                       length="2133341"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
