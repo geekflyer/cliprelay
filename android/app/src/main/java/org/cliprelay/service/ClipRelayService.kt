@@ -19,6 +19,9 @@ import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import org.cliprelay.R
 import org.cliprelay.ble.Advertiser
 import org.cliprelay.ble.L2capServer
@@ -52,11 +55,15 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val EXTRA_DEVICE_TAG = "extra_device_tag"
         const val EXTRA_FROM_MAC = "extra_from_mac"
 
+        const val ACTION_GHOST_FINISHED = "org.cliprelay.action.GHOST_FINISHED"
+        const val ACTION_ACCESSIBILITY_COPY_DETECTED = "org.cliprelay.action.ACCESSIBILITY_COPY_DETECTED"
+
         const val PREFS_NAME = "cliprelay_state"
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
 
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
+        private const val CLIPBOARD_DEBOUNCE_MS = 200L
     }
 
     // BLE components
@@ -91,6 +98,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private var pendingPairingKeyPair: java.security.KeyPair? = null
     private var pendingMacPublicKeyRaw: ByteArray? = null
 
+    // Auto-copy state (guards for ghost activity launches)
+    @Volatile
+    private var lastClipboardLaunchMs = 0L
+    @Volatile
+    private var ghostActivityInFlight = false
+
     private val bluetoothStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
@@ -122,6 +135,11 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         startForeground(1001, buildNotification())
         registerReceiver(bluetoothStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         ensureBleComponentsState()
+
+        // Publish direct share shortcut if already paired
+        if (encryptionKey != null) {
+            publishDirectShareShortcut(loadConnectedDeviceName())
+        }
     }
 
     override fun onDestroy() {
@@ -164,7 +182,16 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 }
                 return START_STICKY
             }
+            ACTION_GHOST_FINISHED -> {
+                clearGhostActivityInFlight()
+                return START_STICKY
+            }
+            ACTION_ACCESSIBILITY_COPY_DETECTED -> {
+                handleClipboardChanged()
+                return START_STICKY
+            }
             ACTION_PUSH_TEXT -> {
+                clearGhostActivityInFlight()
                 val text = intent.getStringExtra(EXTRA_TEXT)
                 if (!text.isNullOrBlank()) {
                     executor.execute {
@@ -472,6 +499,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         pairingIntent.putExtra(EXTRA_DEVICE_TAG, deviceTagHex)
         pairingIntent.putExtra(EXTRA_DEVICE_NAME, remoteName)
         sendBroadcast(pairingIntent)
+        publishDirectShareShortcut(remoteName)
     }
 
     // ── Outbound (Android → Mac) ─────────────────────────────────────
@@ -536,6 +564,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         val hadConnection = bleStarted
 
         pairingStore.clear()
+        clipboardSettingsStore.setAutoCopyOnboardingShown(false)
+        clipboardSettingsStore.setAutoCopyEnabled(false)
+        removeDirectShareShortcut()
         loadPairingState()
 
         if (hadConnection) {
@@ -566,6 +597,73 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
         pendingClipboardAutoClear = clearRunnable
         clipboardAutoClearHandler.postDelayed(clearRunnable, ClipboardSettingsStore.AUTO_CLEAR_DELAY_MS)
+    }
+
+    // ── Auto-copy (triggered by AccessibilityService) ────────────────
+
+    private fun handleClipboardChanged() {
+        Log.d(TAG, "Clipboard changed — activeSession=${activeSession != null}, ghostInFlight=$ghostActivityInFlight")
+
+        // Skip if no active session (no Mac connected)
+        if (activeSession == null) {
+            Log.d(TAG, "Skipping clipboard: no active session")
+            return
+        }
+
+        // 200ms time guard to prevent double-fires from text classification
+        val now = System.currentTimeMillis()
+        if (now - lastClipboardLaunchMs < CLIPBOARD_DEBOUNCE_MS) {
+            Log.d(TAG, "Skipping clipboard: debounce (${now - lastClipboardLaunchMs}ms)")
+            return
+        }
+        lastClipboardLaunchMs = now
+
+        // Skip if ghost activity is already in flight
+        if (ghostActivityInFlight) {
+            Log.d(TAG, "Skipping clipboard: ghost activity in flight")
+            return
+        }
+
+        // Always launch ghost activity — even when the app is "foreground" per
+        // ProcessLifecycleOwner, a Service cannot read the clipboard on Android 10+.
+        // Only an Activity with window focus can call getPrimaryClip() successfully.
+        Log.d(TAG, "Launching ghost activity for clipboard read")
+        ghostActivityInFlight = true
+        val ghostIntent = Intent(this, ClipboardGhostActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+        }
+        startActivity(ghostIntent)
+    }
+
+    fun clearGhostActivityInFlight() {
+        ghostActivityInFlight = false
+    }
+
+    // ── Direct Share shortcut ─────────────────────────────────────────
+
+    private fun publishDirectShareShortcut(deviceName: String?) {
+        val label = deviceName ?: "Mac"
+        val shortcut = ShortcutInfoCompat.Builder(this, "send_to_mac")
+            .setShortLabel(label)
+            .setIcon(IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+            .setIntent(Intent(Intent.ACTION_SEND).apply {
+                setClass(this@ClipRelayService, org.cliprelay.ui.ShareReceiverActivity::class.java)
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, "")
+            })
+            .setCategories(setOf("org.cliprelay.category.SEND_TO_MAC"))
+            .setLongLived(true)
+            .build()
+
+        ShortcutManagerCompat.addDynamicShortcuts(this, listOf(shortcut))
+        Log.d(TAG, "Published direct share shortcut: $label")
+    }
+
+    private fun removeDirectShareShortcut() {
+        ShortcutManagerCompat.removeDynamicShortcuts(this, listOf("send_to_mac"))
+        Log.d(TAG, "Removed direct share shortcut")
     }
 
     // ── Broadcasts ────────────────────────────────────────────────────
