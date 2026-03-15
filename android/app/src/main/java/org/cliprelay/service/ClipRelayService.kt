@@ -410,6 +410,15 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         // advertising without risking the active L2CAP connection.
         advertiser?.restart()
 
+        // The HELLO/WELCOME handshake carries the remote device name. Persist
+        // it so the UI always shows the real hostname (e.g. "Christian's Mac")
+        // instead of null — during pairing, KEY_CONFIRM doesn't include a name
+        // so this is the first point where the Mac's name is available.
+        activeSession?.remoteName?.let {
+            saveConnectedDeviceName(it)
+            publishDirectShareShortcut(it)
+        }
+
         val name = loadConnectedDeviceName()
         sendConnectionBroadcast(true, name)
         DebugSmokeProbe.onConnectionChanged(this, true)
