@@ -3,7 +3,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.github.triplet.play")
 }
@@ -58,12 +57,12 @@ val playTrack = playValue("track", "PLAY_TRACK") ?: "internal"
 
 android {
     namespace = "org.cliprelay"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "org.cliprelay"
         minSdk = 31
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1  // Auto-incremented by Play plugin's resolutionStrategy
         versionName = file("../VERSION").readText().trim()
 
@@ -101,10 +100,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     buildFeatures {
