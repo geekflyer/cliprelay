@@ -1,7 +1,7 @@
 package org.cliprelay.service
 
 // Quick Settings tile that sends the current clipboard to the paired Mac.
-// Tapping the tile launches ClipboardGhostActivity to read the clipboard.
+// Tapping the tile launches ClipboardSendActivity to read and send the clipboard.
 
 import android.content.Intent
 import android.service.quicksettings.Tile

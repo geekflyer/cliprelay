@@ -69,7 +69,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
             "copiar", "copiar texto",       // Spanish, Portuguese
             "copier",                       // French
             "kopieren",                     // German
-            "kopiëren", "kopiëren",         // Dutch
+            "kopiëren",                     // Dutch
             "copia", "copiare",             // Italian
             "コピー",                        // Japanese
             "복사",                          // Korean
