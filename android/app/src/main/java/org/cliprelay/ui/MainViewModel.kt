@@ -25,13 +25,20 @@ class MainViewModel : ViewModel() {
     private val _autoClearEnabled = MutableStateFlow(false)
     val autoClearEnabled: StateFlow<Boolean> = _autoClearEnabled.asStateFlow()
 
+    private val _autoCopyEnabled = MutableStateFlow(false)
+    val autoCopyEnabled: StateFlow<Boolean> = _autoCopyEnabled.asStateFlow()
+
+    private val _autoCopyAccessibilityEnabled = MutableStateFlow(false)
+    val autoCopyAccessibilityEnabled: StateFlow<Boolean> = _autoCopyAccessibilityEnabled.asStateFlow()
+
     // Emits true = Mac→Android, false = Android→Mac
     private val _clipboardTransfer = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val clipboardTransfer: SharedFlow<Boolean> = _clipboardTransfer
 
-    fun initState(isPaired: Boolean, deviceName: String? = null, deviceTag: String? = null, autoClearEnabled: Boolean = false) {
+    fun initState(isPaired: Boolean, deviceName: String? = null, deviceTag: String? = null, autoClearEnabled: Boolean = false, autoCopyEnabled: Boolean = false) {
         _state.value = if (isPaired) AppState.Searching(deviceName, deviceTag) else AppState.Unpaired
         _autoClearEnabled.value = autoClearEnabled
+        _autoCopyEnabled.value = autoCopyEnabled
     }
 
     fun onPaired(deviceTag: String? = null) {
@@ -45,6 +52,7 @@ class MainViewModel : ViewModel() {
 
     fun onUnpaired() {
         _state.value = AppState.Unpaired
+        _autoCopyEnabled.value = false
     }
 
     fun onConnectionChanged(connected: Boolean, deviceName: String?) {
@@ -64,5 +72,13 @@ class MainViewModel : ViewModel() {
 
     fun onAutoClearSettingChanged(enabled: Boolean) {
         _autoClearEnabled.value = enabled
+    }
+
+    fun onAutoCopySettingChanged(enabled: Boolean) {
+        _autoCopyEnabled.value = enabled
+    }
+
+    fun onAccessibilityStateChanged(enabled: Boolean) {
+        _autoCopyAccessibilityEnabled.value = enabled
     }
 }

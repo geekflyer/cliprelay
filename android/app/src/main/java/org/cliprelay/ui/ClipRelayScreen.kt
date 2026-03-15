@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,8 +29,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
@@ -58,10 +57,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -84,10 +80,15 @@ fun ClipRelayScreen(
     showBurst: Boolean,
     clipboardTransferFlow: Flow<Boolean> = emptyFlow(),
     autoClearEnabled: Boolean,
+    autoCopyEnabled: Boolean,
+    autoCopyAccessibilityEnabled: Boolean = false,
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
     onBurstShown: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
+    onAutoCopySettingChanged: (Boolean) -> Unit,
+    onAutoCopyFixClick: () -> Unit = {},
+    onHelpClick: () -> Unit = {},
 ) {
     val isConnected = state is AppState.Connected
     val isPaired = state !is AppState.Unpaired
@@ -160,12 +161,16 @@ fun ClipRelayScreen(
                 state = state,
                 clipboardTransferFlow = clipboardTransferFlow,
                 autoClearEnabled = autoClearEnabled,
+                autoCopyEnabled = autoCopyEnabled,
+                autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 onPairClick = onPairClick,
                 onUnpairClick = onUnpairClick,
-                onAutoClearSettingChanged = onAutoClearSettingChanged
+                onAutoClearSettingChanged = onAutoClearSettingChanged,
+                onAutoCopySettingChanged = onAutoCopySettingChanged,
+                onAutoCopyFixClick = onAutoCopyFixClick
             )
             Spacer(modifier = Modifier.weight(1f))
-            FooterSection()
+            FooterSection(isPaired = isPaired, onHelpClick = onHelpClick)
         }
 
         // Pairing burst overlay
@@ -266,9 +271,13 @@ private fun MainCard(
     state: AppState,
     clipboardTransferFlow: Flow<Boolean>,
     autoClearEnabled: Boolean,
+    autoCopyEnabled: Boolean,
+    autoCopyAccessibilityEnabled: Boolean = false,
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
-    onAutoClearSettingChanged: (Boolean) -> Unit
+    onAutoClearSettingChanged: (Boolean) -> Unit,
+    onAutoCopySettingChanged: (Boolean) -> Unit,
+    onAutoCopyFixClick: () -> Unit = {}
 ) {
     val isPaired = state !is AppState.Unpaired
     val isConnected = state is AppState.Connected
@@ -522,6 +531,13 @@ private fun MainCard(
                 enabled = autoClearEnabled,
                 onEnabledChange = onAutoClearSettingChanged
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            AutoCopySettingRow(
+                enabled = autoCopyEnabled,
+                accessibilityEnabled = autoCopyAccessibilityEnabled,
+                onEnabledChange = onAutoCopySettingChanged,
+                onFixClick = onAutoCopyFixClick
+            )
         }
     }
 }
@@ -567,6 +583,93 @@ private fun AutoClearSettingRow(
 
         Spacer(modifier = Modifier.width(12.dp))
 
+        Switch(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Teal,
+                checkedTrackColor = Aqua.copy(alpha = 0.45f),
+                checkedBorderColor = Aqua.copy(alpha = 0.60f),
+                uncheckedThumbColor = Color(0xFF7A7A7A),
+                uncheckedTrackColor = Color(0x15000000),
+                uncheckedBorderColor = Color(0x40000000)
+            )
+        )
+    }
+}
+
+@Composable
+private fun AutoCopySettingRow(
+    enabled: Boolean,
+    accessibilityEnabled: Boolean = false,
+    onEnabledChange: (Boolean) -> Unit,
+    onFixClick: () -> Unit = {}
+) {
+    val isBroken = enabled && !accessibilityEnabled
+    val warningColor = Color(0xFFE57373)
+
+    val toggleBg = if (enabled) Color(0x1400FFD5) else Color(0x08000000)
+    val toggleBorder = when {
+        isBroken -> warningColor.copy(alpha = 0.5f)
+        enabled -> Color(0x2B00FFD5)
+        else -> Color(0x14000000)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(toggleBg)
+            .border(if (isBroken) 2.dp else 1.dp, toggleBorder, RoundedCornerShape(18.dp))
+            .then(
+                if (isBroken)
+                    // In broken state, tapping the row opens accessibility settings
+                    Modifier.clickable(onClick = onFixClick)
+                else
+                    Modifier.toggleable(
+                        value = enabled,
+                        role = Role.Switch,
+                        onValueChange = onEnabledChange
+                    )
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (isBroken) {
+            Text(
+                text = "\u26A0\uFE0F",
+                fontSize = 24.sp,
+                modifier = Modifier.padding(end = 10.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.auto_copy_setting_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xCC000000)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (isBroken)
+                    stringResource(R.string.auto_copy_needs_accessibility)
+                else if (enabled)
+                    stringResource(R.string.auto_copy_setting_subtitle_on)
+                else
+                    stringResource(R.string.auto_copy_setting_subtitle_off),
+                fontSize = 12.sp,
+                fontWeight = if (isBroken) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (isBroken) warningColor else Color(0x80000000),
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // In broken state, switch toggles off (disables auto-copy)
+        // In normal state, switch toggles on/off as usual
         Switch(
             checked = enabled,
             onCheckedChange = onEnabledChange,
@@ -719,84 +822,33 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMacIcon(tint: C
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 @Composable
-private fun FooterSection() {
+private fun FooterSection(isPaired: Boolean, onHelpClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
     ) {
-        val shareIconId = "shareIcon"
-        val instructionText = buildAnnotatedString {
-            append("Select text in any app,\nthen tap ")
-            appendInlineContent(shareIconId, "[share]")
-            append(" or ")
-            withStyle(SpanStyle(
-                color = Teal,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
-                background = Aqua.copy(alpha = 0.12f)
-            )) {
-                append(" Share ")
-            }
-            append(" and choose:")
-        }
-        Text(
-            text = instructionText,
-            inlineContent = mapOf(
-                shareIconId to InlineTextContent(
-                    placeholder = androidx.compose.ui.text.Placeholder(
-                        width = 26.sp,
-                        height = 26.sp,
-                        placeholderVerticalAlign = androidx.compose.ui.text.PlaceholderVerticalAlign.TextCenter
-                    )
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Aqua.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Share icon",
-                            tint = Teal,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            ),
-            fontSize = 13.sp,
-            color = Color(0x80000000),
-            textAlign = TextAlign.Center,
-            lineHeight = 28.sp
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        // Share sheet preview mock — vertical layout matching Android share sheet
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(Aqua),
-                contentAlignment = Alignment.Center
+        if (isPaired) {
+            Button(
+                onClick = onHelpClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0x1400FFD5),
+                    contentColor = Teal
+                ),
+                elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp)
             ) {
-                Image(
-                    painter = painterResource(R.mipmap.ic_launcher_foreground),
-                    contentDescription = "ClipRelay icon",
-                    modifier = Modifier.size(48.dp)
+                Text(
+                    text = "\uD83D\uDCA1 How to share",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "ClipRelay",
-                fontSize = 12.sp,
-                color = Color(0x99000000)
-            )
+            Spacer(modifier = Modifier.height(8.dp))
         }
-        Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
+            text = "ClipRelay v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
             style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
             color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
         )

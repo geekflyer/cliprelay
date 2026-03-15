@@ -21,4 +21,24 @@
     <string name="qr_module_still_downloading">Barcode scanner is still downloading. Please try again shortly.</string>
     <string name="auto_clear_setting_title">Auto-clear synced clipboard</string>
     <string name="auto_clear_setting_subtitle">Clear Mac-synced clipboard text after 60 seconds.</string>
+    <string name="auto_copy_setting_title">Auto-copy to Mac</string>
+    <string name="auto_copy_setting_subtitle_on">Automatically send copied text to Mac</string>
+    <string name="auto_copy_setting_subtitle_off">Use share menu to send text</string>
+    <string name="onboarding_title">Sharing your clipboard</string>
+    <string name="onboarding_always_available">Always available</string>
+    <string name="onboarding_share_sheet_title">Share menu</string>
+    <string name="onboarding_share_sheet_desc">Select text, tap Share, choose ClipRelay</string>
+    <string name="onboarding_tile_title">Quick Settings tile</string>
+    <string name="onboarding_tile_desc">Pull down notification shade, tap "Send to Mac"</string>
+    <string name="onboarding_auto_section">Want it automatic?</string>
+    <string name="onboarding_auto_title">Enable auto-copy</string>
+    <string name="onboarding_auto_subtitle">Everything you copy goes to your Mac. You can still use the manual options above.</string>
+    <string name="onboarding_auto_caveat_accessibility">Requires Accessibility permission</string>
+    <string name="onboarding_auto_caveat_notification">Shows a system notification each time</string>
+    <string name="onboarding_auto_caveat_reliability">May not detect all copy actions</string>
+    <string name="onboarding_got_it">Got it</string>
+    <string name="accessibility_service_description">Detects when you copy text so it can be automatically sent to your paired Mac. Only monitors tap actions — does not read screen content.</string>
+    <string name="tile_label">Send to Mac</string>
+    <string name="tile_not_paired">Not paired</string>
+    <string name="auto_copy_needs_accessibility">Not working — tap to enable Accessibility permission</string>
 </resources>
