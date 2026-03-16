@@ -4,7 +4,7 @@ import CryptoKit
 import Foundation
 
 enum E2ECrypto {
-    private static let aad = Data("cliprelay-v1".utf8)
+    private static let aad = Data("cliprelay-v2".utf8)
 
     // MARK: - Key derivation (mirrors Android E2ECrypto.kt)
 

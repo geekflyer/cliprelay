@@ -18,7 +18,7 @@ import javax.crypto.spec.SecretKeySpec
 object E2ECrypto {
     private const val GCM_NONCE_LENGTH = 12
     private const val GCM_TAG_BITS = 128
-    private val AAD = "cliprelay-v1".toByteArray(Charsets.UTF_8)
+    private val AAD = "cliprelay-v2".toByteArray(Charsets.UTF_8)
 
     fun deriveKey(secretBytes: ByteArray): SecretKey {
         val keyBytes = hkdf(secretBytes, "cliprelay-enc-v1", 32)
