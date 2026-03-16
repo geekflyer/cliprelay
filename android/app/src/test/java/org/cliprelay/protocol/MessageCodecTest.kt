@@ -68,10 +68,16 @@ class MessageCodecTest {
         assertRoundTrip(msg)
     }
 
-    @Test(expected = ProtocolException::class)
-    fun decodeUnknownTypeThrows() {
-        val encoded = hexToBytes("00000005ff74657374")
-        MessageCodec.decode(ByteArrayInputStream(encoded))
+    @Test
+    fun decodeUnknownTypeSkipsToNextMessage() {
+        // Unknown type 0xFF with 4-byte payload "test", followed by a valid DONE message
+        val unknownMsg = hexToBytes("00000005ff74657374")
+        val donePayload = """{"ok":true}""".toByteArray()
+        val doneMsg = MessageCodec.encode(Message(MessageType.DONE, donePayload))
+        val combined = unknownMsg + doneMsg
+        val decoded = MessageCodec.decode(ByteArrayInputStream(combined))
+        assertEquals(MessageType.DONE, decoded.type)
+        assertArrayEquals(donePayload, decoded.payload)
     }
 
     @Test(expected = ProtocolException::class)

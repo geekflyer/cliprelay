@@ -62,8 +62,32 @@ class L2capFixtureCompatibilityTest {
     fun decodeMatchesFixtureDone() = assertDecodeMatchesFixture("DONE")
 
     @Test
-    fun negativeUnknownType() {
-        assertNegativeCase("unknown_type")
+    fun negativeUnknownTypeIsSkipped() {
+        // Unknown types are now skipped gracefully. When there's no next message
+        // after the skipped unknown type, decode throws ProtocolException for
+        // the incomplete header of the next (missing) message.
+        val negatives = fixture.getJSONArray("negative_cases")
+        var entry: org.json.JSONObject? = null
+        for (i in 0 until negatives.length()) {
+            val obj = negatives.getJSONObject(i)
+            if (obj.getString("name") == "unknown_type") {
+                entry = obj
+                break
+            }
+        }
+        requireNotNull(entry) { "Negative case 'unknown_type' not found in fixture" }
+
+        val encodedHex = entry.getString("encoded_hex")
+        try {
+            MessageCodec.decode(ByteArrayInputStream(hexToBytes(encodedHex)))
+            fail("Expected ProtocolException after skipping unknown type")
+        } catch (e: ProtocolException) {
+            val msg = e.message?.lowercase() ?: ""
+            assertTrue(
+                "Expected 'incomplete header' after skipping unknown type, but was '${e.message}'",
+                msg.contains("incomplete header")
+            )
+        }
     }
 
     @Test

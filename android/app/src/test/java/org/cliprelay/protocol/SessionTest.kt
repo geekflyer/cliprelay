@@ -418,9 +418,12 @@ class SessionTest {
         sendValidWelcome(toMac, hello)
         assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
 
-        // Send raw garbage (invalid message type 0xFF)
+        // Send raw garbage (invalid message type 0xFF) then close the stream.
+        // The codec skips the unknown type and tries to read the next message,
+        // which fails because the stream is closed.
         toMac.write(byteArrayOf(0x00, 0x00, 0x00, 0x01, 0xFF.toByte()))
         toMac.flush()
+        toMac.close()
 
         assertTrue("Should get error", errorLatch.await(3, TimeUnit.SECONDS))
         assertNotNull(capturedError)
