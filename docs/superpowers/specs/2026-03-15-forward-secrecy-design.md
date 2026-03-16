@@ -170,7 +170,7 @@ The pairing flow (KEY_EXCHANGE / KEY_CONFIRM) is unchanged. Pairing still establ
 - Pass shared secret to Session instead of encrypting/decrypting externally
 - `onClipboardChange()` sends plaintext to session
 - `session(_:didReceiveClipboard:hash:)` receives plaintext
-- `pendingClipboardPayload` switches from storing ciphertext to storing plaintext. On reconnect, the plaintext is re-encrypted with the new session's key — this is the correct behavior (new session = new ephemeral keys = new session key)
+- `pendingClipboardPayload` switches from storing ciphertext to storing plaintext. On reconnect, the plaintext is re-encrypted with the new session's key — this is the correct behavior (new session = new ephemeral keys = new session key). Note: this is an in-memory variable only (not persisted to disk). The plaintext is already in process memory via `ClipboardMonitor` and `NSPasteboard`, so this does not change the attack surface.
 - Remove `pairingManager.encryptionKey(for:)` calls from clipboard path
 - Handle `versionMismatch` distinctly in `session(_:didFailWithError:)` — show update prompt
 
