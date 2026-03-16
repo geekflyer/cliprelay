@@ -216,7 +216,6 @@ class L2capFixtureCompatibilityTest {
     companion object {
         /** Maps fixture expected_error values to substrings found in ProtocolException messages. */
         private val ERROR_SUBSTRINGS = mapOf(
-            "unknown_type" to "unknown message type",
             "incomplete_header" to "incomplete header",
             "empty_message" to "empty message",
             "message_too_large" to "message too large",
