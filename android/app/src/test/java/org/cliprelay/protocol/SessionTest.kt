@@ -1,5 +1,6 @@
 package org.cliprelay.protocol
 
+import org.cliprelay.crypto.E2ECrypto
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.PipedInputStream
@@ -7,6 +8,7 @@ import java.io.PipedOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CopyOnWriteArrayList
+import org.json.JSONObject
 
 /**
  * Tests for the Session protocol handler using piped in-memory streams.
@@ -17,11 +19,13 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 class SessionTest {
 
+    private val testSharedSecret = "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1"
+
     // ── Handshake tests ──────────────────────────────────────────────
 
     @Test
     fun `initiator sends HELLO and receives WELCOME - both sessions ready`() {
-        val (env) = createPairedSessions()
+        val (env) = createPairedSessions(testSharedSecret)
         val readyLatch = CountDownLatch(2)
         env.macCallback.onReady = { readyLatch.countDown() }
         env.androidCallback.onReady = { readyLatch.countDown() }
@@ -53,6 +57,7 @@ class SessionTest {
             output = dummyOutput,
             isInitiator = true,
             callback = callback,
+            sharedSecretHex = testSharedSecret,
             handshakeTimeoutMs = 200 // Short timeout for test speed
         )
 
@@ -87,6 +92,7 @@ class SessionTest {
             output = macOutput,
             isInitiator = true,
             callback = callback,
+            sharedSecretHex = testSharedSecret,
             handshakeTimeoutMs = 2000
         )
 
@@ -130,6 +136,7 @@ class SessionTest {
             output = androidOutput,
             isInitiator = false,
             callback = callback,
+            sharedSecretHex = testSharedSecret,
             handshakeTimeoutMs = 2000
         )
 
@@ -153,7 +160,7 @@ class SessionTest {
 
     @Test
     fun `sender sends OFFER, gets ACCEPT, sends PAYLOAD, gets DONE`() {
-        val (env) = createPairedSessions()
+        val (env) = createPairedSessions(testSharedSecret)
         val readyLatch = CountDownLatch(2)
         val transferLatch = CountDownLatch(1)
         val receivedLatch = CountDownLatch(1)
@@ -177,7 +184,7 @@ class SessionTest {
         startBothSessions(env)
         assertTrue("Handshake should complete", readyLatch.await(5, TimeUnit.SECONDS))
 
-        // Mac sends clipboard
+        // Mac sends clipboard (plaintext)
         env.macSession.sendClipboard(testData)
 
         assertTrue("Receiver should get clipboard", receivedLatch.await(5, TimeUnit.SECONDS))
@@ -188,7 +195,7 @@ class SessionTest {
 
     @Test
     fun `receiver gets OFFER, sends ACCEPT, gets PAYLOAD, sends DONE`() {
-        val (env) = createPairedSessions()
+        val (env) = createPairedSessions(testSharedSecret)
         val readyLatch = CountDownLatch(2)
         val receivedLatch = CountDownLatch(1)
         var receivedBlob: ByteArray? = null
@@ -205,7 +212,7 @@ class SessionTest {
         startBothSessions(env)
         assertTrue("Handshake should complete", readyLatch.await(5, TimeUnit.SECONDS))
 
-        // Android sends clipboard
+        // Android sends clipboard (plaintext)
         val testData = "Hello from Android!".toByteArray()
         env.androidSession.sendClipboard(testData)
 
@@ -218,7 +225,7 @@ class SessionTest {
 
     @Test
     fun `duplicate OFFER - hasHash returns true - receiver sends DONE immediately`() {
-        val (env) = createPairedSessions()
+        val (env) = createPairedSessions(testSharedSecret)
         val readyLatch = CountDownLatch(2)
         val transferLatch = CountDownLatch(1)
 
@@ -273,6 +280,7 @@ class SessionTest {
             output = macOutput,
             isInitiator = true,
             callback = callback,
+            sharedSecretHex = testSharedSecret,
             handshakeTimeoutMs = 2000,
             transferTimeoutMs = 300 // Short timeout for test
         )
@@ -284,10 +292,30 @@ class SessionTest {
             session.listenForMessages()
         }.start()
 
-        // Complete handshake from the other side
+        // Complete handshake from the other side — must send valid v2 WELCOME
         val hello = MessageCodec.decode(fromMac)
         assertEquals(MessageType.HELLO, hello.type)
-        val welcome = Message(MessageType.WELCOME, """{"version":1}""".toByteArray())
+
+        // Parse the HELLO to get the initiator's ek for ECDH
+        val helloJson = JSONObject(String(hello.payload))
+        val remoteEkHex = helloJson.getString("ek")
+
+        // Generate our own ephemeral key pair for the response
+        val responderKeyPair = E2ECrypto.generateX25519KeyPair()
+        val responderEkBytes = E2ECrypto.x25519PublicKeyToRaw(responderKeyPair.public)
+        val responderEkHex = responderEkBytes.joinToString("") { "%02x".format(it) }
+
+        // Compute auth
+        val authKey = E2ECrypto.deriveAuthKey(E2ECrypto.hexToBytes(testSharedSecret))
+        val authBytes = E2ECrypto.hmacAuth(responderEkBytes, authKey)
+        val authHex = authBytes.joinToString("") { "%02x".format(it) }
+
+        val welcomeJson = JSONObject().apply {
+            put("version", 2)
+            put("ek", responderEkHex)
+            put("auth", authHex)
+        }
+        val welcome = Message(MessageType.WELCOME, welcomeJson.toString().toByteArray())
         MessageCodec.write(toMac, welcome)
 
         assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
@@ -325,6 +353,7 @@ class SessionTest {
             output = macOutput,
             isInitiator = true,
             callback = callback,
+            sharedSecretHex = testSharedSecret,
             handshakeTimeoutMs = 2000
         )
 
@@ -333,10 +362,10 @@ class SessionTest {
             session.listenForMessages()
         }.start()
 
-        // Complete handshake
+        // Complete handshake with valid v2 WELCOME
         val hello = MessageCodec.decode(fromMac)
         assertEquals(MessageType.HELLO, hello.type)
-        MessageCodec.write(toMac, Message(MessageType.WELCOME, """{"version":1}""".toByteArray()))
+        sendValidWelcome(toMac, hello)
 
         assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
 
@@ -375,6 +404,7 @@ class SessionTest {
             output = macOutput,
             isInitiator = true,
             callback = callback,
+            sharedSecretHex = testSharedSecret,
             handshakeTimeoutMs = 2000
         )
 
@@ -383,9 +413,9 @@ class SessionTest {
             session.listenForMessages()
         }.start()
 
-        // Complete handshake
-        MessageCodec.decode(fromMac)
-        MessageCodec.write(toMac, Message(MessageType.WELCOME, """{"version":1}""".toByteArray()))
+        // Complete handshake with valid v2 WELCOME
+        val hello = MessageCodec.decode(fromMac)
+        sendValidWelcome(toMac, hello)
         assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
 
         // Send raw garbage (invalid message type 0xFF)
@@ -402,6 +432,194 @@ class SessionTest {
         fromMac.close()
     }
 
+    // ── V2 handshake tests ──────────────────────────────────────────
+
+    @Test
+    fun `v2 handshake succeeds`() {
+        val (env) = createPairedSessions(testSharedSecret)
+        val readyLatch = CountDownLatch(2)
+        env.macCallback.onReady = { readyLatch.countDown() }
+        env.androidCallback.onReady = { readyLatch.countDown() }
+
+        startBothSessions(env)
+
+        assertTrue("Both sessions should become ready via v2 handshake", readyLatch.await(5, TimeUnit.SECONDS))
+        cleanup(env)
+    }
+
+    @Test
+    fun `v2 handshake rejects version 1`() {
+        val androidInput = PipedInputStream()
+        val toAndroid = PipedOutputStream(androidInput)
+        val androidOutput = PipedOutputStream()
+        val fromAndroid = PipedInputStream(androidOutput)
+
+        val errorLatch = CountDownLatch(1)
+        var capturedError: Exception? = null
+        val callback = TestCallback()
+        callback.onError = { e ->
+            capturedError = e
+            errorLatch.countDown()
+        }
+
+        val session = Session(
+            input = androidInput,
+            output = androidOutput,
+            isInitiator = false,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000
+        )
+
+        Thread { session.performHandshake() }.start()
+
+        // Send v1 HELLO (no ek, no auth)
+        val v1Hello = Message(MessageType.HELLO, """{"version":1,"name":"OldMac"}""".toByteArray())
+        MessageCodec.write(toAndroid, v1Hello)
+
+        assertTrue("Should get error", errorLatch.await(3, TimeUnit.SECONDS))
+        assertTrue("Error should mention version", capturedError!!.message!!.contains("version"))
+
+        session.close()
+        androidInput.close()
+        toAndroid.close()
+        androidOutput.close()
+        fromAndroid.close()
+    }
+
+    @Test
+    fun `v2 handshake rejects bad auth`() {
+        val androidInput = PipedInputStream()
+        val toAndroid = PipedOutputStream(androidInput)
+        val androidOutput = PipedOutputStream()
+        val fromAndroid = PipedInputStream(androidOutput)
+
+        val errorLatch = CountDownLatch(1)
+        var capturedError: Exception? = null
+        val callback = TestCallback()
+        callback.onError = { e ->
+            capturedError = e
+            errorLatch.countDown()
+        }
+
+        val session = Session(
+            input = androidInput,
+            output = androidOutput,
+            isInitiator = false,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000
+        )
+
+        Thread { session.performHandshake() }.start()
+
+        // Generate a valid ek but with wrong auth (using a different secret)
+        val kp = E2ECrypto.generateX25519KeyPair()
+        val ekBytes = E2ECrypto.x25519PublicKeyToRaw(kp.public)
+        val ekHex = ekBytes.joinToString("") { "%02x".format(it) }
+        // Use a wrong auth key (different shared secret)
+        val wrongAuthKey = E2ECrypto.deriveAuthKey(ByteArray(32)) // zeros
+        val wrongAuth = E2ECrypto.hmacAuth(ekBytes, wrongAuthKey)
+        val wrongAuthHex = wrongAuth.joinToString("") { "%02x".format(it) }
+
+        val badHello = JSONObject().apply {
+            put("version", 2)
+            put("ek", ekHex)
+            put("auth", wrongAuthHex)
+        }
+        val msg = Message(MessageType.HELLO, badHello.toString().toByteArray())
+        MessageCodec.write(toAndroid, msg)
+
+        assertTrue("Should get error", errorLatch.await(3, TimeUnit.SECONDS))
+        assertTrue("Error should mention authentication", capturedError!!.message!!.contains("Authentication failed"))
+
+        session.close()
+        androidInput.close()
+        toAndroid.close()
+        androidOutput.close()
+        fromAndroid.close()
+    }
+
+    @Test
+    fun `v2 handshake rejects missing ek`() {
+        val androidInput = PipedInputStream()
+        val toAndroid = PipedOutputStream(androidInput)
+        val androidOutput = PipedOutputStream()
+        val fromAndroid = PipedInputStream(androidOutput)
+
+        val errorLatch = CountDownLatch(1)
+        var capturedError: Exception? = null
+        val callback = TestCallback()
+        callback.onError = { e ->
+            capturedError = e
+            errorLatch.countDown()
+        }
+
+        val session = Session(
+            input = androidInput,
+            output = androidOutput,
+            isInitiator = false,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000
+        )
+
+        Thread { session.performHandshake() }.start()
+
+        // Send v2 HELLO without ek field
+        val badHello = JSONObject().apply {
+            put("version", 2)
+            put("auth", "a".repeat(64))
+        }
+        val msg = Message(MessageType.HELLO, badHello.toString().toByteArray())
+        MessageCodec.write(toAndroid, msg)
+
+        assertTrue("Should get error", errorLatch.await(3, TimeUnit.SECONDS))
+        assertTrue("Error should mention ephemeral key",
+            capturedError!!.message!!.contains("ephemeral key", ignoreCase = true))
+
+        session.close()
+        androidInput.close()
+        toAndroid.close()
+        androidOutput.close()
+        fromAndroid.close()
+    }
+
+    @Test
+    fun `v2 end-to-end clipboard transfer`() {
+        val (env) = createPairedSessions(testSharedSecret)
+        val readyLatch = CountDownLatch(2)
+        val receivedLatch = CountDownLatch(1)
+        val transferLatch = CountDownLatch(1)
+
+        env.macCallback.onReady = { readyLatch.countDown() }
+        env.androidCallback.onReady = { readyLatch.countDown() }
+
+        val plaintext = "Forward secrecy clipboard test!".toByteArray()
+        val expectedHash = Session.sha256Hex(plaintext)
+
+        env.macCallback.onTransfer = { hash ->
+            assertEquals(expectedHash, hash)
+            transferLatch.countDown()
+        }
+        env.androidCallback.onReceived = { received, hash ->
+            assertArrayEquals("Plaintext should match", plaintext, received)
+            assertEquals("Hash should match", expectedHash, hash)
+            receivedLatch.countDown()
+        }
+
+        startBothSessions(env)
+        assertTrue("Handshake should complete", readyLatch.await(5, TimeUnit.SECONDS))
+
+        // Mac sends plaintext — Session encrypts internally
+        env.macSession.sendClipboard(plaintext)
+
+        assertTrue("Android should receive plaintext", receivedLatch.await(5, TimeUnit.SECONDS))
+        assertTrue("Mac should get transfer complete", transferLatch.await(5, TimeUnit.SECONDS))
+
+        cleanup(env)
+    }
+
     // ── Test infrastructure ──────────────────────────────────────────
 
     data class SessionEnv(
@@ -415,7 +633,7 @@ class SessionTest {
     /** Wraps the env in a data class so we can destructure it. */
     data class SessionEnvHolder(val env: SessionEnv)
 
-    private fun createPairedSessions(): SessionEnvHolder {
+    private fun createPairedSessions(sharedSecretHex: String): SessionEnvHolder {
         // Mac → Android pipe
         val macToAndroidOut = PipedOutputStream()
         val macToAndroidIn = PipedInputStream(macToAndroidOut)
@@ -431,14 +649,16 @@ class SessionTest {
             input = androidToMacIn,
             output = macToAndroidOut,
             isInitiator = true,
-            callback = macCallback
+            callback = macCallback,
+            sharedSecretHex = sharedSecretHex
         )
 
         val androidSession = Session(
             input = macToAndroidIn,
             output = androidToMacOut,
             isInitiator = false,
-            callback = androidCallback
+            callback = androidCallback,
+            sharedSecretHex = sharedSecretHex
         )
 
         return SessionEnvHolder(SessionEnv(macSession, androidSession, macCallback, androidCallback))
@@ -465,6 +685,30 @@ class SessionTest {
         env.threads.forEach { it.join(2000) }
     }
 
+    /**
+     * Helper to send a valid v2 WELCOME response given a received HELLO message.
+     * Used in manual-stream tests that need to complete the handshake.
+     */
+    private fun sendValidWelcome(toMac: PipedOutputStream, hello: Message) {
+        // Generate responder ephemeral key pair
+        val responderKeyPair = E2ECrypto.generateX25519KeyPair()
+        val responderEkBytes = E2ECrypto.x25519PublicKeyToRaw(responderKeyPair.public)
+        val responderEkHex = responderEkBytes.joinToString("") { "%02x".format(it) }
+
+        // Compute auth
+        val authKey = E2ECrypto.deriveAuthKey(E2ECrypto.hexToBytes(testSharedSecret))
+        val authBytes = E2ECrypto.hmacAuth(responderEkBytes, authKey)
+        val authHex = authBytes.joinToString("") { "%02x".format(it) }
+
+        val welcomeJson = JSONObject().apply {
+            put("version", 2)
+            put("ek", responderEkHex)
+            put("auth", authHex)
+        }
+        val welcome = Message(MessageType.WELCOME, welcomeJson.toString().toByteArray())
+        MessageCodec.write(toMac, welcome)
+    }
+
     class TestCallback : SessionCallback {
         var onReady: () -> Unit = {}
         var onReceived: (ByteArray, String) -> Unit = { _, _ -> }
@@ -474,8 +718,8 @@ class SessionTest {
         val knownHashes = CopyOnWriteArrayList<String>()
 
         override fun onSessionReady() = onReady()
-        override fun onClipboardReceived(encryptedBlob: ByteArray, hash: String) =
-            onReceived(encryptedBlob, hash)
+        override fun onClipboardReceived(plaintext: ByteArray, hash: String) =
+            onReceived(plaintext, hash)
         override fun onTransferComplete(hash: String) = onTransfer(hash)
         override fun onSessionError(error: Exception) = onError(error)
         override fun hasHash(hash: String): Boolean = hash in knownHashes
