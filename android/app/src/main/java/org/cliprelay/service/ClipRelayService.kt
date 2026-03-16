@@ -13,6 +13,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -136,7 +137,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         DebugSmokeProbe.reset(this)
 
         startForeground(1001, buildNotification())
-        registerReceiver(bluetoothStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+        ContextCompat.registerReceiver(
+            this,
+            bluetoothStateReceiver,
+            IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         ensureBleComponentsState()
 
         // Publish direct share shortcut if already paired
