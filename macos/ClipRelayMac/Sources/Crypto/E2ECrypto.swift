@@ -4,6 +4,7 @@ import CryptoKit
 import Foundation
 
 enum E2ECrypto {
+    // Also used for KEY_CONFIRM during pairing — v1 devices cannot pair with v2 devices
     private static let aad = Data("cliprelay-v2".utf8)
 
     // MARK: - Key derivation (mirrors Android E2ECrypto.kt)

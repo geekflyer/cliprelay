@@ -43,7 +43,7 @@ class Session(
     private val isInitiator: Boolean,
     private val callback: SessionCallback,
     val mode: SessionMode = SessionMode.Normal,
-    private val sharedSecretHex: String? = null,
+    private var sharedSecretHex: String? = null,
     internal var handshakeTimeoutMs: Long = 5_000L,
     internal var transferTimeoutMs: Long = 30_000L,
     internal var pairingTimeoutMs: Long = 60_000L
@@ -58,7 +58,7 @@ class Session(
         private set
 
     /** Auth key derived from the shared secret, used for HMAC authentication during handshake. */
-    private val authKey: SecretKey? = sharedSecretHex?.let {
+    private var authKey: SecretKey? = sharedSecretHex?.let {
         E2ECrypto.deriveAuthKey(E2ECrypto.hexToBytes(it))
     }
 
@@ -207,6 +207,11 @@ class Session(
         // Notify callback of completed pairing
         callback.onPairingComplete(sharedSecret, remoteName = null)
 
+        // Update shared secret and auth key for the subsequent v2 handshake
+        val secretHex = sharedSecret.joinToString("") { "%02x".format(it) }
+        this.sharedSecretHex = secretHex
+        this.authKey = E2ECrypto.deriveAuthKey(sharedSecret)
+
         // Continue with normal HELLO/WELCOME handshake
         responderHandshake()
     }
@@ -289,8 +294,9 @@ class Session(
 
     private fun doSendClipboard(plaintext: ByteArray) {
         // Hash is computed over plaintext (for dedup across sessions)
+        val key = sessionKey ?: throw ProtocolException("No session key available")
         val hash = sha256Hex(plaintext)
-        val encryptedBlob = E2ECrypto.seal(plaintext, sessionKey!!)
+        val encryptedBlob = E2ECrypto.seal(plaintext, key)
         val offerJson = JSONObject().apply {
             put("hash", hash)
             put("size", encryptedBlob.size)
@@ -350,7 +356,8 @@ class Session(
         }
 
         // Decrypt payload
-        val plaintext = E2ECrypto.open(payload.payload, sessionKey!!)
+        val key = sessionKey ?: throw ProtocolException("No session key available")
+        val plaintext = E2ECrypto.open(payload.payload, key)
 
         // Verify hash against plaintext
         val actualHash = sha256Hex(plaintext)
@@ -442,11 +449,13 @@ class Session(
         localName?.let { json.put("name", it) }
 
         // Include ephemeral key and auth for v2 handshake (Normal mode only)
-        if (authKey != null && ephemeralKeyPair != null) {
-            val ekBytes = E2ECrypto.x25519PublicKeyToRaw(ephemeralKeyPair!!.public)
+        val ak = authKey
+        val ekp = ephemeralKeyPair
+        if (ak != null && ekp != null) {
+            val ekBytes = E2ECrypto.x25519PublicKeyToRaw(ekp.public)
             val ekHex = ekBytes.joinToString("") { "%02x".format(it) }
             json.put("ek", ekHex)
-            val authBytes = E2ECrypto.hmacAuth(ekBytes, authKey)
+            val authBytes = E2ECrypto.hmacAuth(ekBytes, ak)
             val authHex = authBytes.joinToString("") { "%02x".format(it) }
             json.put("auth", authHex)
         }
@@ -462,7 +471,7 @@ class Session(
         val json = JSONObject(String(payload))
         val version = json.optInt("version", 0)
         if (version != 2) {
-            throw ProtocolException("Unsupported protocol version: $version")
+            throw VersionMismatchException(version)
         }
         remoteName = if (json.has("name")) json.getString("name") else null
 
@@ -479,7 +488,8 @@ class Session(
             throw ProtocolException("Authentication failed")
         }
         val authBytes = E2ECrypto.hexToBytes(authHex)
-        if (!E2ECrypto.verifyAuth(remoteEkBytes, authKey!!, authBytes)) {
+        val ak = authKey ?: throw ProtocolException("Authentication failed")
+        if (!E2ECrypto.verifyAuth(remoteEkBytes, ak, authBytes)) {
             throw ProtocolException("Authentication failed")
         }
 

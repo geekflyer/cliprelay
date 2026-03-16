@@ -74,10 +74,10 @@ final class Session {
     private let queueLock = NSLock()
 
     /// Shared secret hex string for deriving auth and session keys.
-    private let sharedSecretHex: String?
+    private var sharedSecretHex: String?
 
     /// Auth key derived from the shared secret, used for HMAC authentication during handshake.
-    private let authKey: SymmetricKey?
+    private var authKey: SymmetricKey?
 
     /// Session key derived during v2 handshake. Used for encrypting/decrypting clipboard payloads.
     private var sessionKey: SymmetricKey?
@@ -229,6 +229,11 @@ final class Session {
         // Notify delegate of completed pairing
         delegate?.session(self, didCompletePairingWithSecret: sharedSecret, remoteName: exchangeRemoteName)
 
+        // Update shared secret and auth key for the subsequent v2 handshake
+        let secretHex = sharedSecret.map { String(format: "%02x", $0) }.joined()
+        self.sharedSecretHex = secretHex
+        self.authKey = E2ECrypto.deriveAuthKey(secretBytes: sharedSecret)
+
         // Continue with normal HELLO/WELCOME handshake
         try initiatorHandshake()
     }
@@ -301,8 +306,11 @@ final class Session {
 
     private func doSendClipboard(_ plaintext: Data) throws {
         // Hash is computed over plaintext (for dedup across sessions)
+        guard let key = sessionKey else {
+            throw SessionError.protocolError("No session key available")
+        }
         let hash = Session.sha256Hex(plaintext)
-        let encryptedBlob = try E2ECrypto.seal(plaintext, key: sessionKey!)
+        let encryptedBlob = try E2ECrypto.seal(plaintext, key: key)
         let offerJSON: [String: Any] = [
             "hash": hash,
             "size": encryptedBlob.count,
@@ -364,7 +372,10 @@ final class Session {
         }
 
         // Decrypt payload
-        let plaintext = try E2ECrypto.open(payload.payload, key: sessionKey!)
+        guard let key = sessionKey else {
+            throw SessionError.protocolError("No session key available")
+        }
+        let plaintext = try E2ECrypto.open(payload.payload, key: key)
 
         // Verify hash against plaintext
         let actualHash = Session.sha256Hex(plaintext)

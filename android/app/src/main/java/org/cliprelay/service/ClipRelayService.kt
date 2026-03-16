@@ -34,6 +34,7 @@ import org.cliprelay.protocol.ProtocolException
 import org.cliprelay.protocol.Session
 import org.cliprelay.protocol.SessionCallback
 import org.cliprelay.protocol.SessionMode
+import org.cliprelay.protocol.VersionMismatchException
 import org.cliprelay.settings.ClipboardSettingsStore
 import java.io.IOException
 import java.security.MessageDigest
@@ -448,7 +449,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         sendConnectionBroadcast(false)
         DebugSmokeProbe.onConnectionChanged(this, false)
 
-        if (error is ProtocolException && error.message?.contains("version", ignoreCase = true) == true) {
+        if (error is VersionMismatchException) {
             val intent = Intent(ACTION_VERSION_MISMATCH)
             intent.setPackage(packageName)
             sendBroadcast(intent)

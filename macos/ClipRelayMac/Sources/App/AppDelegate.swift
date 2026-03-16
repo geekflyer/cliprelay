@@ -544,13 +544,16 @@ extension AppDelegate: SessionDelegate {
         appLogger.error("[App] Session error: \(error.localizedDescription)")
 
         if case SessionError.versionMismatch = error {
+            activeSession = nil
+            sessionThread = nil
             DispatchQueue.main.async { [weak self] in
+                self?.statusBarController.setConnectedPeers([])
                 self?.showBluetoothAlert(
                     message: "App Update Required",
                     info: "Your Android app needs to be updated to continue syncing. Update via Google Play."
                 )
             }
-            return  // don't trigger normal error handling for version mismatch
+            return
         }
 
         activeSession = nil

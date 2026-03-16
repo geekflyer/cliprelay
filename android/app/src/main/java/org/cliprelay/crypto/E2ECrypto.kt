@@ -18,6 +18,7 @@ import javax.crypto.spec.SecretKeySpec
 object E2ECrypto {
     private const val GCM_NONCE_LENGTH = 12
     private const val GCM_TAG_BITS = 128
+    // Also used for KEY_CONFIRM during pairing — v1 devices cannot pair with v2 devices
     private val AAD = "cliprelay-v2".toByteArray(Charsets.UTF_8)
 
     fun deriveKey(secretBytes: ByteArray): SecretKey {

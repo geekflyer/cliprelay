@@ -32,7 +32,8 @@ data class Message(val type: MessageType, val payload: ByteArray) {
         31 * type.hashCode() + payload.contentHashCode()
 }
 
-class ProtocolException(message: String) : Exception(message)
+open class ProtocolException(message: String) : Exception(message)
+class VersionMismatchException(val version: Int) : ProtocolException("Unsupported protocol version: $version")
 
 object MessageCodec {
     const val MAX_MESSAGE_SIZE = 200_000
