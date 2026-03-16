@@ -66,13 +66,13 @@ Sender                                      Receiver
 Both directions supported in v1:
 
 - **Mac → Android**: Mac detects image on pasteboard (polling), auto-sends OFFER. Android must be unlocked and awake to accept (`PowerManager.isInteractive()`, `KeyguardManager.isDeviceLocked()`).
-- **Android → Mac**: User explicitly shares image via Android share sheet. Mac always accepts.
+- **Android → Mac**: User explicitly shares image via Android share sheet. Mac always accepts (no lock/sleep check — Mac is typically always-on at a desk, and the image just lands on the pasteboard silently).
 
 ## Feature Flag & Config Sync
 
 ### Storage
 
-- Per-pairing setting: `richMediaEnabled` (boolean) + `richMediaEnabledAt` (Unix timestamp)
+- Per-pairing setting: `richMediaEnabled` (boolean) + `richMediaEnabledChangedAt` (Unix timestamp)
 - Stored alongside existing pairing data on both platforms
 - Defaults to `false`
 
@@ -87,14 +87,14 @@ Both sides include settings in HELLO/WELCOME. The settings object is added along
   "name": "My Device",
   "settings": {
     "richMediaEnabled": true,
-    "richMediaEnabledAt": 1773698112
+    "richMediaEnabledChangedAt": 1773698112
   }
 }
 ```
 
 Protocol version remains 2 — `settings` is optional and ignored by older clients that parse only known fields.
 
-Last-write-wins: both sides compare `richMediaEnabledAt` timestamps, the newer value wins, both persist the result.
+Last-write-wins: both sides compare `richMediaEnabledChangedAt` timestamps, the newer value wins, both persist the result.
 
 ### Mid-Session Update
 
@@ -103,7 +103,7 @@ Toggling the flag sends a CONFIG_UPDATE message over BLE:
 ```json
 {
   "richMediaEnabled": false,
-  "richMediaEnabledAt": 1773699000
+  "richMediaEnabledChangedAt": 1773699000
 }
 ```
 
@@ -131,7 +131,7 @@ Toggle in settings on both platforms, next to existing auto-copy toggle. Label: 
 {
   "settings": {
     "richMediaEnabled": true,
-    "richMediaEnabledAt": 1773698112
+    "richMediaEnabledChangedAt": 1773698112
   }
 }
 ```
@@ -230,6 +230,7 @@ TCP server is torn down on whichever comes first:
 3. Transfer timeout (120s)
 4. BLE session disconnects
 5. ERROR received from sender
+6. New OFFER received (implicit cancellation of current transfer — see Concurrent Transfer Handling)
 
 The server never lingers.
 
