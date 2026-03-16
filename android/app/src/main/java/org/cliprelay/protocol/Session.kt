@@ -162,9 +162,12 @@ class Session(
      * Compute ECDH shared secret and derive session key, then drop ephemeral private key.
      */
     private fun deriveSessionKeyAndCleanup(remoteEkBytes: ByteArray) {
-        val ephPriv = ephemeralKeyPair!!.private
+        val ephPriv = ephemeralKeyPair?.private
+            ?: throw ProtocolException("No ephemeral key pair available")
+        val secretHex = sharedSecretHex
+            ?: throw ProtocolException("No shared secret available for session key derivation")
         val ecdhResult = E2ECrypto.rawX25519(ephPriv, remoteEkBytes)
-        val sharedSecretBytes = E2ECrypto.hexToBytes(sharedSecretHex!!)
+        val sharedSecretBytes = E2ECrypto.hexToBytes(secretHex)
         sessionKey = E2ECrypto.deriveSessionKey(sharedSecretBytes, ecdhResult)
         // Drop ephemeral private key
         ephemeralKeyPair = null

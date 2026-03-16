@@ -620,6 +620,147 @@ class SessionTest {
         cleanup(env)
     }
 
+    // ── Pairing + v2 handshake integration test ─────────────────────
+
+    @Test
+    fun `pairing followed by v2 handshake and clipboard transfer succeeds`() {
+        // Android is always the pairing RESPONDER. Mac is the pairing INITIATOR.
+        // Since we can only run Android Session objects here, we simulate the
+        // Mac's pairing role manually (sending KEY_CONFIRM) and let the Android
+        // Session handle the full pairing → v2 handshake transition.
+
+        // Pipes: "Mac" (manual) ↔ Android (Session)
+        val toAndroidOut = PipedOutputStream()
+        val toAndroidIn = PipedInputStream(toAndroidOut)
+        val fromAndroidOut = PipedOutputStream()
+        val fromAndroidIn = PipedInputStream(fromAndroidOut)
+
+        // Generate pairing key pairs (simulating QR code exchange)
+        val macPairingKeyPair = E2ECrypto.generateX25519KeyPair()
+        val androidPairingKeyPair = E2ECrypto.generateX25519KeyPair()
+        val macPubRaw = E2ECrypto.x25519PublicKeyToRaw(macPairingKeyPair.public)
+        val androidPubRaw = E2ECrypto.x25519PublicKeyToRaw(androidPairingKeyPair.public)
+
+        val readyLatch = CountDownLatch(1)
+        var pairingSecret: ByteArray? = null
+
+        val callback = TestCallback()
+        callback.onPairing = { secret, _ -> pairingSecret = secret }
+        callback.onReady = { readyLatch.countDown() }
+
+        // Android session in pairing responder mode
+        val androidSession = Session(
+            input = toAndroidIn,
+            output = fromAndroidOut,
+            isInitiator = false,
+            callback = callback,
+            mode = SessionMode.Pairing(
+                ownPrivateKey = androidPairingKeyPair.private,
+                ownPublicKeyRaw = androidPubRaw,
+                remotePublicKeyRaw = macPubRaw
+            )
+        )
+
+        val sessionThread = Thread {
+            androidSession.performHandshake()
+            androidSession.listenForMessages()
+        }.apply { isDaemon = true; start() }
+
+        // --- Simulate Mac pairing initiator ---
+
+        // 1. Read KEY_EXCHANGE from Android
+        val keyExchange = MessageCodec.decode(fromAndroidIn)
+        assertEquals(MessageType.KEY_EXCHANGE, keyExchange.type)
+        val exchangeJson = JSONObject(String(keyExchange.payload))
+        val remotePubHex = exchangeJson.getString("pubkey")
+
+        // 2. Compute ECDH shared secret (same as Mac would)
+        val sharedSecret = E2ECrypto.ecdhSharedSecret(
+            macPairingKeyPair.private, E2ECrypto.hexToBytes(remotePubHex)
+        )
+
+        // 3. Send KEY_CONFIRM (encrypted "cliprelay-paired")
+        val encKey = E2ECrypto.deriveKey(sharedSecret)
+        val confirmPayload = E2ECrypto.seal("cliprelay-paired".toByteArray(), encKey)
+        MessageCodec.write(toAndroidOut, Message(MessageType.KEY_CONFIRM, confirmPayload))
+
+        // --- Now simulate Mac v2 HELLO handshake ---
+
+        // 4. Read Android's v2 HELLO (sent after pairing completes)
+        //    Actually, Android is the responder, so it waits for HELLO first.
+        //    We need to send a v2 HELLO and then read the v2 WELCOME.
+
+        // Derive auth key from the shared secret (same as Mac would)
+        val authKey = E2ECrypto.deriveAuthKey(sharedSecret)
+
+        // Generate Mac ephemeral key for v2 handshake
+        val macEphKeyPair = E2ECrypto.generateX25519KeyPair()
+        val macEphPubRaw = E2ECrypto.x25519PublicKeyToRaw(macEphKeyPair.public)
+        val macEphPubHex = macEphPubRaw.joinToString("") { "%02x".format(it) }
+        val macAuthHex = E2ECrypto.hmacAuth(macEphPubRaw, authKey)
+            .joinToString("") { "%02x".format(it) }
+
+        val helloJson = JSONObject().apply {
+            put("version", 2)
+            put("ek", macEphPubHex)
+            put("auth", macAuthHex)
+        }
+        MessageCodec.write(toAndroidOut, Message(MessageType.HELLO, helloJson.toString().toByteArray()))
+
+        // 5. Read v2 WELCOME from Android
+        val welcome = MessageCodec.decode(fromAndroidIn)
+        assertEquals(MessageType.WELCOME, welcome.type)
+        val welcomeJson = JSONObject(String(welcome.payload))
+        assertEquals(2, welcomeJson.getInt("version"))
+        assertTrue("WELCOME should have ek", welcomeJson.has("ek"))
+        assertTrue("WELCOME should have auth", welcomeJson.has("auth"))
+
+        // Verify Android's auth
+        val androidEkHex = welcomeJson.getString("ek")
+        val androidEkBytes = E2ECrypto.hexToBytes(androidEkHex)
+        val androidAuthHex = welcomeJson.getString("auth")
+        val androidAuthBytes = E2ECrypto.hexToBytes(androidAuthHex)
+        assertTrue("Android auth should verify",
+            E2ECrypto.verifyAuth(androidEkBytes, authKey, androidAuthBytes))
+
+        // Wait for Android session to be ready
+        assertTrue("Android session should become ready after pairing + v2 handshake",
+            readyLatch.await(10, TimeUnit.SECONDS))
+
+        // Verify pairing secret was derived
+        assertNotNull("Android should have pairing secret", pairingSecret)
+
+        // 6. Send encrypted clipboard to verify session key works
+        // Derive session key (same as Mac would)
+        val ecdhResult = E2ECrypto.rawX25519(macEphKeyPair.private, androidEkBytes)
+        val sessionKey = E2ECrypto.deriveSessionKey(sharedSecret, ecdhResult)
+
+        // Send OFFER + PAYLOAD
+        val plaintext = "Pairing test clipboard".toByteArray()
+        val plaintextHash = Session.sha256Hex(plaintext)
+        val encrypted = E2ECrypto.seal(plaintext, sessionKey)
+        val offerJson = JSONObject().apply {
+            put("hash", plaintextHash)
+            put("size", plaintext.size)
+            put("type", "text/plain")
+        }
+        MessageCodec.write(toAndroidOut, Message(MessageType.OFFER, offerJson.toString().toByteArray()))
+
+        // Read ACCEPT
+        val accept = MessageCodec.decode(fromAndroidIn)
+        assertEquals(MessageType.ACCEPT, accept.type)
+
+        // Send PAYLOAD
+        MessageCodec.write(toAndroidOut, Message(MessageType.PAYLOAD, encrypted))
+
+        // Read DONE
+        val done = MessageCodec.decode(fromAndroidIn)
+        assertEquals(MessageType.DONE, done.type)
+
+        androidSession.close()
+        sessionThread.join(2000)
+    }
+
     // ── Test infrastructure ──────────────────────────────────────────
 
     data class SessionEnv(
