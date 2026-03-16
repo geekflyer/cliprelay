@@ -70,6 +70,54 @@ object E2ECrypto {
         return hkdf(rawSecret, "cliprelay-ecdh-v1", 32)
     }
 
+    fun deriveAuthKey(secretBytes: ByteArray): SecretKey {
+        val keyBytes = hkdf(secretBytes, "cliprelay-auth-v2", 32)
+        return SecretKeySpec(keyBytes, "HmacSHA256")
+    }
+
+    fun deriveSessionKey(secretBytes: ByteArray, ecdhResult: ByteArray): SecretKey {
+        val ikm = secretBytes + ecdhResult
+        val keyBytes = hkdf(ikm, "cliprelay-session-v2", 32)
+        return SecretKeySpec(keyBytes, "AES")
+    }
+
+    fun hmacAuth(publicKeyBytes: ByteArray, authKey: SecretKey): ByteArray {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(authKey)
+        return mac.doFinal(publicKeyBytes)
+    }
+
+    fun verifyAuth(publicKeyBytes: ByteArray, authKey: SecretKey, expected: ByteArray): Boolean {
+        val computed = hmacAuth(publicKeyBytes, authKey)
+        return java.security.MessageDigest.isEqual(computed, expected)
+    }
+
+    /** Compute raw X25519 shared secret (no HKDF wrapping). Production overload using JCA PrivateKey. */
+    fun rawX25519(ownPrivateKey: PrivateKey, remotePublicKeyRaw: ByteArray): ByteArray {
+        val remotePub = x25519PublicKeyFromRaw(remotePublicKeyRaw)
+        val ka = JKeyAgreement.getInstance("X25519")
+        ka.init(ownPrivateKey)
+        ka.doPhase(remotePub, true)
+        return ka.generateSecret()
+    }
+
+    /** Compute raw X25519 shared secret from raw private key bytes. Test-only overload. */
+    fun rawX25519(ownPrivateKeyRaw: ByteArray, remotePublicKeyRaw: ByteArray): ByteArray {
+        val remotePub = x25519PublicKeyFromRaw(remotePublicKeyRaw)
+        // PKCS#8 header for X25519 private key
+        val pkcs8Header = byteArrayOf(
+            0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e,
+            0x04, 0x22, 0x04, 0x20
+        )
+        val encoded = pkcs8Header + ownPrivateKeyRaw
+        val privKey = KeyFactory.getInstance("X25519")
+            .generatePrivate(java.security.spec.PKCS8EncodedKeySpec(encoded))
+        val ka = JKeyAgreement.getInstance("X25519")
+        ka.init(privKey)
+        ka.doPhase(remotePub, true)
+        return ka.generateSecret()
+    }
+
     fun seal(plaintext: ByteArray, key: SecretKey): ByteArray {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)

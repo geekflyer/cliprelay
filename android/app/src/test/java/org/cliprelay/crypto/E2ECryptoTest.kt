@@ -1,10 +1,14 @@
 package org.cliprelay.crypto
 
+import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.security.MessageDigest
 
 class E2ECryptoTest {
@@ -113,6 +117,99 @@ class E2ECryptoTest {
         val reconstructed = E2ECrypto.x25519PublicKeyFromRaw(raw)
         val rawAgain = E2ECrypto.x25519PublicKeyToRaw(reconstructed)
         assertArrayEquals(raw, rawAgain)
+    }
+
+    // --- v2 session key derivation (cross-platform fixture: v2_session_fixture.json) ---
+
+    private fun loadV2SessionFixture(): JSONObject {
+        val path = "test-fixtures/protocol/l2cap/v2_session_fixture.json"
+        val file = findUpwards(path)
+            ?: error("Could not locate fixture file: $path from ${System.getProperty("user.dir")}")
+        return JSONObject(file.readText())
+    }
+
+    private fun findUpwards(relativePath: String): File? {
+        var current = File(System.getProperty("user.dir") ?: ".").absoluteFile
+        while (true) {
+            val candidate = File(current, relativePath)
+            if (candidate.exists()) return candidate
+            val parent = current.parentFile ?: return null
+            if (parent == current) return null
+            current = parent
+        }
+    }
+
+    @Test
+    fun rawX25519MatchesFixture() {
+        val fixture = loadV2SessionFixture()
+        val keyPairs = fixture.getJSONObject("key_pairs")
+        val alicePriv = E2ECrypto.hexToBytes(keyPairs.getJSONObject("mac_ephemeral").getString("private_hex"))
+        val bobPub = E2ECrypto.hexToBytes(keyPairs.getJSONObject("android_ephemeral").getString("public_hex"))
+        val expectedRawEcdh = fixture.getJSONObject("derivation").getString("raw_ecdh")
+
+        val rawEcdh = E2ECrypto.rawX25519(alicePriv, bobPub)
+        assertEquals(expectedRawEcdh, rawEcdh.toHex())
+    }
+
+    @Test
+    fun deriveAuthKeyMatchesFixture() {
+        val fixture = loadV2SessionFixture()
+        val sharedSecret = E2ECrypto.hexToBytes(fixture.getString("shared_secret"))
+        val expectedAuthKey = fixture.getJSONObject("derivation").getString("auth_key")
+
+        val authKey = E2ECrypto.deriveAuthKey(sharedSecret)
+        assertEquals(expectedAuthKey, authKey.encoded.toHex())
+    }
+
+    @Test
+    fun hmacAuthMatchesFixture() {
+        val fixture = loadV2SessionFixture()
+        val sharedSecret = E2ECrypto.hexToBytes(fixture.getString("shared_secret"))
+        val macPubKey = E2ECrypto.hexToBytes(
+            fixture.getJSONObject("key_pairs").getJSONObject("mac_ephemeral").getString("public_hex")
+        )
+        val expectedAuthMac = fixture.getJSONObject("derivation").getString("auth_mac")
+
+        val authKey = E2ECrypto.deriveAuthKey(sharedSecret)
+        val authMac = E2ECrypto.hmacAuth(macPubKey, authKey)
+        assertEquals(expectedAuthMac, authMac.toHex())
+    }
+
+    @Test
+    fun verifyAuthAcceptsCorrectHmac() {
+        val fixture = loadV2SessionFixture()
+        val sharedSecret = E2ECrypto.hexToBytes(fixture.getString("shared_secret"))
+        val macPubKey = E2ECrypto.hexToBytes(
+            fixture.getJSONObject("key_pairs").getJSONObject("mac_ephemeral").getString("public_hex")
+        )
+        val expectedAuthMac = E2ECrypto.hexToBytes(fixture.getJSONObject("derivation").getString("auth_mac"))
+
+        val authKey = E2ECrypto.deriveAuthKey(sharedSecret)
+        assertTrue(E2ECrypto.verifyAuth(macPubKey, authKey, expectedAuthMac))
+    }
+
+    @Test
+    fun verifyAuthRejectsWrongHmac() {
+        val fixture = loadV2SessionFixture()
+        val sharedSecret = E2ECrypto.hexToBytes(fixture.getString("shared_secret"))
+        val macPubKey = E2ECrypto.hexToBytes(
+            fixture.getJSONObject("key_pairs").getJSONObject("mac_ephemeral").getString("public_hex")
+        )
+        val wrongMac = ByteArray(32) { 0xFF.toByte() }
+
+        val authKey = E2ECrypto.deriveAuthKey(sharedSecret)
+        assertFalse(E2ECrypto.verifyAuth(macPubKey, authKey, wrongMac))
+    }
+
+    @Test
+    fun deriveSessionKeyMatchesFixture() {
+        val fixture = loadV2SessionFixture()
+        val sharedSecret = E2ECrypto.hexToBytes(fixture.getString("shared_secret"))
+        val rawEcdh = E2ECrypto.hexToBytes(fixture.getJSONObject("derivation").getString("raw_ecdh"))
+        val expectedSessionKey = fixture.getJSONObject("derivation").getString("session_key")
+
+        val sessionKey = E2ECrypto.deriveSessionKey(sharedSecret, rawEcdh)
+        assertEquals(expectedSessionKey, sessionKey.encoded.toHex())
     }
 
     // --- Cross-platform ECDH interop (must match macOS E2ECryptoKeyDerivationTests.swift) ---
