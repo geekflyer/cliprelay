@@ -31,17 +31,20 @@ Android: WELCOME {"version":2, "name":"Pixel 9 Pro",     "ek":"<ephemeral pubkey
 
 Fields:
 - `ek`: 64-char hex string — raw 32-byte X25519 ephemeral public key
-- `auth`: 64-char hex string — HMAC-SHA256 of the ephemeral public key bytes, keyed with `auth_key`
+- `auth`: 64-char hex string — `HMAC-SHA256(key=auth_key, msg=ephemeral_public_key_bytes)`
 
 ### Key derivation
 
 ```
-auth_key     = HKDF(shared_secret, info="cliprelay-auth-v2",    length=32)
-ecdh_result  = X25519(own_ephemeral_private, remote_ephemeral_public)
-session_key  = HKDF(shared_secret || ecdh_result, info="cliprelay-session-v2", length=32)
+auth_key     = HKDF(ikm=shared_secret, salt=zeros, info="cliprelay-auth-v2",    length=32)
+ecdh_result  = raw_X25519(own_ephemeral_private, remote_ephemeral_public)
+session_key  = HKDF(ikm=shared_secret || ecdh_result, salt=zeros, info="cliprelay-session-v2", length=32)
 ```
 
-The session key derivation includes the shared secret so that even if ephemeral keys are compromised (e.g., weak RNG), the session key still can't be derived without the long-term secret.
+Notes:
+- All HKDF derivations use an all-zeros salt, consistent with the existing `hkdf()` implementations on both platforms.
+- `ecdh_result` is the **raw** X25519 output (32 bytes). Do NOT use the existing `ecdhSharedSecret()` helper, which wraps the result in an additional HKDF with info `"cliprelay-ecdh-v1"`. The raw output is fed directly into the session key HKDF, which provides the necessary key stretching.
+- The session key derivation includes the shared secret so that even if ephemeral keys are compromised (e.g., weak RNG), the session key still can't be derived without the long-term secret.
 
 AAD for AES-GCM changes from `"cliprelay-v1"` to `"cliprelay-v2"` to ensure v1 ciphertext can't be accepted by a v2 session.
 
@@ -60,13 +63,13 @@ AAD for AES-GCM changes from `"cliprelay-v1"` to `"cliprelay-v2"` to ensure v1 c
 ### Mac (initiator)
 
 1. Generate ephemeral X25519 key pair
-2. Compute `auth = HMAC-SHA256(ephemeral_public_bytes, auth_key)`
+2. Compute `auth = HMAC-SHA256(key=auth_key, msg=ephemeral_public_bytes)`
 3. Send HELLO with `version`, `name`, `ek`, `auth`
 4. Receive WELCOME — validate:
    - `version == 2` (else version mismatch error)
    - `ek` present and 64 hex chars
-   - `auth` verifies against remote's `ek` using `auth_key`
-5. Compute `ecdh_result = X25519(own_ephemeral_private, remote_ek)`
+   - `auth` verifies against remote's `ek` using `auth_key` (constant-time comparison)
+5. Compute `ecdh_result = raw_X25519(own_ephemeral_private, remote_ek)`
 6. Derive `session_key`
 7. Drop ephemeral private key
 
@@ -75,11 +78,11 @@ AAD for AES-GCM changes from `"cliprelay-v1"` to `"cliprelay-v2"` to ensure v1 c
 1. Receive HELLO — validate:
    - `version == 2` (else version mismatch error)
    - `ek` present and 64 hex chars
-   - `auth` verifies against remote's `ek` using `auth_key`
+   - `auth` verifies against remote's `ek` using `auth_key` (constant-time comparison)
 2. Generate ephemeral X25519 key pair
-3. Compute `auth = HMAC-SHA256(ephemeral_public_bytes, auth_key)`
+3. Compute `auth = HMAC-SHA256(key=auth_key, msg=ephemeral_public_bytes)`
 4. Send WELCOME with `version`, `name`, `ek`, `auth`
-5. Compute `ecdh_result = X25519(own_ephemeral_private, remote_ek)`
+5. Compute `ecdh_result = raw_X25519(own_ephemeral_private, remote_ek)`
 6. Derive `session_key`
 7. Drop ephemeral private key
 
@@ -97,6 +100,10 @@ The session key is owned by the `Session` object. The service layer (AppDelegate
 - The `onClipboardReceived` callback delivers **plaintext** instead of encrypted blobs
 
 This simplifies the service layer (no more encrypt-then-send / receive-then-decrypt) and ensures the session key never leaks outside the Session object.
+
+### Hash computation
+
+The `hash` field in OFFER/DONE messages is computed over **plaintext** (before encryption). This ensures that identical clipboard content deduplicates correctly regardless of session key (AES-GCM produces different ciphertext each time due to random nonces, so hashing ciphertext would break dedup).
 
 ---
 
@@ -142,8 +149,9 @@ The pairing flow (KEY_EXCHANGE / KEY_CONFIRM) is unchanged. Pairing still establ
 
 - Add `deriveAuthKey(secretBytes:) -> key` — `HKDF(secret, "cliprelay-auth-v2", 32)`
 - Add `deriveSessionKey(secretBytes:, ecdhResult:) -> key` — `HKDF(secret || ecdhResult, "cliprelay-session-v2", 32)`
-- Add `hmacAuth(publicKeyBytes:, authKey:) -> Data` — `HMAC-SHA256(publicKeyBytes, authKey)`
-- Add `verifyAuth(publicKeyBytes:, authKey:, expected:) -> Bool`
+- Add `hmacAuth(publicKeyBytes:, authKey:) -> Data` — `HMAC-SHA256(key=authKey, msg=publicKeyBytes)`
+- Add `verifyAuth(publicKeyBytes:, authKey:, expected:) -> Bool` — constant-time comparison (use `MessageDigest.isEqual()` on Android, CryptoKit's built-in comparison on macOS)
+- Add `rawX25519(ownPrivate:, remotePublic:) -> Data` — raw X25519 output without the extra HKDF that `ecdhSharedSecret()` applies
 - Update AAD constant from `"cliprelay-v1"` to `"cliprelay-v2"`
 
 ### Session (both platforms)
@@ -162,6 +170,7 @@ The pairing flow (KEY_EXCHANGE / KEY_CONFIRM) is unchanged. Pairing still establ
 - Pass shared secret to Session instead of encrypting/decrypting externally
 - `onClipboardChange()` sends plaintext to session
 - `session(_:didReceiveClipboard:hash:)` receives plaintext
+- `pendingClipboardPayload` switches from storing ciphertext to storing plaintext. On reconnect, the plaintext is re-encrypted with the new session's key — this is the correct behavior (new session = new ephemeral keys = new session key)
 - Remove `pairingManager.encryptionKey(for:)` calls from clipboard path
 - Handle `versionMismatch` distinctly in `session(_:didFailWithError:)` — show update prompt
 
@@ -170,7 +179,7 @@ The pairing flow (KEY_EXCHANGE / KEY_CONFIRM) is unchanged. Pairing still establ
 - Pass shared secret to Session instead of encrypting/decrypting externally
 - `pushPlainTextToMac()` sends plaintext to session
 - `onClipboardReceived()` receives plaintext
-- Remove `encryptionKey` field and all `E2ECrypto.seal`/`E2ECrypto.open` calls from clipboard path
+- Replace `encryptionKey` field with an `isPaired: Boolean` check (e.g., `pairingStore.loadSharedSecret() != null`) — the field currently doubles as a "is paired" sentinel for BLE lifecycle decisions in `ensureBleComponentsState()` and `onCreate()`. Remove all `E2ECrypto.seal`/`E2ECrypto.open` calls from clipboard path
 - Handle version mismatch in `onSessionError()` — broadcast `ACTION_VERSION_MISMATCH`
 - UI layer shows update dialog on version mismatch
 
@@ -190,7 +199,7 @@ The pairing flow (KEY_EXCHANGE / KEY_CONFIRM) is unchanged. Pairing still establ
 - Add test: wrong HMAC → protocolError
 - Add test: missing `ek` → protocolError
 - Add test: version 1 HELLO → versionMismatch error
-- Add test: end-to-end clipboard transfer with session-internal encryption/decryption
+- Add test: two paired sessions derive identical session keys (verified by successful end-to-end clipboard transfer with session-internal encryption/decryption)
 
 ---
 
