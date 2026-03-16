@@ -7,41 +7,30 @@
 
 ## Executive Summary
 
-ClipRelay implements a BLE-based clipboard relay between macOS and Android using AES-256-GCM encryption with HKDF-derived keys, shared via a QR code pairing flow. The cryptographic primitives are well-chosen and correctly implemented. The primary weaknesses are at the protocol design layer (unauthenticated handshake, no forward secrecy). No immediately exploitable remote vulnerabilities were found — all attacks require BLE proximity or local access.
+ClipRelay implements a BLE-based clipboard relay between macOS and Android using AES-256-GCM encryption with HKDF-derived keys, shared via a QR code pairing flow. The cryptographic primitives are well-chosen and correctly implemented. The protocol v2 handshake provides per-session forward secrecy and mutual HMAC authentication. No immediately exploitable remote vulnerabilities were found — all attacks require BLE proximity or local access.
 
 ### Changes since last review (2026-03-03)
 
 - **Removed (fixed):** H-3 (debug file logger to `/tmp`) — `debugLog()` replaced with `os.Logger` exclusively.
-- **Downgraded:** H-1 (replay protection) from HIGH to L-10. Impact is limited to stale clipboard text; comparable apps don't implement bespoke replay protection; largely subsumed by M-11 forward secrecy proposal.
+- **Removed (fixed):** H-1 (unauthenticated handshake) — protocol v2 adds HMAC-SHA256 mutual authentication in HELLO/WELCOME. Rogue devices are rejected at handshake.
+- **Removed (fixed):** M-11 (no forward secrecy) — protocol v2 adds per-session ephemeral X25519 key exchange. Session keys are derived from both the long-term shared secret and an ephemeral ECDH result. Ephemeral private keys are discarded immediately after derivation.
+- **Downgraded:** Old H-1 (replay protection) to L-10. Impact limited to stale clipboard text; largely subsumed by forward secrecy (captured frames from prior sessions are undecryptable).
 - **Removed (fixed):** L-7 `PsmGattServer.kt` reference — file no longer exists. Updated to reference only `ClipRelayService.kt`.
-- **Added:** M-11 — No forward secrecy (long-term shared secret used indefinitely without session key rotation).
-- Renumbered: H-2→H-1, H-4→H-2.
+- Renumbered: H-4→H-1 (insecure L2CAP, accepted risk).
 
 ---
 
 ## Findings
 
-### HIGH
+### MEDIUM
 
-#### H-1: Handshake has no cryptographic authentication
-
-**Files:** `macos/.../Protocol/Session.swift:118-142`, `android/.../protocol/Session.kt:106-130`
-
-The HELLO/WELCOME exchange only transmits `{"version": 1, "name": "..."}`. No HMAC, challenge-response, or proof-of-possession of the shared pairing token. Any BLE device in range can complete the handshake. Authentication is implicit only — a rogue device would fail at AES-GCM decryption, but the session is already established and the legitimate peer may be blocked from connecting.
-
-**Fix:** Add a challenge-response step: each side sends a random nonce, the other side responds with `HMAC(nonce, derived_auth_key)` to prove possession of the shared secret before exchanging clipboard data.
-
-#### H-2: Insecure L2CAP channel (no BLE-level encryption) — ACCEPTED RISK
+#### M-0: Insecure L2CAP channel (no BLE-level encryption) — ACCEPTED RISK
 
 **Files:** `android/.../ble/L2capServer.kt:30`
 
 Uses `adapter.listenUsingInsecureL2capChannel()`. This is an intentional design choice (app-layer AES-256-GCM provides encryption), but the BLE link layer is unencrypted. Traffic metadata (message sizes, timing) is visible to nearby observers, and active MITM can selectively drop or delay messages.
 
 **Resolution:** Accepted risk. Using the secure L2CAP variant would require BLE bonding, which adds UX friction and compatibility issues across Android versions. App-layer AES-256-GCM provides strong confidentiality and integrity guarantees.
-
----
-
-### MEDIUM
 
 #### M-1: HKDF used without salt on both platforms — ACCEPTED
 
@@ -123,23 +112,6 @@ External CSS from `fonts.googleapis.com` without `integrity` attribute. SRI is i
 
 **Fix:** Self-host the Inter and Outfit WOFF2 files.
 
-#### M-11: No forward secrecy (NEW)
-
-**Files:** `macos/.../Crypto/E2ECrypto.swift`, `android/.../crypto/E2ECrypto.kt`, `macos/.../Protocol/Session.swift`, `android/.../protocol/Session.kt`
-
-The shared secret established during ECDH pairing is used indefinitely for all subsequent encryption. There is no per-session ephemeral key exchange or key rotation. If the shared secret is ever extracted (device theft + Keychain/EncryptedSharedPreferences compromise), an attacker who also captured BLE traffic could decrypt all past and future clipboard transfers.
-
-**Fix:** Add a per-session ephemeral ECDH exchange to the handshake. No re-pairing required — this is transparent to the user:
-
-1. During each HELLO/WELCOME handshake, both sides generate a fresh ephemeral X25519 key pair and include the public key in the handshake message.
-2. Each side computes an ephemeral ECDH shared secret from the exchanged keys.
-3. The session encryption key is derived from both the long-term shared secret and the ephemeral result: `HKDF(longTermSecret || ephemeralSecret, "cliprelay-session-v1")`.
-4. Ephemeral private keys are discarded immediately after derivation.
-
-BLE connections already drop and reconnect frequently, so session keys rotate naturally. This also addresses **H-2** (unauthenticated handshake) if the ephemeral exchange is authenticated with the long-term secret — e.g., each side HMACs its ephemeral public key with the long-term key before sending.
-
-**Cost:** One extra round-trip during handshake (~50-100ms), and a protocol version bump.
-
 ---
 
 ### LOW
@@ -155,16 +127,20 @@ BLE connections already drop and reconnect frequently, so session keys rotate na
 | L-7 | `Log.w` statements expose PSM and connection state in release logcat | `ClipRelayService.kt` |
 | L-8 | ProGuard rules file is empty — no log stripping configured | `android/app/proguard-rules.pro` |
 | L-9 | `security-crypto` uses alpha version `1.1.0-alpha06` | `android/app/build.gradle.kts:173` |
-| L-10 | No explicit replay protection at protocol layer — attacker in BLE range could replay captured ciphertext after app restart. Impact limited to stale clipboard text reappearing. Mitigated by AES-GCM random nonces, single-hash dedup, and largely subsumed by M-11 (per-session ephemeral keys would make captured frames undecryptable). Comparable apps (KDE Connect, etc.) do not implement bespoke replay protection either. | `Session.swift`, `Session.kt` |
+| L-10 | No explicit replay protection at protocol layer — attacker in BLE range could replay captured ciphertext within the same session. Impact limited to stale clipboard text reappearing. Mitigated by AES-GCM random nonces, single-hash dedup, and forward secrecy (captured frames from prior sessions are undecryptable with different session keys). Comparable apps (KDE Connect, etc.) do not implement bespoke replay protection either. | `Session.swift`, `Session.kt` |
 
 ---
 
 ## What's Done Well
 
-- **AES-256-GCM** with HKDF domain separation (`cliprelay-enc-v1` vs `cliprelay-tag-v1`) and AAD (`cliprelay-v1`)
+- **AES-256-GCM** with HKDF domain separation (`cliprelay-enc-v1`, `cliprelay-tag-v1`, `cliprelay-auth-v2`, `cliprelay-session-v2`) and AAD (`cliprelay-v2`)
+- **Per-session forward secrecy** — ephemeral X25519 key exchange on every HELLO/WELCOME handshake; session keys derived from long-term secret + ephemeral ECDH; ephemeral private keys discarded immediately after derivation
+- **HMAC-SHA256 mutual authentication** — both sides prove possession of the shared secret during handshake; rogue devices rejected before any clipboard data flows
+- **Constant-time HMAC verification** — `MessageDigest.isEqual()` (Android), `HMAC.isValidAuthenticationCode()` (macOS)
 - **X25519 ECDH** pairing with ephemeral keys cleared after use
 - **KEY_CONFIRM verification** — encrypted known plaintext proves both sides derived the same key, preventing silent MITM during pairing
-- **Cross-platform test vectors** for crypto interoperability
+- **Cross-platform test vectors** for crypto interoperability (golden fixtures for v1 ECDH and v2 session key derivation)
+- **Version mismatch UX** — both platforms detect protocol version incompatibility and prompt users to update
 - **`android:allowBackup="false"`**, package-scoped broadcasts, unexported services
 - **`os.Logger`** used exclusively on macOS (no file-based debug logging)
 - **No XSS vectors** in website JS — zero `innerHTML`/`eval`/`document.write` usage
@@ -195,7 +171,7 @@ BLE connections already drop and reconnect frequently, so session keys rotate na
 6. **M-9** — Add CSP meta tags to website
 7. **M-10** — Self-host Google Fonts
 
-### Significant effort (protocol changes)
+### Done
 
-8. **H-1** — Add mutual authentication (challenge-response) to handshake
-9. **M-11** — Add per-session ephemeral key exchange for forward secrecy (also addresses H-1 and L-10)
+- ~~**H-1** — Mutual authentication~~ — Fixed in protocol v2 (HMAC-SHA256 in HELLO/WELCOME)
+- ~~**M-11** — Forward secrecy~~ — Fixed in protocol v2 (per-session ephemeral X25519 ECDH)
