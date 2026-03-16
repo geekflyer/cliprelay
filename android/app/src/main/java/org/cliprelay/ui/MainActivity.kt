@@ -50,6 +50,9 @@ class MainActivity : AppCompatActivity() {
                     val fromMac = intent.getBooleanExtra(ClipRelayService.EXTRA_FROM_MAC, true)
                     viewModel.onClipboardTransfer(fromMac)
                 }
+                ClipRelayService.ACTION_VERSION_MISMATCH -> {
+                    viewModel.onVersionMismatch()
+                }
             }
         }
     }
@@ -114,6 +117,11 @@ class MainActivity : AppCompatActivity() {
             val autoClearEnabled by viewModel.autoClearEnabled.collectAsState()
             val autoCopyEnabled by viewModel.autoCopyEnabled.collectAsState()
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
+            val showVersionMismatch by viewModel.showVersionMismatch.collectAsState()
+
+            if (showVersionMismatch) {
+                VersionMismatchDialog(onDismiss = { viewModel.onVersionMismatchDismissed() })
+            }
 
             ClipRelayScreen(
                 state = state,
@@ -166,6 +174,7 @@ class MainActivity : AppCompatActivity() {
         val filter = IntentFilter(ClipRelayService.ACTION_CONNECTION_STATE).also {
             it.addAction(ClipRelayService.ACTION_PAIRING_COMPLETE)
             it.addAction(ClipRelayService.ACTION_CLIPBOARD_TRANSFER)
+            it.addAction(ClipRelayService.ACTION_VERSION_MISMATCH)
         }
         ContextCompat.registerReceiver(
             this,

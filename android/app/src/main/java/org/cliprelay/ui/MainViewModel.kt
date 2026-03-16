@@ -31,6 +31,9 @@ class MainViewModel : ViewModel() {
     private val _autoCopyAccessibilityEnabled = MutableStateFlow(false)
     val autoCopyAccessibilityEnabled: StateFlow<Boolean> = _autoCopyAccessibilityEnabled.asStateFlow()
 
+    private val _showVersionMismatch = MutableStateFlow(false)
+    val showVersionMismatch: StateFlow<Boolean> = _showVersionMismatch.asStateFlow()
+
     // Emits true = Mac→Android, false = Android→Mac
     private val _clipboardTransfer = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val clipboardTransfer: SharedFlow<Boolean> = _clipboardTransfer
@@ -80,5 +83,13 @@ class MainViewModel : ViewModel() {
 
     fun onAccessibilityStateChanged(enabled: Boolean) {
         _autoCopyAccessibilityEnabled.value = enabled
+    }
+
+    fun onVersionMismatch() {
+        _showVersionMismatch.value = true
+    }
+
+    fun onVersionMismatchDismissed() {
+        _showVersionMismatch.value = false
     }
 }

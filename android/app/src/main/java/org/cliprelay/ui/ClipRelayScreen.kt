@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -853,4 +854,21 @@ private fun FooterSection(isPaired: Boolean, onHelpClick: () -> Unit) {
             color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+// ─── Version Mismatch Dialog ──────────────────────────────────────────────────
+@Composable
+fun VersionMismatchDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Update Required") },
+        text = {
+            Text("Your Mac app needs to be updated to continue syncing. Download the latest version at cliprelay.org.")
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK")
+            }
+        }
+    )
 }
