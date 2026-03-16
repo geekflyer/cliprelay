@@ -47,6 +47,27 @@ class MessageCodecTest {
         assertRoundTrip(msg)
     }
 
+    @Test
+    fun roundTripConfigUpdate() {
+        val payload = """{"maxSize":1048576}""".toByteArray()
+        val msg = Message(MessageType.CONFIG_UPDATE, payload)
+        assertRoundTrip(msg)
+    }
+
+    @Test
+    fun roundTripReject() {
+        val payload = """{"reason":"too_large"}""".toByteArray()
+        val msg = Message(MessageType.REJECT, payload)
+        assertRoundTrip(msg)
+    }
+
+    @Test
+    fun roundTripError() {
+        val payload = """{"code":500,"message":"internal error"}""".toByteArray()
+        val msg = Message(MessageType.ERROR, payload)
+        assertRoundTrip(msg)
+    }
+
     @Test(expected = ProtocolException::class)
     fun decodeUnknownTypeThrows() {
         val encoded = hexToBytes("00000005ff74657374")
