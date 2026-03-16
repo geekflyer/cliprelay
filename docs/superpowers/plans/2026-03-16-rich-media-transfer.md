@@ -14,7 +14,9 @@
 
 Both platforms use a single-threaded listen loop that reads BLE messages sequentially. The existing text send flow (`doSendClipboard`) runs on this same loop: it writes OFFER, then reads ACCEPT, writes PAYLOAD, reads DONE — all synchronous on the same thread and stream. Image transfer follows the same pattern: `doSendImage` writes OFFER, reads ACCEPT/REJECT/ERROR, then does the TCP push on a separate thread, then reads DONE. Since the listen loop is single-threaded, there is no interleaving risk for BLE messages.
 
-All writes to the BLE output stream must go through the outbound queue (never direct `MessageCodec.write` calls), ensuring thread-safe serialization. The only exception is within `doSendImage`/`handleInboundImageOffer` which run on the listen loop thread itself.
+The outbound queue is used for *requests* from the UI/service thread (e.g. "send this image"). The listen loop dequeues requests and calls `doSendImage`/`handleInboundImageOffer`, which write protocol messages (OFFER, ACCEPT, DONE, ERROR, REJECT) **directly** to the output stream via `MessageCodec.write(output, msg)` — the same pattern as existing `doSendClipboard`. This is safe because they run on the listen loop thread, which is the only thread that reads/writes the BLE stream.
+
+In the code snippets below, `sendMessage(msg)` means `MessageCodec.write(output, msg)` — a direct, synchronous write on the listen loop thread. It does NOT go through the outbound queue.
 
 ### Timestamp Convention
 
@@ -1976,7 +1978,7 @@ git commit -m "test: add cross-platform image transfer test fixtures"
 
 ---
 
-### Task 30: Run full build and test suite
+### Task 31: Run full build and test suite
 
 **Files:** None (verification only)
 
@@ -1998,7 +2000,7 @@ Run: `adb get-state 2>/dev/null` — if "device", run `scripts/hardware-smoke-te
 
 ---
 
-### Task 31: End-to-end manual testing
+### Task 32: End-to-end manual testing
 
 - [ ] **Step 1: Test Mac → Android image transfer**
   - Copy an image on Mac
