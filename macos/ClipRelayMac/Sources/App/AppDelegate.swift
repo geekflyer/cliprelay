@@ -116,19 +116,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Clipboard Change → Session
 
     private func onClipboardChange(_ text: String) {
-        guard let token = connectedSecret else {
+        guard connectedSecret != nil else {
             appLogger.debug("[App] Clipboard changed but no connected device")
             return
         }
-        guard let key = pairingManager.encryptionKey(for: token) else {
-            appLogger.error("[App] No encryption key for connected token")
-            return
-        }
         guard let plainData = text.data(using: .utf8) else { return }
-        guard let encrypted = try? E2ECrypto.seal(plainData, key: key) else {
-            appLogger.error("[App] Failed to encrypt clipboard data")
-            return
-        }
 
         // Dedup: skip if we just received this exact text from the remote side
         let hash = SHA256.hash(data: Data(text.utf8))
@@ -139,15 +131,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Retain for retry after reconnect
-        pendingClipboardPayload = encrypted
+        // Retain for retry after reconnect (plaintext, in-memory only)
+        pendingClipboardPayload = plainData
 
         // Try to send immediately
         if let session = activeSession {
-            session.sendClipboard(encrypted)
-            appLogger.info("[App] Queued clipboard for send (\(encrypted.count) bytes)")
+            session.sendClipboard(plainData)
+            appLogger.info("[App] Queued clipboard for send (\(plainData.count) bytes)")
         } else {
-            appLogger.info("[App] Clipboard cached for send on reconnect (\(encrypted.count) bytes)")
+            appLogger.info("[App] Clipboard cached for send on reconnect (\(plainData.count) bytes)")
         }
     }
 
@@ -490,17 +482,9 @@ extension AppDelegate: SessionDelegate {
         }
     }
 
-    func session(_ session: Session, didReceivePlaintext encryptedBlob: Data, hash: String) {
-        guard let token = connectedSecret else {
+    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String) {
+        guard connectedSecret != nil else {
             appLogger.error("[App] Received clipboard but no connected token")
-            return
-        }
-        guard let key = pairingManager.encryptionKey(for: token) else {
-            appLogger.error("[App] No encryption key for token")
-            return
-        }
-        guard let plaintext = try? E2ECrypto.open(encryptedBlob, key: key) else {
-            appLogger.error("[App] Failed to decrypt received clipboard")
             return
         }
         guard let text = String(data: plaintext, encoding: .utf8) else {
@@ -558,6 +542,17 @@ extension AppDelegate: SessionDelegate {
 
     func session(_ session: Session, didFailWithError error: Error) {
         appLogger.error("[App] Session error: \(error.localizedDescription)")
+
+        if case SessionError.versionMismatch = error {
+            DispatchQueue.main.async { [weak self] in
+                self?.showBluetoothAlert(
+                    message: "App Update Required",
+                    info: "Your Android app needs to be updated to continue syncing. Update via Google Play."
+                )
+            }
+            return  // don't trigger normal error handling for version mismatch
+        }
+
         activeSession = nil
         sessionThread = nil
 
