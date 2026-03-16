@@ -1,14 +1,16 @@
 package org.cliprelay.service
 
-// Writes received text to the Android system clipboard on the main thread.
+// Writes received text or images to the Android system clipboard on the main thread.
 
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import androidx.core.content.FileProvider
+import java.io.File
 
-class ClipboardWriter(context: Context) {
+class ClipboardWriter(private val context: Context) {
     companion object {
         private const val CLIP_LABEL = "cliprelay"
     }
@@ -37,6 +39,27 @@ class ClipboardWriter(context: Context) {
                 }
             }
         }
+    }
+
+    fun writeImage(data: ByteArray, mimeType: String) {
+        val ext = when {
+            mimeType.contains("png") -> "png"
+            mimeType.contains("jpeg") || mimeType.contains("jpg") -> "jpg"
+            mimeType.contains("gif") -> "gif"
+            mimeType.contains("webp") -> "webp"
+            else -> "png"
+        }
+        val file = File(context.cacheDir, "cliprelay_image.$ext")
+        file.writeBytes(data)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        // Grant read permission broadly so any app can paste the image
+        context.grantUriPermission("*", uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val applyWrite = {
+            val clip = ClipData.newUri(context.contentResolver, CLIP_LABEL, uri)
+            runCatching { clipboard.setPrimaryClip(clip) }
+            Unit
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) applyWrite() else mainHandler.post(applyWrite)
     }
 
     private fun clipMatches(expectedText: String): Boolean {

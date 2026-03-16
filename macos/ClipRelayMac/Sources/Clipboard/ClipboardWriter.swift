@@ -1,4 +1,4 @@
-// Writes received text to the macOS system pasteboard.
+// Writes received text or images to the macOS system pasteboard.
 
 import AppKit
 
@@ -7,5 +7,11 @@ final class ClipboardWriter {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+
+    func writeImage(_ data: Data, type: NSPasteboard.PasteboardType) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setData(data, forType: type)
     }
 }

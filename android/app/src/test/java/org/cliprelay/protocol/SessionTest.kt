@@ -175,7 +175,7 @@ class SessionTest {
             assertEquals(expectedHash, hash)
             transferLatch.countDown()
         }
-        env.androidCallback.onReceived = { blob, hash ->
+        env.androidCallback.onReceived = { blob, hash, _ ->
             assertArrayEquals(testData, blob)
             assertEquals(expectedHash, hash)
             receivedLatch.countDown()
@@ -203,7 +203,7 @@ class SessionTest {
 
         env.macCallback.onReady = { readyLatch.countDown() }
         env.androidCallback.onReady = { readyLatch.countDown() }
-        env.macCallback.onReceived = { blob, hash ->
+        env.macCallback.onReceived = { blob, hash, _ ->
             receivedBlob = blob
             receivedHash = hash
             receivedLatch.countDown()
@@ -244,7 +244,7 @@ class SessionTest {
         }
 
         // Android should NOT receive onClipboardReceived for a dedup
-        env.androidCallback.onReceived = { _, _ ->
+        env.androidCallback.onReceived = { _, _, _ ->
             fail("Should not receive clipboard for duplicate")
         }
 
@@ -602,7 +602,7 @@ class SessionTest {
             assertEquals(expectedHash, hash)
             transferLatch.countDown()
         }
-        env.androidCallback.onReceived = { received, hash ->
+        env.androidCallback.onReceived = { received, hash, _ ->
             assertArrayEquals("Plaintext should match", plaintext, received)
             assertEquals("Hash should match", expectedHash, hash)
             receivedLatch.countDown()
@@ -852,15 +852,15 @@ class SessionTest {
 
     class TestCallback : SessionCallback {
         var onReady: () -> Unit = {}
-        var onReceived: (ByteArray, String) -> Unit = { _, _ -> }
+        var onReceived: (ByteArray, String, String) -> Unit = { _, _, _ -> }
         var onTransfer: (String) -> Unit = {}
         var onError: (Exception) -> Unit = {}
         var onPairing: (ByteArray, String?) -> Unit = { _, _ -> }
         val knownHashes = CopyOnWriteArrayList<String>()
 
         override fun onSessionReady() = onReady()
-        override fun onClipboardReceived(plaintext: ByteArray, hash: String) =
-            onReceived(plaintext, hash)
+        override fun onClipboardReceived(plaintext: ByteArray, hash: String, contentType: String) =
+            onReceived(plaintext, hash, contentType)
         override fun onTransferComplete(hash: String) = onTransfer(hash)
         override fun onSessionError(error: Exception) = onError(error)
         override fun hasHash(hash: String): Boolean = hash in knownHashes

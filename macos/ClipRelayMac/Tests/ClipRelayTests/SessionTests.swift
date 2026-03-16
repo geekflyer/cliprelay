@@ -642,7 +642,7 @@ final class TestSessionDelegate: SessionDelegate {
     var knownHashes = Set<String>()
 
     func sessionDidBecomeReady(_ session: Session) { onReady(session) }
-    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String) {
+    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String, contentType: String) {
         onReceived(session, plaintext, hash)
     }
     func session(_ session: Session, didCompleteTransfer hash: String) {

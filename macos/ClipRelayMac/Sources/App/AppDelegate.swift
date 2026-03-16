@@ -80,8 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Clipboard monitor triggers outbound sends via Session
-        clipboardMonitor = ClipboardMonitor { [weak self] text in
-            self?.onClipboardChange(text)
+        clipboardMonitor = ClipboardMonitor { [weak self] content in
+            self?.onClipboardChange(content)
         }
 
         // Start scanning and monitoring
@@ -115,15 +115,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Clipboard Change → Session
 
-    private func onClipboardChange(_ text: String) {
+    private func onClipboardChange(_ content: ClipboardContent) {
         guard connectedSecret != nil else {
             appLogger.debug("[App] Clipboard changed but no connected device")
             return
         }
-        guard let plainData = text.data(using: .utf8) else { return }
 
-        // Dedup: skip if we just received this exact text from the remote side
-        let hash = SHA256.hash(data: Data(text.utf8))
+        let plainData: Data
+        let contentType: String
+
+        switch content {
+        case .text(let text):
+            guard let data = text.data(using: .utf8) else { return }
+            plainData = data
+            contentType = "text/plain"
+        case .image(let data, let mimeType):
+            plainData = data
+            contentType = mimeType
+        }
+
+        // Dedup: skip if we just received this exact content from the remote side
+        let hash = SHA256.hash(data: plainData)
             .map { String(format: "%02x", $0) }
             .joined()
         if hash == lastReceivedHash {
@@ -136,8 +148,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Try to send immediately
         if let session = activeSession {
-            session.sendClipboard(plainData)
-            appLogger.info("[App] Queued clipboard for send (\(plainData.count) bytes)")
+            session.sendClipboard(plainData, contentType: contentType)
+            appLogger.info("[App] Queued clipboard for send (\(plainData.count) bytes, type: \(contentType))")
         } else {
             appLogger.info("[App] Clipboard cached for send on reconnect (\(plainData.count) bytes)")
         }
@@ -482,28 +494,53 @@ extension AppDelegate: SessionDelegate {
         }
     }
 
-    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String) {
+    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String, contentType: String) {
         guard connectedSecret != nil else {
             appLogger.error("[App] Received clipboard but no connected token")
             return
         }
-        guard let text = String(data: plaintext, encoding: .utf8) else {
-            appLogger.error("[App] Received data is not valid UTF-8")
-            return
-        }
 
         // Track hash for dedup (prevent echo back)
-        let textHash = SHA256.hash(data: Data(text.utf8))
+        let contentHash = SHA256.hash(data: plaintext)
             .map { String(format: "%02x", $0) }
             .joined()
-        lastReceivedHash = textHash
+        lastReceivedHash = contentHash
 
-        appLogger.info("[App] Received clipboard from Android (\(text.count) chars)")
+        if contentType == "text/plain" {
+            guard let text = String(data: plaintext, encoding: .utf8) else {
+                appLogger.error("[App] Received data is not valid UTF-8")
+                return
+            }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.clipboardWriter.writeText(text)
-            self?.notificationManager.postClipboardReceived(text: text)
-            self?.statusBarController.flashSyncIndicator()
+            appLogger.info("[App] Received clipboard from Android (\(text.count) chars)")
+
+            DispatchQueue.main.async { [weak self] in
+                self?.clipboardWriter.writeText(text)
+                self?.notificationManager.postClipboardReceived(text: text)
+                self?.statusBarController.flashSyncIndicator()
+            }
+        } else {
+            // Rich content (image)
+            let pasteboardType: NSPasteboard.PasteboardType
+            switch contentType {
+            case "image/png":
+                pasteboardType = .png
+            case "image/tiff":
+                pasteboardType = .tiff
+            case "image/jpeg":
+                // Write JPEG as PNG to pasteboard for broader compatibility
+                pasteboardType = .png
+            default:
+                pasteboardType = .png
+            }
+
+            appLogger.info("[App] Received image from Android (\(plaintext.count) bytes, type: \(contentType))")
+
+            DispatchQueue.main.async { [weak self] in
+                self?.clipboardWriter.writeImage(plaintext, type: pasteboardType)
+                self?.notificationManager.postClipboardReceived(text: "[Image copied]")
+                self?.statusBarController.flashSyncIndicator()
+            }
         }
     }
 

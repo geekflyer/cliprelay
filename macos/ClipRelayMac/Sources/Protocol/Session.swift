@@ -3,12 +3,15 @@
 import Foundation
 import CommonCrypto
 import CryptoKit
+import os
+
+private let sessionLogger = Logger(subsystem: "org.cliprelay", category: "Session")
 
 // MARK: - Session Delegate
 
 protocol SessionDelegate: AnyObject {
     func sessionDidBecomeReady(_ session: Session)
-    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String)
+    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String, contentType: String)
     func session(_ session: Session, didCompleteTransfer hash: String)
     func session(_ session: Session, didFailWithError error: Error)
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool
@@ -69,8 +72,8 @@ final class Session {
         set { lock.lock(); _closed = newValue; lock.unlock() }
     }
 
-    /// Queue of outbound clipboard transfers (plaintext).
-    private var outboundQueue: [Data] = []
+    /// Queue of outbound clipboard transfers (plaintext, contentType).
+    private var outboundQueue: [(Data, String)] = []
     private let queueLock = NSLock()
 
     /// Shared secret hex string for deriving auth and session keys.
@@ -251,8 +254,8 @@ final class Session {
         do {
             while !closed {
                 // Check for queued outbound transfers
-                if let outbound = dequeueOutbound() {
-                    try doSendClipboard(outbound)
+                if let (outbound, contentType) = dequeueOutbound() {
+                    try doSendClipboard(outbound, contentType: contentType)
                     continue
                 }
 
@@ -266,6 +269,7 @@ final class Session {
                 }
             }
         } catch {
+            sessionLogger.error("[Session] listenForMessages error: \(error.localizedDescription)")
             lock.lock()
             guard !_closed else { lock.unlock(); return }
             _closed = true
@@ -290,57 +294,106 @@ final class Session {
     /// Queue plaintext clipboard data for sending. Thread-safe.
     /// The actual transfer happens in the listen loop.
     /// Session encrypts the data internally using the session key.
-    func sendClipboard(_ plaintext: Data) {
+    func sendClipboard(_ plaintext: Data, contentType: String = "text/plain") {
         guard !closed else { return }
         queueLock.lock()
-        outboundQueue.append(plaintext)
+        outboundQueue.append((plaintext, contentType))
         queueLock.unlock()
     }
 
-    private func dequeueOutbound() -> Data? {
+    private func dequeueOutbound() -> (Data, String)? {
         queueLock.lock()
         defer { queueLock.unlock() }
         if outboundQueue.isEmpty { return nil }
         return outboundQueue.removeFirst()
     }
 
-    private func doSendClipboard(_ plaintext: Data) throws {
+    private func doSendClipboard(_ plaintext: Data, contentType: String = "text/plain") throws {
         // Hash is computed over plaintext (for dedup across sessions)
         guard let key = sessionKey else {
             throw SessionError.protocolError("No session key available")
         }
         let hash = Session.sha256Hex(plaintext)
         let encryptedBlob = try E2ECrypto.seal(plaintext, key: key)
-        let offerJSON: [String: Any] = [
-            "hash": hash,
-            "size": encryptedBlob.count,
-            "type": "text/plain"
-        ]
-        let offerData = try JSONSerialization.data(withJSONObject: offerJSON)
-        let offer = Message(type: .offer, payload: offerData)
-        try writeMessage(offer)
 
-        // Wait for ACCEPT or DONE
-        let response = try readWithTimeout(transferTimeoutSeconds)
-        switch response.type {
-        case .accept:
-            // Send PAYLOAD
-            let payload = Message(type: .payload, payload: encryptedBlob)
-            try writeMessage(payload)
+        let isRichContent = contentType != "text/plain"
 
-            // Wait for DONE
-            let done = try readWithTimeout(transferTimeoutSeconds)
-            guard done.type == .done else {
-                throw SessionError.unexpectedMessage("Expected DONE, got \(done.type)")
+        if isRichContent {
+            // Rich content: use TCP sideband
+            guard let localIP = TcpRelay.getLocalIPAddress() else {
+                // No WiFi IP — skip rich content (can't send over BLE)
+                return
             }
-            delegate?.session(self, didCompleteTransfer: hash)
 
-        case .done:
-            // Receiver already had this hash — dedup
-            delegate?.session(self, didCompleteTransfer: hash)
+            let server = try TcpRelay.TcpServer(timeoutSeconds: 120)
 
-        default:
-            throw SessionError.unexpectedMessage("Expected ACCEPT or DONE, got \(response.type)")
+            let offerJSON: [String: Any] = [
+                "hash": hash,
+                "size": encryptedBlob.count,
+                "type": contentType,
+                "tcp_port": Int(server.port),
+                "tcp_host": localIP
+            ]
+            let offerData = try JSONSerialization.data(withJSONObject: offerJSON)
+            let offer = Message(type: .offer, payload: offerData)
+            try writeMessage(offer)
+
+            // Wait for ACCEPT or DONE
+            let response = try readWithTimeout(120)
+            switch response.type {
+            case .accept:
+                // Send encrypted blob over TCP
+                try server.sendAndClose(encryptedBlob)
+
+                // Wait for DONE over BLE
+                let done = try readWithTimeout(120)
+                guard done.type == .done else {
+                    throw SessionError.unexpectedMessage("Expected DONE, got \(done.type)")
+                }
+                delegate?.session(self, didCompleteTransfer: hash)
+
+            case .done:
+                // Receiver already had this hash — dedup
+                server.close()
+                delegate?.session(self, didCompleteTransfer: hash)
+
+            default:
+                server.close()
+                throw SessionError.unexpectedMessage("Expected ACCEPT or DONE, got \(response.type)")
+            }
+        } else {
+            // Text content: existing BLE PAYLOAD flow
+            let offerJSON: [String: Any] = [
+                "hash": hash,
+                "size": encryptedBlob.count,
+                "type": "text/plain"
+            ]
+            let offerData = try JSONSerialization.data(withJSONObject: offerJSON)
+            let offer = Message(type: .offer, payload: offerData)
+            try writeMessage(offer)
+
+            // Wait for ACCEPT or DONE
+            let response = try readWithTimeout(transferTimeoutSeconds)
+            switch response.type {
+            case .accept:
+                // Send PAYLOAD
+                let payload = Message(type: .payload, payload: encryptedBlob)
+                try writeMessage(payload)
+
+                // Wait for DONE
+                let done = try readWithTimeout(transferTimeoutSeconds)
+                guard done.type == .done else {
+                    throw SessionError.unexpectedMessage("Expected DONE, got \(done.type)")
+                }
+                delegate?.session(self, didCompleteTransfer: hash)
+
+            case .done:
+                // Receiver already had this hash — dedup
+                delegate?.session(self, didCompleteTransfer: hash)
+
+            default:
+                throw SessionError.unexpectedMessage("Expected ACCEPT or DONE, got \(response.type)")
+            }
         }
     }
 
@@ -351,6 +404,12 @@ final class Session {
               let hash = json["hash"] as? String else {
             throw SessionError.protocolError("Invalid OFFER payload")
         }
+
+        let contentType = json["type"] as? String ?? "text/plain"
+        let tcpPort = json["tcp_port"] as? Int
+        let tcpHost = json["tcp_host"] as? String
+
+        sessionLogger.info("[Session] Inbound OFFER: type=\(contentType), tcpPort=\(tcpPort.map { String($0) } ?? "nil"), tcpHost=\(tcpHost ?? "nil"), hash=\(hash.prefix(8))...")
 
         if delegate?.session(self, alreadyHasHash: hash) == true {
             // Dedup — send DONE immediately
@@ -365,17 +424,36 @@ final class Session {
         let accept = Message(type: .accept, payload: Data())
         try writeMessage(accept)
 
-        // Wait for PAYLOAD
-        let payload = try readWithTimeout(transferTimeoutSeconds)
-        guard payload.type == .payload else {
-            throw SessionError.unexpectedMessage("Expected PAYLOAD, got \(payload.type)")
-        }
+        let plaintext: Data
 
-        // Decrypt payload
-        guard let key = sessionKey else {
-            throw SessionError.protocolError("No session key available")
+        if let tcpPort = tcpPort, let tcpHost = tcpHost {
+            // Rich content: fetch encrypted data over TCP
+            guard let size = json["size"] as? Int else {
+                throw SessionError.protocolError("OFFER missing size")
+            }
+
+            sessionLogger.info("[Session] TCP fetch: \(tcpHost):\(tcpPort), size=\(size)")
+            let encryptedData = try TcpRelay.fetch(host: tcpHost, port: UInt16(tcpPort), size: size, timeoutSeconds: 120)
+            sessionLogger.info("[Session] TCP fetch complete: \(encryptedData.count) bytes")
+
+            // Decrypt
+            guard let key = sessionKey else {
+                throw SessionError.protocolError("No session key available")
+            }
+            plaintext = try E2ECrypto.open(encryptedData, key: key)
+        } else {
+            // Text content: receive PAYLOAD over BLE
+            let payload = try readWithTimeout(transferTimeoutSeconds)
+            guard payload.type == .payload else {
+                throw SessionError.unexpectedMessage("Expected PAYLOAD, got \(payload.type)")
+            }
+
+            // Decrypt payload
+            guard let key = sessionKey else {
+                throw SessionError.protocolError("No session key available")
+            }
+            plaintext = try E2ECrypto.open(payload.payload, key: key)
         }
-        let plaintext = try E2ECrypto.open(payload.payload, key: key)
 
         // Verify hash against plaintext
         let actualHash = Session.sha256Hex(plaintext)
@@ -383,8 +461,8 @@ final class Session {
             throw SessionError.hashMismatch(expected: hash, actual: actualHash)
         }
 
-        // Notify delegate with plaintext
-        delegate?.session(self, didReceivePlaintext: plaintext, hash: hash)
+        // Notify delegate with plaintext and content type
+        delegate?.session(self, didReceivePlaintext: plaintext, hash: hash, contentType: contentType)
 
         // Send DONE
         let doneJSON: [String: Any] = ["hash": hash, "ok": true]

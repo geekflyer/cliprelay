@@ -43,6 +43,9 @@ import java.util.concurrent.Executors
 
 class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     companion object {
+        const val ACTION_PUSH_IMAGE = "org.cliprelay.action.PUSH_IMAGE"
+        const val EXTRA_IMAGE_PATH = "extra_image_path"
+        const val EXTRA_IMAGE_MIME = "extra_image_mime"
         const val ACTION_PUSH_TEXT = "org.cliprelay.action.PUSH_TEXT"
         const val ACTION_RELOAD_PAIRING = "org.cliprelay.action.RELOAD_PAIRING"
         const val ACTION_UNPAIR = "org.cliprelay.action.UNPAIR"
@@ -205,6 +208,19 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 if (!text.isNullOrBlank()) {
                     executor.execute {
                         pushPlainTextToMac(text)
+                    }
+                }
+            }
+            ACTION_PUSH_IMAGE -> {
+                val path = intent.getStringExtra(EXTRA_IMAGE_PATH)
+                val mime = intent.getStringExtra(EXTRA_IMAGE_MIME) ?: "image/png"
+                if (!path.isNullOrEmpty()) {
+                    executor.execute {
+                        val file = java.io.File(path)
+                        val data = runCatching { file.readBytes() }.getOrNull()
+                        if (data != null && data.isNotEmpty()) {
+                            pushImageToMac(data, mime)
+                        }
                     }
                 }
             }
@@ -432,15 +448,21 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         DebugSmokeProbe.onConnectionChanged(this, true)
     }
 
-    override fun onClipboardReceived(plaintext: ByteArray, hash: String) {
-        val decodedText = plaintext.toString(Charsets.UTF_8)
-        if (decodedText.isEmpty()) return
-
+    override fun onClipboardReceived(plaintext: ByteArray, hash: String, contentType: String) {
         lastInboundHash = hash
-        clipboardWriter.writeText(decodedText)
-        scheduleClipboardAutoClear(decodedText)
-        sendClipboardTransferBroadcast(fromMac = true)
-        DebugSmokeProbe.onInboundClipboardApplied(this, decodedText)
+
+        if (contentType.startsWith("image/")) {
+            clipboardWriter.writeImage(plaintext, contentType)
+            sendClipboardTransferBroadcast(fromMac = true)
+        } else {
+            val decodedText = plaintext.toString(Charsets.UTF_8)
+            if (decodedText.isEmpty()) return
+
+            clipboardWriter.writeText(decodedText)
+            scheduleClipboardAutoClear(decodedText)
+            sendClipboardTransferBroadcast(fromMac = true)
+            DebugSmokeProbe.onInboundClipboardApplied(this, decodedText)
+        }
     }
 
     override fun onTransferComplete(hash: String) {
@@ -535,6 +557,22 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
         session.sendClipboard(plaintext)
         DebugSmokeProbe.onOutboundClipboardPublished(this, text)
+    }
+
+    private fun pushImageToMac(data: ByteArray, mimeType: String) {
+        if (isDestroyed) return
+        if (data.isEmpty() || data.size > org.cliprelay.protocol.Session.MAX_RICH_MEDIA_BYTES) {
+            Log.w(TAG, "Image too large or empty: ${data.size} bytes")
+            return
+        }
+
+        val session = activeSession
+        if (session == null) {
+            Log.d(TAG, "No active L2CAP session; skipping image push")
+            return
+        }
+
+        session.sendClipboard(data, mimeType)
     }
 
     // ── Pairing ────────────────────────────────────────────────────────

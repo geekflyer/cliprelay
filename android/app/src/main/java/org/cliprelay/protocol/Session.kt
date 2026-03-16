@@ -2,7 +2,9 @@ package org.cliprelay.protocol
 
 // Manages a single L2CAP protocol session: handshake, clipboard offer/accept, and payload transfer.
 
+import android.util.Log
 import org.cliprelay.crypto.E2ECrypto
+import org.cliprelay.tcp.TcpRelay
 import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream
@@ -68,8 +70,8 @@ class Session(
     /** Ephemeral key pair, generated at handshake start and dropped after session key derivation. */
     private var ephemeralKeyPair: KeyPair? = null
 
-    /** Queue of outbound clipboard transfers (plaintext). */
-    private val outboundQueue = LinkedBlockingQueue<ByteArray>()
+    /** Queue of outbound clipboard transfers (plaintext + contentType). */
+    private val outboundQueue = LinkedBlockingQueue<Pair<ByteArray, String>>()
 
     /**
      * Queue of inbound messages, populated by the reader thread.
@@ -234,7 +236,7 @@ class Session(
                 // Check for queued outbound transfers (short poll)
                 val outbound = outboundQueue.poll(50, TimeUnit.MILLISECONDS)
                 if (outbound != null) {
-                    doSendClipboard(outbound)
+                    doSendClipboard(outbound.first, outbound.second)
                     continue
                 }
 
@@ -290,44 +292,88 @@ class Session(
      * The actual transfer happens in the listen loop.
      * Session encrypts the data internally using the session key.
      */
-    fun sendClipboard(plaintext: ByteArray) {
+    fun sendClipboard(plaintext: ByteArray, contentType: String = "text/plain") {
         if (closed.get()) return
-        outboundQueue.put(plaintext)
+        outboundQueue.put(Pair(plaintext, contentType))
     }
 
-    private fun doSendClipboard(plaintext: ByteArray) {
+    private fun doSendClipboard(plaintext: ByteArray, contentType: String) {
         // Hash is computed over plaintext (for dedup across sessions)
         val key = sessionKey ?: throw ProtocolException("No session key available")
         val hash = sha256Hex(plaintext)
         val encryptedBlob = E2ECrypto.seal(plaintext, key)
-        val offerJson = JSONObject().apply {
-            put("hash", hash)
-            put("size", encryptedBlob.size)
-            put("type", "text/plain")
-        }
-        val offer = Message(MessageType.OFFER, offerJson.toString().toByteArray())
-        MessageCodec.write(output, offer)
 
-        // Wait for ACCEPT or DONE
-        val response = readWithTimeout(transferTimeoutMs)
-        when (response.type) {
-            MessageType.ACCEPT -> {
-                // Send PAYLOAD
-                val payload = Message(MessageType.PAYLOAD, encryptedBlob)
-                MessageCodec.write(output, payload)
+        if (contentType == "text/plain") {
+            // Existing BLE-based text transfer
+            val offerJson = JSONObject().apply {
+                put("hash", hash)
+                put("size", encryptedBlob.size)
+                put("type", "text/plain")
+            }
+            val offer = Message(MessageType.OFFER, offerJson.toString().toByteArray())
+            MessageCodec.write(output, offer)
 
-                // Wait for DONE
-                val done = readWithTimeout(transferTimeoutMs)
-                if (done.type != MessageType.DONE) {
-                    throw ProtocolException("Expected DONE, got ${done.type}")
+            // Wait for ACCEPT or DONE
+            val response = readWithTimeout(transferTimeoutMs)
+            when (response.type) {
+                MessageType.ACCEPT -> {
+                    // Send PAYLOAD
+                    val payload = Message(MessageType.PAYLOAD, encryptedBlob)
+                    MessageCodec.write(output, payload)
+
+                    // Wait for DONE
+                    val done = readWithTimeout(transferTimeoutMs)
+                    if (done.type != MessageType.DONE) {
+                        throw ProtocolException("Expected DONE, got ${done.type}")
+                    }
+                    callback.onTransferComplete(hash)
                 }
-                callback.onTransferComplete(hash)
+                MessageType.DONE -> {
+                    // Receiver already had this hash — transfer complete (dedup)
+                    callback.onTransferComplete(hash)
+                }
+                else -> throw ProtocolException("Expected ACCEPT or DONE, got ${response.type}")
             }
-            MessageType.DONE -> {
-                // Receiver already had this hash — transfer complete (dedup)
-                callback.onTransferComplete(hash)
+        } else {
+            // Rich media transfer via TCP sideband
+            val tcpTimeoutMs = TCP_TRANSFER_TIMEOUT_MS
+            val localIp = TcpRelay.getLocalIpAddress()
+                ?: throw ProtocolException("Cannot determine local IP address for TCP transfer")
+            val tcpServer = TcpRelay.serve(tcpTimeoutMs)
+            try {
+                val offerJson = JSONObject().apply {
+                    put("hash", hash)
+                    put("size", encryptedBlob.size)
+                    put("type", contentType)
+                    put("tcp_port", tcpServer.port)
+                    put("tcp_host", localIp)
+                }
+                Log.d(TAG, "Sending rich media OFFER: type=$contentType, size=${encryptedBlob.size}, tcp=$localIp:${tcpServer.port}")
+                val offer = Message(MessageType.OFFER, offerJson.toString().toByteArray())
+                MessageCodec.write(output, offer)
+
+                // Wait for ACCEPT or DONE
+                val response = readWithTimeout(tcpTimeoutMs)
+                when (response.type) {
+                    MessageType.ACCEPT -> {
+                        // Send encrypted blob over TCP
+                        tcpServer.sendAndClose(encryptedBlob)
+
+                        // Wait for DONE over BLE
+                        val done = readWithTimeout(tcpTimeoutMs)
+                        if (done.type != MessageType.DONE) {
+                            throw ProtocolException("Expected DONE, got ${done.type}")
+                        }
+                        callback.onTransferComplete(hash)
+                    }
+                    MessageType.DONE -> {
+                        callback.onTransferComplete(hash)
+                    }
+                    else -> throw ProtocolException("Expected ACCEPT or DONE, got ${response.type}")
+                }
+            } finally {
+                tcpServer.close()
             }
-            else -> throw ProtocolException("Expected ACCEPT or DONE, got ${response.type}")
         }
     }
 
@@ -336,6 +382,10 @@ class Session(
     private fun handleInboundOffer(msg: Message) {
         val json = JSONObject(String(msg.payload))
         val hash = json.getString("hash")
+        val size = json.getInt("size")
+        val contentType = json.optString("type", "text/plain")
+        val tcpPort = if (json.has("tcp_port")) json.getInt("tcp_port") else null
+        val tcpHost = if (json.has("tcp_host")) json.getString("tcp_host") else null
 
         if (callback.hasHash(hash)) {
             // Already have this — skip PAYLOAD, send DONE immediately
@@ -352,15 +402,24 @@ class Session(
         val accept = Message(MessageType.ACCEPT, ByteArray(0))
         MessageCodec.write(output, accept)
 
-        // Wait for PAYLOAD
-        val payload = readWithTimeout(transferTimeoutMs)
-        if (payload.type != MessageType.PAYLOAD) {
-            throw ProtocolException("Expected PAYLOAD, got ${payload.type}")
+        val key = sessionKey ?: throw ProtocolException("No session key available")
+
+        val encryptedPayload: ByteArray
+        if (tcpPort != null && tcpHost != null) {
+            // Rich media: fetch encrypted blob via TCP
+            Log.d(TAG, "Fetching rich media via TCP: $tcpHost:$tcpPort, size=$size, type=$contentType")
+            encryptedPayload = TcpRelay.fetch(tcpHost, tcpPort, size, TCP_TRANSFER_TIMEOUT_MS)
+        } else {
+            // Text: receive PAYLOAD over BLE
+            val payload = readWithTimeout(transferTimeoutMs)
+            if (payload.type != MessageType.PAYLOAD) {
+                throw ProtocolException("Expected PAYLOAD, got ${payload.type}")
+            }
+            encryptedPayload = payload.payload
         }
 
         // Decrypt payload
-        val key = sessionKey ?: throw ProtocolException("No session key available")
-        val plaintext = E2ECrypto.open(payload.payload, key)
+        val plaintext = E2ECrypto.open(encryptedPayload, key)
 
         // Verify hash against plaintext
         val actualHash = sha256Hex(plaintext)
@@ -368,8 +427,8 @@ class Session(
             throw ProtocolException("Hash mismatch: expected $hash, got $actualHash")
         }
 
-        // Notify callback with plaintext
-        callback.onClipboardReceived(plaintext, hash)
+        // Notify callback with plaintext and content type
+        callback.onClipboardReceived(plaintext, hash, contentType)
 
         // Send DONE
         val doneJson = JSONObject().apply {
@@ -500,6 +559,12 @@ class Session(
     }
 
     companion object {
+        private const val TAG = "Session"
+        /** TCP transfer timeout: 120 seconds (images are bigger than text). */
+        private const val TCP_TRANSFER_TIMEOUT_MS = 120_000L
+        /** Maximum rich media payload size: 10 MB. */
+        internal const val MAX_RICH_MEDIA_BYTES = 10 * 1024 * 1024
+
         internal fun sha256Hex(data: ByteArray): String {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             return digest.digest(data).joinToString("") { "%02x".format(it) }
@@ -509,7 +574,7 @@ class Session(
 
 interface SessionCallback {
     fun onSessionReady()
-    fun onClipboardReceived(plaintext: ByteArray, hash: String)
+    fun onClipboardReceived(plaintext: ByteArray, hash: String, contentType: String = "text/plain")
     fun onTransferComplete(hash: String)
     fun onSessionError(error: Exception)
     fun hasHash(hash: String): Boolean
