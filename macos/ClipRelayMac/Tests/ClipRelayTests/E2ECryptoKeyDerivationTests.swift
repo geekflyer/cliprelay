@@ -117,9 +117,165 @@ final class E2ECryptoKeyDerivationTests: XCTestCase {
         XCTAssertEqual(dataToHex(tag), expectedDeviceTagHex)
     }
 
+    // MARK: - V2 session fixture tests
+
+    private func loadV2Fixture() throws -> V2SessionFixture {
+        try V2SessionFixtureLoader.load()
+    }
+
+    func testDeriveAuthKeyMatchesV2Fixture() throws {
+        let fixture = try loadV2Fixture()
+        let secretBytes = E2ECrypto.hexToData(fixture.sharedSecret)!
+        let authKey = E2ECrypto.deriveAuthKey(secretBytes: secretBytes)
+        XCTAssertNotNil(authKey)
+        let authKeyBytes = authKey!.withUnsafeBytes { Data($0) }
+        XCTAssertEqual(dataToHex(authKeyBytes), fixture.derivation.authKey,
+            "auth_key must match v2 session fixture")
+    }
+
+    func testHmacAuthMatchesV2Fixture() throws {
+        let fixture = try loadV2Fixture()
+        let secretBytes = E2ECrypto.hexToData(fixture.sharedSecret)!
+        let authKey = E2ECrypto.deriveAuthKey(secretBytes: secretBytes)!
+
+        // Verify mac HMAC (over mac ephemeral public key)
+        let macPubBytes = E2ECrypto.hexToData(fixture.keyPairs.macEphemeral.publicHex)!
+        let macHmac = E2ECrypto.hmacAuth(publicKeyBytes: macPubBytes, authKey: authKey)
+        XCTAssertEqual(dataToHex(macHmac), fixture.derivation.authMac,
+            "auth_mac must match v2 session fixture")
+
+        // Verify android HMAC (over android ephemeral public key)
+        let androidPubBytes = E2ECrypto.hexToData(fixture.keyPairs.androidEphemeral.publicHex)!
+        let androidHmac = E2ECrypto.hmacAuth(publicKeyBytes: androidPubBytes, authKey: authKey)
+        XCTAssertEqual(dataToHex(androidHmac), fixture.derivation.authAndroid,
+            "auth_android must match v2 session fixture")
+    }
+
+    func testVerifyAuthAcceptsCorrectHmac() throws {
+        let fixture = try loadV2Fixture()
+        let secretBytes = E2ECrypto.hexToData(fixture.sharedSecret)!
+        let authKey = E2ECrypto.deriveAuthKey(secretBytes: secretBytes)!
+
+        let macPubBytes = E2ECrypto.hexToData(fixture.keyPairs.macEphemeral.publicHex)!
+        let expectedHmac = E2ECrypto.hexToData(fixture.derivation.authMac)!
+        XCTAssertTrue(E2ECrypto.verifyAuth(publicKeyBytes: macPubBytes, authKey: authKey, expected: expectedHmac))
+    }
+
+    func testVerifyAuthRejectsWrongHmac() throws {
+        let fixture = try loadV2Fixture()
+        let secretBytes = E2ECrypto.hexToData(fixture.sharedSecret)!
+        let authKey = E2ECrypto.deriveAuthKey(secretBytes: secretBytes)!
+
+        let macPubBytes = E2ECrypto.hexToData(fixture.keyPairs.macEphemeral.publicHex)!
+        var wrongHmac = E2ECrypto.hexToData(fixture.derivation.authMac)!
+        wrongHmac[0] ^= 0xFF  // Flip bits in first byte
+        XCTAssertFalse(E2ECrypto.verifyAuth(publicKeyBytes: macPubBytes, authKey: authKey, expected: wrongHmac))
+    }
+
+    func testRawX25519MatchesV2Fixture() throws {
+        let fixture = try loadV2Fixture()
+        let macPrivateBytes = E2ECrypto.hexToData(fixture.keyPairs.macEphemeral.privateHex)!
+        let androidPubBytes = E2ECrypto.hexToData(fixture.keyPairs.androidEphemeral.publicHex)!
+
+        let macPrivateKey = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: macPrivateBytes)
+        let rawEcdh = try E2ECrypto.rawX25519(privateKey: macPrivateKey, remotePublicKeyBytes: androidPubBytes)
+        XCTAssertEqual(dataToHex(rawEcdh), fixture.derivation.rawEcdh,
+            "raw_ecdh must match RFC 7748 §6.1 expected output")
+    }
+
+    func testDeriveSessionKeyMatchesV2Fixture() throws {
+        let fixture = try loadV2Fixture()
+        let secretBytes = E2ECrypto.hexToData(fixture.sharedSecret)!
+        let rawEcdh = E2ECrypto.hexToData(fixture.derivation.rawEcdh)!
+
+        let sessionKey = E2ECrypto.deriveSessionKey(secretBytes: secretBytes, ecdhResult: rawEcdh)
+        XCTAssertNotNil(sessionKey)
+        let sessionKeyBytes = sessionKey!.withUnsafeBytes { Data($0) }
+        XCTAssertEqual(dataToHex(sessionKeyBytes), fixture.derivation.sessionKey,
+            "session_key must match v2 session fixture")
+    }
+
     // MARK: - Helpers
 
     private func dataToHex(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+// MARK: - V2 Session Fixture Loader
+
+private struct V2SessionFixture: Decodable {
+    let sharedSecret: String
+    let keyPairs: KeyPairs
+    let derivation: Derivation
+
+    enum CodingKeys: String, CodingKey {
+        case sharedSecret = "shared_secret"
+        case keyPairs = "key_pairs"
+        case derivation
+    }
+
+    struct KeyPairs: Decodable {
+        let macEphemeral: KeyPair
+        let androidEphemeral: KeyPair
+
+        enum CodingKeys: String, CodingKey {
+            case macEphemeral = "mac_ephemeral"
+            case androidEphemeral = "android_ephemeral"
+        }
+    }
+
+    struct KeyPair: Decodable {
+        let privateHex: String
+        let publicHex: String
+
+        enum CodingKeys: String, CodingKey {
+            case privateHex = "private_hex"
+            case publicHex = "public_hex"
+        }
+    }
+
+    struct Derivation: Decodable {
+        let rawEcdh: String
+        let authKey: String
+        let authMac: String
+        let authAndroid: String
+        let sessionKey: String
+
+        enum CodingKeys: String, CodingKey {
+            case rawEcdh = "raw_ecdh"
+            case authKey = "auth_key"
+            case authMac = "auth_mac"
+            case authAndroid = "auth_android"
+            case sessionKey = "session_key"
+        }
+    }
+}
+
+private enum V2SessionFixtureLoader {
+    static func load() throws -> V2SessionFixture {
+        let relativePath = "test-fixtures/protocol/l2cap/v2_session_fixture.json"
+        guard let fileURL = findFileUpwards(relativePath: relativePath) else {
+            throw NSError(domain: "V2SessionFixtureLoader", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Fixture not found: \(relativePath)"
+            ])
+        }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder().decode(V2SessionFixture.self, from: data)
+    }
+
+    private static func findFileUpwards(relativePath: String) -> URL? {
+        var current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        while true {
+            let candidate = current.appendingPathComponent(relativePath)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path {
+                return nil
+            }
+            current = parent
+        }
     }
 }

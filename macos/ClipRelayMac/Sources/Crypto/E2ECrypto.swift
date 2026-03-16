@@ -57,6 +57,52 @@ enum E2ECrypto {
         return key.withUnsafeBytes { Data($0) }
     }
 
+    // MARK: - V2 session key derivation (mirrors Android E2ECrypto.kt)
+
+    static func deriveAuthKey(secretBytes: Data) -> SymmetricKey? {
+        guard secretBytes.count == 32 else { return nil }
+        let ikm = SymmetricKey(data: secretBytes)
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: ikm,
+            info: Data("cliprelay-auth-v2".utf8),
+            outputByteCount: 32
+        )
+    }
+
+    static func deriveSessionKey(secretBytes: Data, ecdhResult: Data) -> SymmetricKey? {
+        guard secretBytes.count == 32, ecdhResult.count == 32 else { return nil }
+        var ikm = Data()
+        ikm.append(secretBytes)
+        ikm.append(ecdhResult)
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: ikm),
+            info: Data("cliprelay-session-v2".utf8),
+            outputByteCount: 32
+        )
+    }
+
+    static func hmacAuth(publicKeyBytes: Data, authKey: SymmetricKey) -> Data {
+        let mac = HMAC<SHA256>.authenticationCode(for: publicKeyBytes, using: authKey)
+        return Data(mac)
+    }
+
+    static func verifyAuth(publicKeyBytes: Data, authKey: SymmetricKey, expected: Data) -> Bool {
+        // Use CryptoKit's constant-time HMAC validation (NOT Data ==, which is not constant-time)
+        return HMAC<SHA256>.isValidAuthenticationCode(expected, authenticating: publicKeyBytes, using: authKey)
+    }
+
+    static func rawX25519(
+        privateKey: Curve25519.KeyAgreement.PrivateKey,
+        remotePublicKeyBytes: Data
+    ) throws -> Data {
+        let remotePublic = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: remotePublicKeyBytes)
+        let shared = try privateKey.sharedSecretFromKeyAgreement(with: remotePublic)
+        // Return raw shared secret bytes without HKDF (unlike ecdhSharedSecret)
+        // Note: withUnsafeBytes on SharedSecret is undocumented but stable. The rawX25519 fixture
+        // test validates this against known RFC 7748 vectors to detect any future breakage.
+        return shared.withUnsafeBytes { Data($0) }
+    }
+
     // MARK: - Encryption
 
     static func seal(_ plaintext: Data, key: SymmetricKey) throws -> Data {
