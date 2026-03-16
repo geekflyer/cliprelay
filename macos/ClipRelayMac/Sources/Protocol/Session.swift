@@ -8,7 +8,7 @@ import CryptoKit
 
 protocol SessionDelegate: AnyObject {
     func sessionDidBecomeReady(_ session: Session)
-    func session(_ session: Session, didReceiveClipboard encryptedBlob: Data, hash: String)
+    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String)
     func session(_ session: Session, didCompleteTransfer hash: String)
     func session(_ session: Session, didFailWithError error: Error)
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool
@@ -69,18 +69,39 @@ final class Session {
         set { lock.lock(); _closed = newValue; lock.unlock() }
     }
 
-    /// Queue of outbound clipboard transfers (encrypted blobs).
+    /// Queue of outbound clipboard transfers (plaintext).
     private var outboundQueue: [Data] = []
     private let queueLock = NSLock()
 
+    /// Shared secret hex string for deriving auth and session keys.
+    private let sharedSecretHex: String?
+
+    /// Auth key derived from the shared secret, used for HMAC authentication during handshake.
+    private let authKey: SymmetricKey?
+
+    /// Session key derived during v2 handshake. Used for encrypting/decrypting clipboard payloads.
+    private var sessionKey: SymmetricKey?
+
+    /// Ephemeral key pair, generated at handshake start and dropped after session key derivation.
+    private var ephemeralPrivateKey: Curve25519.KeyAgreement.PrivateKey?
+
     init(inputStream: InputStream, outputStream: OutputStream,
          isInitiator: Bool, delegate: SessionDelegate,
-         mode: SessionMode = .normal) {
+         mode: SessionMode = .normal,
+         sharedSecretHex: String? = nil) {
         self.inputStream = inputStream
         self.outputStream = outputStream
         self.isInitiator = isInitiator
         self.mode = mode
         self.delegate = delegate
+        self.sharedSecretHex = sharedSecretHex
+
+        // Derive auth key from shared secret if available
+        if let hex = sharedSecretHex, let secretBytes = E2ECrypto.hexToData(hex) {
+            self.authKey = E2ECrypto.deriveAuthKey(secretBytes: secretBytes)
+        } else {
+            self.authKey = nil
+        }
     }
 
     // MARK: - Handshake
@@ -116,6 +137,9 @@ final class Session {
     }
 
     private func initiatorHandshake() throws {
+        // Generate ephemeral key pair for v2 handshake
+        ephemeralPrivateKey = Curve25519.KeyAgreement.PrivateKey()
+
         // Send HELLO
         let hello = Message(type: .hello, payload: helloPayload())
         try writeMessage(hello)
@@ -125,7 +149,10 @@ final class Session {
         guard welcome.type == .welcome else {
             throw SessionError.unexpectedMessage("Expected WELCOME, got \(welcome.type)")
         }
-        try validateVersion(welcome.payload)
+        let remoteEkBytes = try validateVersion(welcome.payload)
+
+        // Derive session key from ECDH
+        try deriveSessionKeyAndCleanup(remoteEkBytes: remoteEkBytes)
     }
 
     private func responderHandshake() throws {
@@ -134,11 +161,31 @@ final class Session {
         guard hello.type == .hello else {
             throw SessionError.unexpectedMessage("Expected HELLO, got \(hello.type)")
         }
-        try validateVersion(hello.payload)
+        let remoteEkBytes = try validateVersion(hello.payload)
+
+        // Generate ephemeral key pair for v2 handshake
+        ephemeralPrivateKey = Curve25519.KeyAgreement.PrivateKey()
 
         // Send WELCOME
         let welcome = Message(type: .welcome, payload: helloPayload())
         try writeMessage(welcome)
+
+        // Derive session key from ECDH
+        try deriveSessionKeyAndCleanup(remoteEkBytes: remoteEkBytes)
+    }
+
+    /// Compute ECDH shared secret and derive session key, then drop ephemeral private key.
+    private func deriveSessionKeyAndCleanup(remoteEkBytes: Data) throws {
+        guard let ephPriv = ephemeralPrivateKey else {
+            throw SessionError.protocolError("No ephemeral private key")
+        }
+        let ecdhResult = try E2ECrypto.rawX25519(privateKey: ephPriv, remotePublicKeyBytes: remoteEkBytes)
+        guard let secretHex = sharedSecretHex, let secretBytes = E2ECrypto.hexToData(secretHex) else {
+            throw SessionError.protocolError("No shared secret for session key derivation")
+        }
+        sessionKey = E2ECrypto.deriveSessionKey(secretBytes: secretBytes, ecdhResult: ecdhResult)
+        // Drop ephemeral private key
+        ephemeralPrivateKey = nil
     }
 
     // MARK: - Pairing Handshake
@@ -235,11 +282,13 @@ final class Session {
 
     // MARK: - Outbound Transfer
 
-    /// Queue a clipboard blob for sending. Thread-safe.
-    func sendClipboard(_ encryptedBlob: Data) {
+    /// Queue plaintext clipboard data for sending. Thread-safe.
+    /// The actual transfer happens in the listen loop.
+    /// Session encrypts the data internally using the session key.
+    func sendClipboard(_ plaintext: Data) {
         guard !closed else { return }
         queueLock.lock()
-        outboundQueue.append(encryptedBlob)
+        outboundQueue.append(plaintext)
         queueLock.unlock()
     }
 
@@ -250,8 +299,10 @@ final class Session {
         return outboundQueue.removeFirst()
     }
 
-    private func doSendClipboard(_ encryptedBlob: Data) throws {
-        let hash = Session.sha256Hex(encryptedBlob)
+    private func doSendClipboard(_ plaintext: Data) throws {
+        // Hash is computed over plaintext (for dedup across sessions)
+        let hash = Session.sha256Hex(plaintext)
+        let encryptedBlob = try E2ECrypto.seal(plaintext, key: sessionKey!)
         let offerJSON: [String: Any] = [
             "hash": hash,
             "size": encryptedBlob.count,
@@ -312,14 +363,17 @@ final class Session {
             throw SessionError.unexpectedMessage("Expected PAYLOAD, got \(payload.type)")
         }
 
-        // Verify hash
-        let actualHash = Session.sha256Hex(payload.payload)
+        // Decrypt payload
+        let plaintext = try E2ECrypto.open(payload.payload, key: sessionKey!)
+
+        // Verify hash against plaintext
+        let actualHash = Session.sha256Hex(plaintext)
         guard actualHash == hash else {
             throw SessionError.hashMismatch(expected: hash, actual: actualHash)
         }
 
-        // Notify delegate
-        delegate?.session(self, didReceiveClipboard: payload.payload, hash: hash)
+        // Notify delegate with plaintext
+        delegate?.session(self, didReceivePlaintext: plaintext, hash: hash)
 
         // Send DONE
         let doneJSON: [String: Any] = ["hash": hash, "ok": true]
@@ -336,6 +390,9 @@ final class Session {
         guard !_closed else { lock.unlock(); return }
         _closed = true
         lock.unlock()
+        // Clear ephemeral key material
+        ephemeralPrivateKey = nil
+        sessionKey = nil
         inputStream.close()
         outputStream.close()
     }
@@ -377,22 +434,62 @@ final class Session {
     }
 
     private func helloPayload() -> Data {
-        var obj: [String: Any] = ["version": 1]
+        var obj: [String: Any] = ["version": 2]
         if let name = localName {
             obj["name"] = name
         }
-        return (try? JSONSerialization.data(withJSONObject: obj)) ?? Data(#"{"version":1}"#.utf8)
+
+        // Include ephemeral key and auth for v2 handshake (when authKey is available)
+        if let authKey = authKey, let ephPriv = ephemeralPrivateKey {
+            let ekBytes = ephPriv.publicKey.rawRepresentation
+            let ekHex = ekBytes.map { String(format: "%02x", $0) }.joined()
+            obj["ek"] = ekHex
+            let authBytes = E2ECrypto.hmacAuth(publicKeyBytes: Data(ekBytes), authKey: authKey)
+            let authHex = authBytes.map { String(format: "%02x", $0) }.joined()
+            obj["auth"] = authHex
+        }
+
+        return (try? JSONSerialization.data(withJSONObject: obj)) ?? Data(#"{"version":2}"#.utf8)
     }
 
-    private func validateVersion(_ payload: Data) throws {
+    /// Validate handshake payload: version must be 2, ek must be valid, auth must verify.
+    /// Returns the remote ephemeral public key bytes.
+    @discardableResult
+    private func validateVersion(_ payload: Data) throws -> Data {
         guard let json = try JSONSerialization.jsonObject(with: payload) as? [String: Any],
               let version = json["version"] as? Int else {
             throw SessionError.protocolError("Invalid version payload")
         }
-        guard version == 1 else {
+        guard version == 2 else {
             throw SessionError.versionMismatch(version)
         }
         remoteName = json["name"] as? String
+
+        // Validate ephemeral key
+        guard let ekHex = json["ek"] as? String,
+              ekHex.count == 64,
+              ekHex.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil else {
+            throw SessionError.protocolError("Invalid ephemeral key")
+        }
+        guard let remoteEkBytes = E2ECrypto.hexToData(ekHex) else {
+            throw SessionError.protocolError("Invalid ephemeral key hex")
+        }
+
+        // Validate auth HMAC
+        guard let authHex = json["auth"] as? String, !authHex.isEmpty else {
+            throw SessionError.protocolError("Authentication failed")
+        }
+        guard let authBytes = E2ECrypto.hexToData(authHex) else {
+            throw SessionError.protocolError("Authentication failed")
+        }
+        guard let authKey = authKey else {
+            throw SessionError.protocolError("No auth key for validation")
+        }
+        guard E2ECrypto.verifyAuth(publicKeyBytes: remoteEkBytes, authKey: authKey, expected: authBytes) else {
+            throw SessionError.protocolError("Authentication failed")
+        }
+
+        return remoteEkBytes
     }
 
     /// Compute SHA-256 hex digest of data.

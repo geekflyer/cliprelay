@@ -298,7 +298,8 @@ extension AppDelegate: ConnectionManagerDelegate {
 
         // Create session (Mac = initiator)
         let session = Session(inputStream: inputStream, outputStream: outputStream,
-                              isInitiator: true, delegate: self)
+                              isInitiator: true, delegate: self,
+                              sharedSecretHex: token)
         session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
         activeSession = session
 
@@ -489,7 +490,7 @@ extension AppDelegate: SessionDelegate {
         }
     }
 
-    func session(_ session: Session, didReceiveClipboard encryptedBlob: Data, hash: String) {
+    func session(_ session: Session, didReceivePlaintext encryptedBlob: Data, hash: String) {
         guard let token = connectedSecret else {
             appLogger.error("[App] Received clipboard but no connected token")
             return
