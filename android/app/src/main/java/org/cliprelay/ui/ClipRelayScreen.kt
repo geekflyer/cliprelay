@@ -341,39 +341,41 @@ private fun MainCard(
             .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 24.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // App icon + title inline
+            // App icon + title inline, centered
             Row(
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(15.dp))
                         .background(Aqua),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
                         painter = painterResource(R.mipmap.ic_launcher_foreground),
                         contentDescription = "ClipRelay icon",
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(48.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "ClipRelay",
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Teal
-                    )
-                    Text(
-                        text = "Seamless clipboard sharing with your Mac",
-                        fontSize = 13.sp,
-                        color = if (isPaired) Teal.copy(alpha = 0.45f) else Color(0x66000000)
-                    )
-                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "ClipRelay",
+                    fontSize = 34.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Teal
+                )
             }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Seamless clipboard sharing with your Mac",
+                fontSize = 13.sp,
+                color = if (isPaired) Teal.copy(alpha = 0.45f) else Color(0x66000000),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
 
             HorizontalDivider(
                 color = if (isPaired) Color(0x1400FFD5) else Color(0x0F00FFD5),
@@ -541,16 +543,16 @@ private fun MainCard(
                 onEnabledChange = onAutoClearSettingChanged
             )
             Spacer(modifier = Modifier.height(8.dp))
+            ImageSyncSettingRow(
+                enabled = imageSyncEnabled,
+                onEnabledChange = onImageSyncSettingChanged
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             AutoCopySettingRow(
                 enabled = autoCopyEnabled,
                 accessibilityEnabled = autoCopyAccessibilityEnabled,
                 onEnabledChange = onAutoCopySettingChanged,
                 onFixClick = onAutoCopyFixClick
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            ImageSyncSettingRow(
-                enabled = imageSyncEnabled,
-                onEnabledChange = onImageSyncSettingChanged
             )
         }
     }
