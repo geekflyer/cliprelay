@@ -395,15 +395,18 @@ class Session(
     private fun doSendImage(imageData: ByteArray, contentType: String) {
         val key = sessionKey ?: throw ProtocolException("No session key available")
         val hash = sha256Hex(imageData)
-        val senderIp = NetworkUtil.getLocalIpAddress()
-            ?: throw ProtocolException("No local IP address available")
+        val senderIps = NetworkUtil.getAllLocalIpAddresses()
+        if (senderIps.isEmpty()) {
+            throw ProtocolException("No local IP address available")
+        }
 
         // Send OFFER over BLE
         val offerJson = JSONObject().apply {
             put("hash", hash)
             put("size", imageData.size)
             put("type", contentType)
-            put("senderIp", senderIp)
+            put("senderIp", senderIps.first()) // backward compat
+            put("senderIps", org.json.JSONArray(senderIps))
         }
         val offer = Message(MessageType.OFFER, offerJson.toString().toByteArray())
         MessageCodec.write(output, offer)
@@ -483,7 +486,12 @@ class Session(
         val contentType = json.getString("type")
         val size = json.getInt("size")
         val hash = json.getString("hash")
-        val senderIp = json.getString("senderIp")
+        val senderIps = if (json.has("senderIps")) {
+            val arr = json.getJSONArray("senderIps")
+            (0 until arr.length()).map { arr.getString(it) }.toSet()
+        } else {
+            setOf(json.getString("senderIp"))
+        }
 
         // Check richMediaEnabled
         val sp = settingsProvider
@@ -521,7 +529,7 @@ class Session(
         val expectedSize = size + 28
         val receiver = TcpImageReceiver(
             expectedSize = expectedSize,
-            allowedSenderIp = senderIp
+            allowedSenderIps = senderIps
         )
         activeReceiver = receiver
 

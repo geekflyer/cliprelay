@@ -7,7 +7,7 @@ struct TcpServerInfo {
 
 final class TcpImageReceiver {
     private let expectedSize: Int
-    private let allowedSenderIp: String?
+    private let allowedSenderIps: Set<String>
     private let noConnectionTimeoutMs: Int
     private let transferTimeoutMs: Int
     private let maxConnections: Int
@@ -18,13 +18,13 @@ final class TcpImageReceiver {
 
     init(
         expectedSize: Int,
-        allowedSenderIp: String?,
+        allowedSenderIps: Set<String> = [],
         noConnectionTimeoutMs: Int = 30_000,
         transferTimeoutMs: Int = 120_000,
         maxConnections: Int = 2
     ) {
         self.expectedSize = expectedSize
-        self.allowedSenderIp = allowedSenderIp
+        self.allowedSenderIps = allowedSenderIps
         self.noConnectionTimeoutMs = noConnectionTimeoutMs
         self.transferTimeoutMs = transferTimeoutMs
         self.maxConnections = maxConnections
@@ -119,7 +119,7 @@ final class TcpImageReceiver {
             }
 
             // Validate sender IP
-            if let allowed = allowedSenderIp {
+            if !allowedSenderIps.isEmpty {
                 var remoteHostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                 withUnsafePointer(to: &clientAddr) { ptr in
                     ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
@@ -128,7 +128,7 @@ final class TcpImageReceiver {
                     }
                 }
                 let remoteIp = String(cString: remoteHostname)
-                if remoteIp != allowed {
+                if !allowedSenderIps.contains(remoteIp) {
                     close(clientFd)
                     continue
                 }

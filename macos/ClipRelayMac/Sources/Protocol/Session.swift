@@ -457,7 +457,8 @@ final class Session {
             throw SessionError.protocolError("No session key available")
         }
         let hash = Session.sha256Hex(imageData)
-        guard let senderIp = LocalNetworkAddress.getLocalIPv4Address() else {
+        let senderIps = LocalNetworkAddress.getAllLocalIPv4Addresses()
+        guard let primaryIp = senderIps.first else {
             throw SessionError.protocolError("No local IP address available")
         }
 
@@ -466,7 +467,8 @@ final class Session {
             "hash": hash,
             "size": imageData.count,
             "type": contentType,
-            "senderIp": senderIp
+            "senderIp": primaryIp, // backward compat
+            "senderIps": senderIps
         ]
         let offerData = try JSONSerialization.data(withJSONObject: offerJSON)
         let offer = Message(type: .offer, payload: offerData)
@@ -548,6 +550,12 @@ final class Session {
               let senderIp = json["senderIp"] as? String else {
             throw SessionError.protocolError("Invalid image OFFER payload")
         }
+        let senderIps: Set<String>
+        if let ipsArray = json["senderIps"] as? [String], !ipsArray.isEmpty {
+            senderIps = Set(ipsArray)
+        } else {
+            senderIps = Set([senderIp])
+        }
 
         // Check richMediaEnabled
         guard let sp = settingsProvider, sp.isRichMediaEnabled() else {
@@ -573,7 +581,7 @@ final class Session {
         let expectedSize = size + 28
         let receiver = TcpImageReceiver(
             expectedSize: expectedSize,
-            allowedSenderIp: senderIp
+            allowedSenderIps: senderIps
         )
         activeReceiver = receiver
 

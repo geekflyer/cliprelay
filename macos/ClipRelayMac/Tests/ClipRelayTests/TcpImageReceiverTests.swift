@@ -7,7 +7,7 @@ final class TcpImageReceiverTests: XCTestCase {
         let payload = Data((0..<1024).map { UInt8($0 % 256) })
         let receiver = TcpImageReceiver(
             expectedSize: payload.count,
-            allowedSenderIp: nil
+            allowedSenderIps: []
         )
 
         let info = try receiver.start()
@@ -41,7 +41,7 @@ final class TcpImageReceiverTests: XCTestCase {
         let payload = Data(repeating: 0x42, count: 64)
         let receiver = TcpImageReceiver(
             expectedSize: payload.count,
-            allowedSenderIp: "10.0.0.99", // won't match 127.0.0.1
+            allowedSenderIps: ["10.0.0.99"], // won't match 127.0.0.1
             noConnectionTimeoutMs: 2000,
             maxConnections: 1
         )
@@ -75,7 +75,7 @@ final class TcpImageReceiverTests: XCTestCase {
     func testTimesOutWhenNoConnection() throws {
         let receiver = TcpImageReceiver(
             expectedSize: 100,
-            allowedSenderIp: nil,
+            allowedSenderIps: [],
             noConnectionTimeoutMs: 300
         )
 

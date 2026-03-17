@@ -14,7 +14,7 @@ class TcpImageReceiverTest {
         val payload = ByteArray(1024) { it.toByte() }
         val receiver = TcpImageReceiver(
             expectedSize = payload.size,
-            allowedSenderIp = null, // accept any
+            allowedSenderIps = emptySet(), // accept any
         )
 
         val info = receiver.start()
@@ -42,7 +42,7 @@ class TcpImageReceiverTest {
         val payload = ByteArray(64) { 0x42 }
         val receiver = TcpImageReceiver(
             expectedSize = payload.size,
-            allowedSenderIp = "10.0.0.99", // won't match 127.0.0.1
+            allowedSenderIps = setOf("10.0.0.99"), // won't match 127.0.0.1
             maxConnections = 1,
             noConnectionTimeoutMs = 2000,
         )
@@ -77,7 +77,7 @@ class TcpImageReceiverTest {
     fun timesOutWhenNoConnection() {
         val receiver = TcpImageReceiver(
             expectedSize = 100,
-            allowedSenderIp = null,
+            allowedSenderIps = emptySet(),
             noConnectionTimeoutMs = 300,
         )
 

@@ -4,26 +4,29 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 
 object NetworkUtil {
-    fun getLocalIpAddress(): String? {
+    fun getLocalIpAddress(): String? = getAllLocalIpAddresses().firstOrNull()
+
+    /**
+     * Returns all non-loopback IPv4 addresses, with wlan/eth interfaces listed first.
+     */
+    fun getAllLocalIpAddresses(): List<String> {
         val interfaces = NetworkInterface.getNetworkInterfaces()?.asSequence()
             ?.filter { it.isUp && !it.isLoopback }
-            ?.toList() ?: return null
+            ?.toList() ?: return emptyList()
 
         // Prefer wlan/eth interfaces (typical Android Wi-Fi/Ethernet)
         val preferred = interfaces
             .filter { it.name.startsWith("wlan") || it.name.startsWith("eth") }
             .flatMap { it.inetAddresses.asSequence() }
             .filterIsInstance<Inet4Address>()
-            .firstOrNull()
-            ?.hostAddress
+            .mapNotNull { it.hostAddress }
 
-        if (preferred != null) return preferred
-
-        // Fallback: any non-loopback IPv4 address (e.g. en0 on macOS/desktop)
-        return interfaces
+        val others = interfaces
+            .filter { !it.name.startsWith("wlan") && !it.name.startsWith("eth") }
             .flatMap { it.inetAddresses.asSequence() }
             .filterIsInstance<Inet4Address>()
-            .firstOrNull()
-            ?.hostAddress
+            .mapNotNull { it.hostAddress }
+
+        return (preferred + others).distinct()
     }
 }

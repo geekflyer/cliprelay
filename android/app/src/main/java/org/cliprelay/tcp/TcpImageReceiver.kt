@@ -11,7 +11,7 @@ data class ServerInfo(val host: String, val port: Int)
 
 class TcpImageReceiver(
     private val expectedSize: Int,
-    private val allowedSenderIp: String?,
+    private val allowedSenderIps: Set<String> = emptySet(),
     private val noConnectionTimeoutMs: Int = 30_000,
     private val transferTimeoutMs: Int = 120_000,
     private val maxConnections: Int = 2,
@@ -54,7 +54,7 @@ class TcpImageReceiver(
                     val remoteIp = (client.remoteSocketAddress as? InetSocketAddress)
                         ?.address?.hostAddress
 
-                    if (allowedSenderIp != null && remoteIp != allowedSenderIp) {
+                    if (allowedSenderIps.isNotEmpty() && remoteIp !in allowedSenderIps) {
                         client.close()
                         continue
                     }
