@@ -156,13 +156,12 @@ fun ClipRelayScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState()),
+                .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(12.dp))
             StatusChip(state = state)
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.weight(1f))
             MainCard(
                 state = state,
                 clipboardTransferFlow = clipboardTransferFlow,
@@ -177,7 +176,7 @@ fun ClipRelayScreen(
                 onImageSyncSettingChanged = onImageSyncSettingChanged,
                 onAutoCopyFixClick = onAutoCopyFixClick
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.weight(1f))
             FooterSection(isPaired = isPaired, onHelpClick = onHelpClick)
         }
 
@@ -339,48 +338,48 @@ private fun MainCard(
                 color = borderColor,
                 shape = RoundedCornerShape(28.dp)
             )
-            .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 28.dp)
+            .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 24.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // App icon above title
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Aqua),
-                contentAlignment = Alignment.Center
+            // App icon + title inline
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Image(
-                    painter = painterResource(R.mipmap.ic_launcher_foreground),
-                    contentDescription = "ClipRelay icon",
-                    modifier = Modifier.size(64.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Aqua),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(R.mipmap.ic_launcher_foreground),
+                        contentDescription = "ClipRelay icon",
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "ClipRelay",
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Teal
+                    )
+                    Text(
+                        text = "Seamless clipboard sharing with your Mac",
+                        fontSize = 13.sp,
+                        color = if (isPaired) Teal.copy(alpha = 0.45f) else Color(0x66000000)
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            // Title
-            Text(
-                text = "ClipRelay",
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-                color = Teal,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Seamless clipboard sharing with your Mac",
-                fontSize = 15.sp,
-                color = if (isPaired) Teal.copy(alpha = 0.45f) else Color(0x66000000),
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
 
-            Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider(
                 color = if (isPaired) Color(0x1400FFD5) else Color(0x0F00FFD5),
                 thickness = 1.dp
             )
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Device row with background lock watermark when connected
             val lockAlpha by animateColorAsState(
@@ -484,7 +483,7 @@ private fun MainCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Action button
             if (!isPaired) {
