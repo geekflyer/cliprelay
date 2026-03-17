@@ -8,4 +8,10 @@ final class ClipboardWriter {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
     }
+
+    func writeImage(_ data: Data) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setData(data, forType: .png)
+    }
 }
