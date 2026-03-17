@@ -5,6 +5,15 @@ import CommonCrypto
 import CryptoKit
 import os
 
+// MARK: - Settings Provider
+
+/// Abstraction so Session can read/write rich-media settings without depending on PairingManager.
+protocol SettingsProvider: AnyObject {
+    func isRichMediaEnabled() -> Bool
+    func getRichMediaEnabledChangedAt() -> Int64
+    func setRichMediaEnabled(_ enabled: Bool, changedAt: Int64)
+}
+
 // MARK: - Session Delegate
 
 protocol SessionDelegate: AnyObject {
@@ -14,6 +23,11 @@ protocol SessionDelegate: AnyObject {
     func session(_ session: Session, didFailWithError error: Error)
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool
     func session(_ session: Session, didCompletePairingWithSecret sharedSecret: Data, remoteName: String?)
+    func session(_ session: Session, didChangeRichMediaSetting enabled: Bool)
+}
+
+extension SessionDelegate {
+    func session(_ session: Session, didChangeRichMediaSetting enabled: Bool) {}
 }
 
 // MARK: - Session Errors
@@ -71,8 +85,12 @@ final class Session {
         set { lock.lock(); _closed = newValue; lock.unlock() }
     }
 
+    /// Settings provider for reading/writing rich-media settings.
+    weak var settingsProvider: SettingsProvider?
+
     /// Queue of outbound clipboard transfers (plaintext).
     private var outboundQueue: [Data] = []
+    private var configUpdateQueue: [Message] = []
     private let queueLock = NSLock()
 
     /// Shared secret hex string for deriving auth and session keys.
@@ -252,6 +270,12 @@ final class Session {
     func listenForMessages() {
         do {
             while !closed {
+                // Drain any queued CONFIG_UPDATE messages first
+                if let configMsg = dequeueConfigUpdate() {
+                    try writeMessage(configMsg)
+                    continue
+                }
+
                 // Check for queued outbound transfers
                 if let outbound = dequeueOutbound() {
                     try doSendClipboard(outbound)
@@ -283,7 +307,7 @@ final class Session {
         case .offer:
             try handleInboundOffer(msg)
         case .configUpdate:
-            break // handled in later task
+            handleConfigUpdate(msg)
         case .reject:
             break // handled in later task
         case .error:
@@ -291,6 +315,36 @@ final class Session {
         default:
             logger.warning("Ignoring unexpected message type: \(String(describing: msg.type))")
         }
+    }
+
+    // MARK: - CONFIG_UPDATE
+
+    /// Handle an inbound CONFIG_UPDATE message. Applies last-write-wins to the rich-media setting.
+    private func handleConfigUpdate(_ msg: Message) {
+        guard let sp = settingsProvider,
+              let json = try? JSONSerialization.jsonObject(with: msg.payload) as? [String: Any] else { return }
+        let remoteEnabled = json["richMediaEnabled"] as? Bool ?? false
+        let remoteChangedAt = (json["richMediaEnabledChangedAt"] as? NSNumber)?.int64Value ?? 0
+        let localChangedAt = sp.getRichMediaEnabledChangedAt()
+        if remoteChangedAt > localChangedAt {
+            sp.setRichMediaEnabled(remoteEnabled, changedAt: remoteChangedAt)
+            delegate?.session(self, didChangeRichMediaSetting: remoteEnabled)
+        }
+    }
+
+    /// Send a CONFIG_UPDATE message with the current rich-media settings.
+    /// Can be called from any thread; the message is enqueued for the listen loop.
+    func sendConfigUpdate() {
+        guard !closed, let sp = settingsProvider else { return }
+        let payload: [String: Any] = [
+            "richMediaEnabled": sp.isRichMediaEnabled(),
+            "richMediaEnabledChangedAt": sp.getRichMediaEnabledChangedAt()
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        let msg = Message(type: .configUpdate, payload: data)
+        queueLock.lock()
+        configUpdateQueue.append(msg)
+        queueLock.unlock()
     }
 
     // MARK: - Outbound Transfer
@@ -303,6 +357,13 @@ final class Session {
         queueLock.lock()
         outboundQueue.append(plaintext)
         queueLock.unlock()
+    }
+
+    private func dequeueConfigUpdate() -> Message? {
+        queueLock.lock()
+        defer { queueLock.unlock() }
+        if configUpdateQueue.isEmpty { return nil }
+        return configUpdateQueue.removeFirst()
     }
 
     private func dequeueOutbound() -> Data? {
@@ -468,6 +529,15 @@ final class Session {
             obj["auth"] = authHex
         }
 
+        // Include settings if available
+        if let sp = settingsProvider {
+            let settings: [String: Any] = [
+                "richMediaEnabled": sp.isRichMediaEnabled(),
+                "richMediaEnabledChangedAt": sp.getRichMediaEnabledChangedAt()
+            ]
+            obj["settings"] = settings
+        }
+
         return (try? JSONSerialization.data(withJSONObject: obj)) ?? Data(#"{"version":2}"#.utf8)
     }
 
@@ -508,7 +578,24 @@ final class Session {
             throw SessionError.protocolError("Authentication failed")
         }
 
+        // Resolve settings with last-write-wins
+        resolveSettings(json)
+
         return remoteEkBytes
+    }
+
+    /// Resolve remote settings using last-write-wins. If the remote has a newer
+    /// `richMediaEnabledChangedAt`, persist the remote value locally.
+    private func resolveSettings(_ json: [String: Any]) {
+        guard let sp = settingsProvider,
+              let remoteSettings = json["settings"] as? [String: Any] else { return }
+        let remoteEnabled = remoteSettings["richMediaEnabled"] as? Bool ?? false
+        let remoteChangedAt = (remoteSettings["richMediaEnabledChangedAt"] as? NSNumber)?.int64Value ?? 0
+        let localChangedAt = sp.getRichMediaEnabledChangedAt()
+        if remoteChangedAt > localChangedAt {
+            sp.setRichMediaEnabled(remoteEnabled, changedAt: remoteChangedAt)
+            delegate?.session(self, didChangeRichMediaSetting: remoteEnabled)
+        }
     }
 
     /// Compute SHA-256 hex digest of data.

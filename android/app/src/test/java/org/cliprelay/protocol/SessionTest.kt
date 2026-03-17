@@ -828,6 +828,372 @@ class SessionTest {
         fromMac.close()
     }
 
+    // ── Settings in HELLO/WELCOME tests ────────────────────────────
+
+    @Test
+    fun `helloPayload includes settings when settingsProvider is set`() {
+        val macInput = PipedInputStream()
+        val toMac = PipedOutputStream(macInput)
+        val macOutput = PipedOutputStream()
+        val fromMac = PipedInputStream(macOutput)
+
+        val sp = TestSettingsProvider(enabled = true, changedAt = 1773698112)
+        val callback = TestCallback()
+
+        val session = Session(
+            input = macInput,
+            output = macOutput,
+            isInitiator = true,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000,
+            settingsProvider = sp
+        )
+
+        Thread { session.performHandshake() }.start()
+
+        // Read the HELLO the session sent
+        val hello = MessageCodec.decode(fromMac)
+        assertEquals(MessageType.HELLO, hello.type)
+
+        val json = JSONObject(String(hello.payload))
+        assertTrue("HELLO should have settings", json.has("settings"))
+        val settings = json.getJSONObject("settings")
+        assertTrue("settings.richMediaEnabled should be true", settings.getBoolean("richMediaEnabled"))
+        assertEquals("settings.richMediaEnabledChangedAt should match",
+            1773698112L, settings.getLong("richMediaEnabledChangedAt"))
+
+        session.close()
+        macInput.close(); toMac.close(); macOutput.close(); fromMac.close()
+    }
+
+    @Test
+    fun `validateVersion resolves settings - remote newer wins`() {
+        val androidInput = PipedInputStream()
+        val toAndroid = PipedOutputStream(androidInput)
+        val androidOutput = PipedOutputStream()
+        val fromAndroid = PipedInputStream(androidOutput)
+
+        // Local: richMediaEnabled=false, changedAt=1000
+        val sp = TestSettingsProvider(enabled = false, changedAt = 1000)
+        val readyLatch = CountDownLatch(1)
+        var settingChanged = false
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+        callback.onRichMediaChanged = { enabled -> settingChanged = enabled }
+
+        val session = Session(
+            input = androidInput,
+            output = androidOutput,
+            isInitiator = false,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 3000,
+            settingsProvider = sp
+        )
+
+        Thread { session.performHandshake() }.start()
+
+        // Send HELLO with remote settings: richMediaEnabled=true, changedAt=2000
+        val kp = E2ECrypto.generateX25519KeyPair()
+        val ekBytes = E2ECrypto.x25519PublicKeyToRaw(kp.public)
+        val ekHex = ekBytes.joinToString("") { "%02x".format(it) }
+        val authKey = E2ECrypto.deriveAuthKey(E2ECrypto.hexToBytes(testSharedSecret))
+        val authBytes = E2ECrypto.hmacAuth(ekBytes, authKey)
+        val authHex = authBytes.joinToString("") { "%02x".format(it) }
+
+        val helloJson = JSONObject().apply {
+            put("version", 2)
+            put("ek", ekHex)
+            put("auth", authHex)
+            put("settings", JSONObject().apply {
+                put("richMediaEnabled", true)
+                put("richMediaEnabledChangedAt", 2000)
+            })
+        }
+        MessageCodec.write(toAndroid, Message(MessageType.HELLO, helloJson.toString().toByteArray()))
+
+        // Read WELCOME and complete handshake
+        val welcome = MessageCodec.decode(fromAndroid)
+        assertEquals(MessageType.WELCOME, welcome.type)
+
+        assertTrue("Session should be ready", readyLatch.await(5, TimeUnit.SECONDS))
+
+        // Verify local settings were updated (remote was newer)
+        assertTrue("Local richMediaEnabled should be true", sp.enabled)
+        assertEquals("Local changedAt should be 2000", 2000L, sp.changedAt)
+        assertTrue("Callback should have been called with true", settingChanged)
+
+        session.close()
+        androidInput.close(); toAndroid.close(); androidOutput.close(); fromAndroid.close()
+    }
+
+    @Test
+    fun `validateVersion keeps local settings when local is newer`() {
+        val androidInput = PipedInputStream()
+        val toAndroid = PipedOutputStream(androidInput)
+        val androidOutput = PipedOutputStream()
+        val fromAndroid = PipedInputStream(androidOutput)
+
+        // Local: richMediaEnabled=true, changedAt=3000
+        val sp = TestSettingsProvider(enabled = true, changedAt = 3000)
+        val readyLatch = CountDownLatch(1)
+        var settingChangeCalled = false
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+        callback.onRichMediaChanged = { _ -> settingChangeCalled = true }
+
+        val session = Session(
+            input = androidInput,
+            output = androidOutput,
+            isInitiator = false,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 3000,
+            settingsProvider = sp
+        )
+
+        Thread { session.performHandshake() }.start()
+
+        // Send HELLO with remote settings: richMediaEnabled=false, changedAt=1000 (older)
+        val kp = E2ECrypto.generateX25519KeyPair()
+        val ekBytes = E2ECrypto.x25519PublicKeyToRaw(kp.public)
+        val ekHex = ekBytes.joinToString("") { "%02x".format(it) }
+        val authKey = E2ECrypto.deriveAuthKey(E2ECrypto.hexToBytes(testSharedSecret))
+        val authBytes = E2ECrypto.hmacAuth(ekBytes, authKey)
+        val authHex = authBytes.joinToString("") { "%02x".format(it) }
+
+        val helloJson = JSONObject().apply {
+            put("version", 2)
+            put("ek", ekHex)
+            put("auth", authHex)
+            put("settings", JSONObject().apply {
+                put("richMediaEnabled", false)
+                put("richMediaEnabledChangedAt", 1000)
+            })
+        }
+        MessageCodec.write(toAndroid, Message(MessageType.HELLO, helloJson.toString().toByteArray()))
+
+        val welcome = MessageCodec.decode(fromAndroid)
+        assertEquals(MessageType.WELCOME, welcome.type)
+
+        assertTrue("Session should be ready", readyLatch.await(5, TimeUnit.SECONDS))
+
+        // Local settings should be unchanged
+        assertTrue("Local richMediaEnabled should still be true", sp.enabled)
+        assertEquals("Local changedAt should still be 3000", 3000L, sp.changedAt)
+        assertFalse("Callback should not have been called", settingChangeCalled)
+
+        session.close()
+        androidInput.close(); toAndroid.close(); androidOutput.close(); fromAndroid.close()
+    }
+
+    @Test
+    fun `validateVersion handles missing settings gracefully`() {
+        val androidInput = PipedInputStream()
+        val toAndroid = PipedOutputStream(androidInput)
+        val androidOutput = PipedOutputStream()
+        val fromAndroid = PipedInputStream(androidOutput)
+
+        val sp = TestSettingsProvider(enabled = false, changedAt = 500)
+        val readyLatch = CountDownLatch(1)
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+
+        val session = Session(
+            input = androidInput,
+            output = androidOutput,
+            isInitiator = false,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 3000,
+            settingsProvider = sp
+        )
+
+        Thread { session.performHandshake() }.start()
+
+        // Send HELLO without settings (simulating older client)
+        val kp = E2ECrypto.generateX25519KeyPair()
+        val ekBytes = E2ECrypto.x25519PublicKeyToRaw(kp.public)
+        val ekHex = ekBytes.joinToString("") { "%02x".format(it) }
+        val authKey = E2ECrypto.deriveAuthKey(E2ECrypto.hexToBytes(testSharedSecret))
+        val authBytes = E2ECrypto.hmacAuth(ekBytes, authKey)
+        val authHex = authBytes.joinToString("") { "%02x".format(it) }
+
+        val helloJson = JSONObject().apply {
+            put("version", 2)
+            put("ek", ekHex)
+            put("auth", authHex)
+        }
+        MessageCodec.write(toAndroid, Message(MessageType.HELLO, helloJson.toString().toByteArray()))
+
+        val welcome = MessageCodec.decode(fromAndroid)
+        assertEquals(MessageType.WELCOME, welcome.type)
+
+        assertTrue("Session should be ready", readyLatch.await(5, TimeUnit.SECONDS))
+
+        // Settings should be unchanged
+        assertFalse("richMediaEnabled should still be false", sp.enabled)
+        assertEquals("changedAt should still be 500", 500L, sp.changedAt)
+
+        session.close()
+        androidInput.close(); toAndroid.close(); androidOutput.close(); fromAndroid.close()
+    }
+
+    // ── CONFIG_UPDATE tests ─────────────────────────────────────────
+
+    @Test
+    fun `handleConfigUpdate persists remote settings when newer`() {
+        val macInput = PipedInputStream()
+        val toMac = PipedOutputStream(macInput)
+        val macOutput = PipedOutputStream()
+        val fromMac = PipedInputStream(macOutput)
+
+        val sp = TestSettingsProvider(enabled = false, changedAt = 1000)
+        val readyLatch = CountDownLatch(1)
+        val settingChangedLatch = CountDownLatch(1)
+        var changedValue = false
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+        callback.onRichMediaChanged = { enabled ->
+            changedValue = enabled
+            settingChangedLatch.countDown()
+        }
+
+        val session = Session(
+            input = macInput,
+            output = macOutput,
+            isInitiator = true,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000,
+            settingsProvider = sp
+        )
+
+        Thread {
+            session.performHandshake()
+            session.listenForMessages()
+        }.start()
+
+        val hello = MessageCodec.decode(fromMac)
+        sendValidWelcome(toMac, hello)
+        assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
+
+        // Send CONFIG_UPDATE with newer settings
+        val configJson = JSONObject().apply {
+            put("richMediaEnabled", true)
+            put("richMediaEnabledChangedAt", 2000)
+        }
+        val configMsg = Message(MessageType.CONFIG_UPDATE, configJson.toString().toByteArray())
+        MessageCodec.write(toMac, configMsg)
+
+        assertTrue("Setting changed callback should fire", settingChangedLatch.await(3, TimeUnit.SECONDS))
+        assertTrue("richMediaEnabled should be true", sp.enabled)
+        assertEquals("changedAt should be 2000", 2000L, sp.changedAt)
+        assertTrue("Callback value should be true", changedValue)
+
+        session.close()
+        macInput.close(); toMac.close(); macOutput.close(); fromMac.close()
+    }
+
+    @Test
+    fun `handleConfigUpdate ignores remote settings when older`() {
+        val macInput = PipedInputStream()
+        val toMac = PipedOutputStream(macInput)
+        val macOutput = PipedOutputStream()
+        val fromMac = PipedInputStream(macOutput)
+
+        val sp = TestSettingsProvider(enabled = true, changedAt = 3000)
+        val readyLatch = CountDownLatch(1)
+        var settingChangeCalled = false
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+        callback.onRichMediaChanged = { _ -> settingChangeCalled = true }
+
+        val session = Session(
+            input = macInput,
+            output = macOutput,
+            isInitiator = true,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000,
+            settingsProvider = sp
+        )
+
+        Thread {
+            session.performHandshake()
+            session.listenForMessages()
+        }.start()
+
+        val hello = MessageCodec.decode(fromMac)
+        sendValidWelcome(toMac, hello)
+        assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
+
+        // Send CONFIG_UPDATE with older settings
+        val configJson = JSONObject().apply {
+            put("richMediaEnabled", false)
+            put("richMediaEnabledChangedAt", 1000)
+        }
+        val configMsg = Message(MessageType.CONFIG_UPDATE, configJson.toString().toByteArray())
+        MessageCodec.write(toMac, configMsg)
+
+        // Give time for message processing
+        Thread.sleep(500)
+
+        assertTrue("richMediaEnabled should still be true", sp.enabled)
+        assertEquals("changedAt should still be 3000", 3000L, sp.changedAt)
+        assertFalse("Callback should not have been called", settingChangeCalled)
+
+        session.close()
+        macInput.close(); toMac.close(); macOutput.close(); fromMac.close()
+    }
+
+    @Test
+    fun `sendConfigUpdate produces correct message format`() {
+        val macInput = PipedInputStream()
+        val toMac = PipedOutputStream(macInput)
+        val macOutput = PipedOutputStream()
+        val fromMac = PipedInputStream(macOutput)
+
+        val sp = TestSettingsProvider(enabled = true, changedAt = 1773698112)
+        val readyLatch = CountDownLatch(1)
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+
+        val session = Session(
+            input = macInput,
+            output = macOutput,
+            isInitiator = true,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000,
+            settingsProvider = sp
+        )
+
+        Thread {
+            session.performHandshake()
+            session.listenForMessages()
+        }.start()
+
+        val hello = MessageCodec.decode(fromMac)
+        sendValidWelcome(toMac, hello)
+        assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
+
+        // Trigger sendConfigUpdate
+        session.sendConfigUpdate()
+
+        // Read the CONFIG_UPDATE message from the output
+        val msg = MessageCodec.decode(fromMac)
+        assertEquals("Message type should be CONFIG_UPDATE", MessageType.CONFIG_UPDATE, msg.type)
+
+        val json = JSONObject(String(msg.payload))
+        assertTrue("Should have richMediaEnabled", json.getBoolean("richMediaEnabled"))
+        assertEquals("Should have correct changedAt", 1773698112L, json.getLong("richMediaEnabledChangedAt"))
+
+        session.close()
+        macInput.close(); toMac.close(); macOutput.close(); fromMac.close()
+    }
+
     // ── Test infrastructure ──────────────────────────────────────────
 
     data class SessionEnv(
@@ -923,6 +1289,7 @@ class SessionTest {
         var onTransfer: (String) -> Unit = {}
         var onError: (Exception) -> Unit = {}
         var onPairing: (ByteArray, String?) -> Unit = { _, _ -> }
+        var onRichMediaChanged: (Boolean) -> Unit = {}
         val knownHashes = CopyOnWriteArrayList<String>()
 
         override fun onSessionReady() = onReady()
@@ -933,5 +1300,20 @@ class SessionTest {
         override fun hasHash(hash: String): Boolean = hash in knownHashes
         override fun onPairingComplete(sharedSecret: ByteArray, remoteName: String?) =
             onPairing(sharedSecret, remoteName)
+        override fun onRichMediaSettingChanged(enabled: Boolean) =
+            onRichMediaChanged(enabled)
+    }
+
+    /** In-memory settings provider for tests. */
+    class TestSettingsProvider(
+        var enabled: Boolean = false,
+        var changedAt: Long = 0L
+    ) : SettingsProvider {
+        override fun isRichMediaEnabled() = enabled
+        override fun getRichMediaEnabledChangedAt() = changedAt
+        override fun setRichMediaEnabled(enabled: Boolean, changedAt: Long) {
+            this.enabled = enabled
+            this.changedAt = changedAt
+        }
     }
 }

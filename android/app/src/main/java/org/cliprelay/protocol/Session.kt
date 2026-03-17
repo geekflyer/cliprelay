@@ -14,6 +14,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Logger
 import javax.crypto.SecretKey
 
+// ── Settings Provider ───────────────────────────────────────────────
+
+/** Abstraction so Session can read/write rich-media settings without depending on PairingStore. */
+interface SettingsProvider {
+    fun isRichMediaEnabled(): Boolean
+    fun getRichMediaEnabledChangedAt(): Long
+    fun setRichMediaEnabled(enabled: Boolean, changedAt: Long)
+}
+
 // ── Session Mode ──────────────────────────────────────────────────────
 
 sealed class SessionMode {
@@ -47,7 +56,8 @@ class Session(
     private var sharedSecretHex: String? = null,
     internal var handshakeTimeoutMs: Long = 5_000L,
     internal var transferTimeoutMs: Long = 30_000L,
-    internal var pairingTimeoutMs: Long = 60_000L
+    internal var pairingTimeoutMs: Long = 60_000L,
+    private val settingsProvider: SettingsProvider? = null
 ) {
     private val logger = Logger.getLogger("Session")
     private val closed = AtomicBoolean(false)
@@ -72,6 +82,9 @@ class Session(
 
     /** Queue of outbound clipboard transfers (plaintext). */
     private val outboundQueue = LinkedBlockingQueue<ByteArray>()
+
+    /** Queue of outbound CONFIG_UPDATE messages. */
+    private val configUpdateQueue = LinkedBlockingQueue<Message>()
 
     /**
      * Queue of inbound messages, populated by the reader thread.
@@ -233,6 +246,13 @@ class Session(
 
         try {
             while (!closed.get()) {
+                // Drain any queued CONFIG_UPDATE messages first
+                val configMsg = configUpdateQueue.poll()
+                if (configMsg != null) {
+                    MessageCodec.write(output, configMsg)
+                    continue
+                }
+
                 // Check for queued outbound transfers (short poll)
                 val outbound = outboundQueue.poll(50, TimeUnit.MILLISECONDS)
                 if (outbound != null) {
@@ -281,7 +301,7 @@ class Session(
     private fun handleInbound(msg: Message) {
         when (msg.type) {
             MessageType.OFFER -> handleInboundOffer(msg)
-            MessageType.CONFIG_UPDATE -> { /* handled in later task */ }
+            MessageType.CONFIG_UPDATE -> handleConfigUpdate(msg)
             MessageType.REJECT -> { /* handled in later task */ }
             MessageType.ERROR -> { /* handled in later task */ }
             else -> logger.warning("Ignoring unexpected message type: ${msg.type}")
@@ -468,6 +488,14 @@ class Session(
             json.put("auth", authHex)
         }
 
+        // Include settings if available
+        settingsProvider?.let { sp ->
+            val settings = JSONObject()
+            settings.put("richMediaEnabled", sp.isRichMediaEnabled())
+            settings.put("richMediaEnabledChangedAt", sp.getRichMediaEnabledChangedAt())
+            json.put("settings", settings)
+        }
+
         return json.toString().toByteArray()
     }
 
@@ -501,7 +529,58 @@ class Session(
             throw ProtocolException("Authentication failed")
         }
 
+        // Resolve settings with last-write-wins
+        resolveSettings(json)
+
         return remoteEkBytes
+    }
+
+    /**
+     * Resolve remote settings using last-write-wins. If the remote has a newer
+     * `richMediaEnabledChangedAt`, persist the remote value locally.
+     */
+    private fun resolveSettings(json: JSONObject) {
+        val sp = settingsProvider ?: return
+        val remoteSettings = json.optJSONObject("settings") ?: return
+        val remoteEnabled = remoteSettings.optBoolean("richMediaEnabled", false)
+        val remoteChangedAt = remoteSettings.optLong("richMediaEnabledChangedAt", 0)
+        val localChangedAt = sp.getRichMediaEnabledChangedAt()
+        if (remoteChangedAt > localChangedAt) {
+            sp.setRichMediaEnabled(remoteEnabled, remoteChangedAt)
+            callback.onRichMediaSettingChanged(remoteEnabled)
+        }
+    }
+
+    // ── CONFIG_UPDATE ────────────────────────────────────────────────
+
+    /**
+     * Handle an inbound CONFIG_UPDATE message. Applies last-write-wins to the
+     * rich-media setting.
+     */
+    private fun handleConfigUpdate(msg: Message) {
+        val sp = settingsProvider ?: return
+        val json = JSONObject(String(msg.payload))
+        val remoteEnabled = json.optBoolean("richMediaEnabled", false)
+        val remoteChangedAt = json.optLong("richMediaEnabledChangedAt", 0)
+        val localChangedAt = sp.getRichMediaEnabledChangedAt()
+        if (remoteChangedAt > localChangedAt) {
+            sp.setRichMediaEnabled(remoteEnabled, remoteChangedAt)
+            callback.onRichMediaSettingChanged(remoteEnabled)
+        }
+    }
+
+    /**
+     * Send a CONFIG_UPDATE message with the current rich-media settings.
+     * Can be called from any thread; the message is enqueued for the listen loop.
+     */
+    fun sendConfigUpdate() {
+        if (closed.get()) return
+        val sp = settingsProvider ?: return
+        val json = JSONObject()
+        json.put("richMediaEnabled", sp.isRichMediaEnabled())
+        json.put("richMediaEnabledChangedAt", sp.getRichMediaEnabledChangedAt())
+        val msg = Message(MessageType.CONFIG_UPDATE, json.toString().toByteArray())
+        configUpdateQueue.put(msg)
     }
 
     companion object {
@@ -519,4 +598,5 @@ interface SessionCallback {
     fun onSessionError(error: Exception)
     fun hasHash(hash: String): Boolean
     fun onPairingComplete(sharedSecret: ByteArray, remoteName: String?) {}
+    fun onRichMediaSettingChanged(enabled: Boolean) {}
 }

@@ -535,6 +535,340 @@ final class SessionTests: XCTestCase {
         cleanupManual(env)
     }
 
+    // MARK: - Settings in HELLO/WELCOME tests
+
+    func testHelloPayloadIncludesSettingsWhenProviderIsSet() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 1773698112)
+        let delegate = TestSessionDelegate()
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+        }
+
+        // Read the HELLO the session sent
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(hello?.type, .hello)
+
+        guard let payload = hello?.payload,
+              let json = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else {
+            XCTFail("Failed to parse HELLO payload")
+            return
+        }
+
+        guard let settings = json["settings"] as? [String: Any] else {
+            XCTFail("HELLO should have settings")
+            return
+        }
+        XCTAssertEqual(settings["richMediaEnabled"] as? Bool, true)
+        XCTAssertEqual((settings["richMediaEnabledChangedAt"] as? NSNumber)?.int64Value, 1773698112)
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testValidateVersionResolvesSettingsRemoteNewerWins() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: false, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+        var settingChanged: Bool?
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+        delegate.onRichMediaChanged = { _, enabled in settingChanged = enabled }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: false, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+        }
+
+        // Send HELLO with remote settings: richMediaEnabled=true, changedAt=2000
+        let ekPriv = Curve25519.KeyAgreement.PrivateKey()
+        let ekBytes = ekPriv.publicKey.rawRepresentation
+        let ekHex = ekBytes.map { String(format: "%02x", $0) }.joined()
+        guard let secretBytes = E2ECrypto.hexToData(testSharedSecret),
+              let authKey = E2ECrypto.deriveAuthKey(secretBytes: secretBytes) else {
+            XCTFail("Failed to derive auth key"); return
+        }
+        let authBytes = E2ECrypto.hmacAuth(publicKeyBytes: Data(ekBytes), authKey: authKey)
+        let authHex = authBytes.map { String(format: "%02x", $0) }.joined()
+
+        let helloObj: [String: Any] = [
+            "version": 2,
+            "ek": ekHex,
+            "auth": authHex,
+            "settings": [
+                "richMediaEnabled": true,
+                "richMediaEnabledChangedAt": 2000
+            ]
+        ]
+        let helloData = try! JSONSerialization.data(withJSONObject: helloObj)
+        writeMessage(Message(type: .hello, payload: helloData), to: env.writeToSession)
+
+        // Read WELCOME
+        _ = try? MessageCodec.decode(from: env.readFromSession)
+
+        wait(for: [readyExpectation], timeout: 5.0)
+
+        XCTAssertTrue(sp.richMediaEnabled)
+        XCTAssertEqual(sp.richMediaEnabledChangedAt, 2000)
+        XCTAssertEqual(settingChanged, true)
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testValidateVersionKeepsLocalSettingsWhenLocalIsNewer() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 3000)
+        let readyExpectation = expectation(description: "Session ready")
+        var settingChangeCalled = false
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+        delegate.onRichMediaChanged = { _, _ in settingChangeCalled = true }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: false, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+        }
+
+        // Send HELLO with older remote settings
+        let ekPriv = Curve25519.KeyAgreement.PrivateKey()
+        let ekBytes = ekPriv.publicKey.rawRepresentation
+        let ekHex = ekBytes.map { String(format: "%02x", $0) }.joined()
+        guard let secretBytes = E2ECrypto.hexToData(testSharedSecret),
+              let authKey = E2ECrypto.deriveAuthKey(secretBytes: secretBytes) else {
+            XCTFail("Failed to derive auth key"); return
+        }
+        let authBytes = E2ECrypto.hmacAuth(publicKeyBytes: Data(ekBytes), authKey: authKey)
+        let authHex = authBytes.map { String(format: "%02x", $0) }.joined()
+
+        let helloObj: [String: Any] = [
+            "version": 2,
+            "ek": ekHex,
+            "auth": authHex,
+            "settings": [
+                "richMediaEnabled": false,
+                "richMediaEnabledChangedAt": 1000
+            ]
+        ]
+        let helloData = try! JSONSerialization.data(withJSONObject: helloObj)
+        writeMessage(Message(type: .hello, payload: helloData), to: env.writeToSession)
+
+        _ = try? MessageCodec.decode(from: env.readFromSession)
+
+        wait(for: [readyExpectation], timeout: 5.0)
+
+        XCTAssertTrue(sp.richMediaEnabled, "Local should still be true")
+        XCTAssertEqual(sp.richMediaEnabledChangedAt, 3000, "Local changedAt should still be 3000")
+        XCTAssertFalse(settingChangeCalled, "Callback should not fire for older settings")
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testValidateVersionHandlesMissingSettingsGracefully() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: false, richMediaEnabledChangedAt: 500)
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: false, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+        }
+
+        // Send HELLO without settings (older client)
+        let ekPriv = Curve25519.KeyAgreement.PrivateKey()
+        let ekBytes = ekPriv.publicKey.rawRepresentation
+        let ekHex = ekBytes.map { String(format: "%02x", $0) }.joined()
+        guard let secretBytes = E2ECrypto.hexToData(testSharedSecret),
+              let authKey = E2ECrypto.deriveAuthKey(secretBytes: secretBytes) else {
+            XCTFail("Failed to derive auth key"); return
+        }
+        let authBytes = E2ECrypto.hmacAuth(publicKeyBytes: Data(ekBytes), authKey: authKey)
+        let authHex = authBytes.map { String(format: "%02x", $0) }.joined()
+
+        let helloObj: [String: Any] = [
+            "version": 2,
+            "ek": ekHex,
+            "auth": authHex
+        ]
+        let helloData = try! JSONSerialization.data(withJSONObject: helloObj)
+        writeMessage(Message(type: .hello, payload: helloData), to: env.writeToSession)
+
+        _ = try? MessageCodec.decode(from: env.readFromSession)
+
+        wait(for: [readyExpectation], timeout: 5.0)
+
+        XCTAssertFalse(sp.richMediaEnabled)
+        XCTAssertEqual(sp.richMediaEnabledChangedAt, 500)
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    // MARK: - CONFIG_UPDATE tests
+
+    func testHandleConfigUpdatePersistsRemoteSettingsWhenNewer() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: false, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+        let settingChangedExpectation = expectation(description: "Setting changed")
+        var changedValue: Bool?
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+        delegate.onRichMediaChanged = { _, enabled in
+            changedValue = enabled
+            settingChangedExpectation.fulfill()
+        }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(hello?.type, .hello)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send CONFIG_UPDATE with newer settings
+        let configObj: [String: Any] = [
+            "richMediaEnabled": true,
+            "richMediaEnabledChangedAt": 2000
+        ]
+        let configData = try! JSONSerialization.data(withJSONObject: configObj)
+        writeMessage(Message(type: .configUpdate, payload: configData), to: env.writeToSession)
+
+        wait(for: [settingChangedExpectation], timeout: 3.0)
+        XCTAssertTrue(sp.richMediaEnabled)
+        XCTAssertEqual(sp.richMediaEnabledChangedAt, 2000)
+        XCTAssertEqual(changedValue, true)
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testHandleConfigUpdateIgnoresRemoteSettingsWhenOlder() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 3000)
+        let readyExpectation = expectation(description: "Session ready")
+        let noChangeExpectation = expectation(description: "No change")
+        noChangeExpectation.isInverted = true
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+        delegate.onRichMediaChanged = { _, _ in noChangeExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send CONFIG_UPDATE with older settings
+        let configObj: [String: Any] = [
+            "richMediaEnabled": false,
+            "richMediaEnabledChangedAt": 1000
+        ]
+        let configData = try! JSONSerialization.data(withJSONObject: configObj)
+        writeMessage(Message(type: .configUpdate, payload: configData), to: env.writeToSession)
+
+        // Wait briefly for inverted expectation
+        wait(for: [noChangeExpectation], timeout: 1.0)
+        XCTAssertTrue(sp.richMediaEnabled)
+        XCTAssertEqual(sp.richMediaEnabledChangedAt, 3000)
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testSendConfigUpdateProducesCorrectFormat() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 1773698112)
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Trigger sendConfigUpdate
+        session.sendConfigUpdate()
+
+        // Read the CONFIG_UPDATE from output
+        let msg = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(msg?.type, .configUpdate)
+
+        guard let payload = msg?.payload,
+              let json = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else {
+            XCTFail("Failed to parse CONFIG_UPDATE payload")
+            return
+        }
+        XCTAssertEqual(json["richMediaEnabled"] as? Bool, true)
+        XCTAssertEqual((json["richMediaEnabledChangedAt"] as? NSNumber)?.int64Value, 1773698112)
+
+        session.close()
+        cleanupManual(env)
+    }
+
     // MARK: - Test Infrastructure
 
     struct PairedSessionEnv {
@@ -689,6 +1023,7 @@ final class TestSessionDelegate: SessionDelegate {
     var onReceived: (Session, Data, String) -> Void = { _, _, _ in }
     var onTransferComplete: (Session, String) -> Void = { _, _ in }
     var onError: (Session, Error) -> Void = { _, _ in }
+    var onRichMediaChanged: (Session, Bool) -> Void = { _, _ in }
     var knownHashes = Set<String>()
 
     func sessionDidBecomeReady(_ session: Session) { onReady(session) }
@@ -703,4 +1038,25 @@ final class TestSessionDelegate: SessionDelegate {
         knownHashes.contains(hash)
     }
     func session(_ session: Session, didCompletePairingWithSecret sharedSecret: Data, remoteName: String?) {}
+    func session(_ session: Session, didChangeRichMediaSetting enabled: Bool) {
+        onRichMediaChanged(session, enabled)
+    }
+}
+
+/// In-memory settings provider for tests.
+final class TestSettingsProvider: SettingsProvider {
+    var richMediaEnabled: Bool
+    var richMediaEnabledChangedAt: Int64
+
+    init(richMediaEnabled: Bool = false, richMediaEnabledChangedAt: Int64 = 0) {
+        self.richMediaEnabled = richMediaEnabled
+        self.richMediaEnabledChangedAt = richMediaEnabledChangedAt
+    }
+
+    func isRichMediaEnabled() -> Bool { richMediaEnabled }
+    func getRichMediaEnabledChangedAt() -> Int64 { richMediaEnabledChangedAt }
+    func setRichMediaEnabled(_ enabled: Bool, changedAt: Int64) {
+        richMediaEnabled = enabled
+        richMediaEnabledChangedAt = changedAt
+    }
 }
