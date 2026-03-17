@@ -764,6 +764,70 @@ class SessionTest {
         sessionThread.join(2000)
     }
 
+    // ── New message type routing tests ─────────────────────────────
+
+    @Test
+    fun `CONFIG_UPDATE during listen loop does not crash session`() {
+        val macInput = PipedInputStream()
+        val toMac = PipedOutputStream(macInput)
+        val macOutput = PipedOutputStream()
+        val fromMac = PipedInputStream(macOutput)
+
+        val readyLatch = CountDownLatch(1)
+        val receivedLatch = CountDownLatch(1)
+        val errorLatch = CountDownLatch(1)
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+        callback.onError = { errorLatch.countDown() }
+        callback.onReceived = { _, _ -> receivedLatch.countDown() }
+
+        val session = Session(
+            input = macInput,
+            output = macOutput,
+            isInitiator = true,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000,
+            transferTimeoutMs = 2000
+        )
+
+        Thread {
+            session.performHandshake()
+            session.listenForMessages()
+        }.start()
+
+        // Complete handshake
+        val hello = MessageCodec.decode(fromMac)
+        sendValidWelcome(toMac, hello)
+        assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
+
+        // Send CONFIG_UPDATE — session should not crash
+        val configMsg = Message(MessageType.CONFIG_UPDATE, """{"images":true}""".toByteArray())
+        MessageCodec.write(toMac, configMsg)
+
+        // Send REJECT — session should not crash
+        val rejectMsg = Message(MessageType.REJECT, """{"reason":"unsupported"}""".toByteArray())
+        MessageCodec.write(toMac, rejectMsg)
+
+        // Send ERROR — session should not crash
+        val errorMsg = Message(MessageType.ERROR, """{"message":"test error"}""".toByteArray())
+        MessageCodec.write(toMac, errorMsg)
+
+        // Verify session is still alive by doing a clipboard transfer
+        // We need to derive the same session key the session has, so instead
+        // we just verify no error was triggered and close cleanly.
+        Thread.sleep(500) // Give time for messages to be processed
+
+        // No error should have occurred
+        assertEquals("Error latch should not have been triggered", 1L, errorLatch.count)
+
+        session.close()
+        macInput.close()
+        toMac.close()
+        macOutput.close()
+        fromMac.close()
+    }
+
     // ── Test infrastructure ──────────────────────────────────────────
 
     data class SessionEnv(

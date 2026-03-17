@@ -11,6 +11,7 @@ import java.security.PrivateKey
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Logger
 import javax.crypto.SecretKey
 
 // ── Session Mode ──────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ class Session(
     internal var transferTimeoutMs: Long = 30_000L,
     internal var pairingTimeoutMs: Long = 60_000L
 ) {
+    private val logger = Logger.getLogger("Session")
     private val closed = AtomicBoolean(false)
 
     /** Local device name sent during handshake. Set before calling performHandshake(). */
@@ -279,7 +281,10 @@ class Session(
     private fun handleInbound(msg: Message) {
         when (msg.type) {
             MessageType.OFFER -> handleInboundOffer(msg)
-            else -> throw ProtocolException("Unexpected message type: ${msg.type}")
+            MessageType.CONFIG_UPDATE -> { /* handled in later task */ }
+            MessageType.REJECT -> { /* handled in later task */ }
+            MessageType.ERROR -> { /* handled in later task */ }
+            else -> logger.warning("Ignoring unexpected message type: ${msg.type}")
         }
     }
 
