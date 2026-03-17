@@ -44,5 +44,15 @@
                        length="2139735"
                        type="application/octet-stream" />
         </item>
+            <item>
+            <title>Version 0.4.0 (b232733)</title>
+            <pubDate>Tue, 17 Mar 2026 06:46:51 +0000</pubDate>
+            <sparkle:version>351</sparkle:version>
+            <sparkle:shortVersionString>0.4.0 (b232733)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.4.0/ClipRelay-0.4.0.dmg"
+                       sparkle:edSignature="pENi17VJnon33WJ4oKs44nJpwhiy63gDgo5Mo+RZ3Vg/xVhY9+HY79pgFHXeWIOlu25pGo+99AWVZGX91xUjBA=="
+                       length="2173801"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
