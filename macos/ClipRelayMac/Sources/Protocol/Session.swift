@@ -32,6 +32,7 @@ extension SessionDelegate {
     func session(_ session: Session, didChangeRichMediaSetting enabled: Bool) {}
     func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String) {}
     func session(_ session: Session, imageWasRejected reason: String) {}
+    func session(_ session: Session, imageSendFailed reason: String) {}
 }
 
 // MARK: - Session Errors
@@ -502,15 +503,24 @@ final class Session {
                 let errorJSON: [String: Any] = ["code": "connection_failed"]
                 let errorData = try JSONSerialization.data(withJSONObject: errorJSON)
                 try writeMessage(Message(type: .error, payload: errorData))
-                throw SessionError.protocolError("Image TCP send failed after retry: \(err.localizedDescription)")
+                delegate?.session(self, imageSendFailed: "TCP connection failed: \(err.localizedDescription)")
+                return
             }
 
-            // Wait for DONE
+            // Wait for DONE or ERROR
             let done = try readWithTimeout(transferTimeoutSeconds)
-            guard done.type == .done else {
-                throw SessionError.unexpectedMessage("Expected DONE after image send, got \(done.type)")
+            switch done.type {
+            case .done:
+                delegate?.session(self, didCompleteTransfer: hash)
+            case .error:
+                let errorJson = (try? JSONSerialization.jsonObject(with: done.payload) as? [String: Any]) ?? [:]
+                let code = errorJson["code"] as? String ?? "unknown"
+                logger.warning("Receiver reported error after image transfer: \(code)")
+                delegate?.session(self, imageSendFailed: "Receiver error: \(code)")
+            default:
+                logger.warning("Expected DONE or ERROR after image send, got \(String(describing: done.type))")
+                delegate?.session(self, imageSendFailed: "Unexpected response: \(String(describing: done.type))")
             }
-            delegate?.session(self, didCompleteTransfer: hash)
 
         case .reject:
             let rejectJson = (try? JSONSerialization.jsonObject(with: response.payload) as? [String: Any]) ?? [:]
@@ -567,6 +577,11 @@ final class Session {
         )
         activeReceiver = receiver
 
+        defer {
+            receiver.closeServer()
+            activeReceiver = nil
+        }
+
         do {
             let serverInfo = try receiver.start()
 
@@ -609,11 +624,11 @@ final class Session {
             try? writeMessage(Message(type: .error, payload: errorData))
             logger.error("TCP transfer error: \(error.localizedDescription)")
         } catch {
-            throw error
+            let errorJSON: [String: Any] = ["code": "transfer_failed", "message": "\(error.localizedDescription)"]
+            let errorData = (try? JSONSerialization.data(withJSONObject: errorJSON)) ?? Data()
+            try? writeMessage(Message(type: .error, payload: errorData))
+            logger.error("Image receive failed: \(error.localizedDescription)")
         }
-
-        receiver.closeServer()
-        activeReceiver = nil
     }
 
     // MARK: - Inbound Transfer

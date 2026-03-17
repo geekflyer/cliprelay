@@ -1514,6 +1514,7 @@ final class TestSessionDelegate: SessionDelegate {
     var onRichMediaChanged: (Session, Bool) -> Void = { _, _ in }
     var onImageReceived: (Session, Data, String, String) -> Void = { _, _, _, _ in }
     var onImageRejected: (Session, String) -> Void = { _, _ in }
+    var onImageSendFailed: (Session, String) -> Void = { _, _ in }
     var knownHashes = Set<String>()
 
     func sessionDidBecomeReady(_ session: Session) { onReady(session) }
@@ -1536,6 +1537,9 @@ final class TestSessionDelegate: SessionDelegate {
     }
     func session(_ session: Session, imageWasRejected reason: String) {
         onImageRejected(session, reason)
+    }
+    func session(_ session: Session, imageSendFailed reason: String) {
+        onImageSendFailed(session, reason)
     }
 }
 

@@ -554,7 +554,7 @@ extension AppDelegate: SessionDelegate {
         appLogger.info("[App] Received image from Android (\(data.count) bytes, \(contentType))")
 
         DispatchQueue.main.async { [weak self] in
-            self?.clipboardWriter.writeImage(data)
+            self?.clipboardWriter.writeImage(data, contentType: contentType)
             self?.statusBarController.flashSyncIndicator()
         }
     }

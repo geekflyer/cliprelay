@@ -9,9 +9,12 @@ final class ClipboardWriter {
         pasteboard.setString(text, forType: .string)
     }
 
-    func writeImage(_ data: Data) {
+    func writeImage(_ data: Data, contentType: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setData(data, forType: .png)
+        let pasteboardType: NSPasteboard.PasteboardType = contentType.contains("jpeg")
+            ? NSPasteboard.PasteboardType("public.jpeg")
+            : .png
+        pasteboard.setData(data, forType: pasteboardType)
     }
 }

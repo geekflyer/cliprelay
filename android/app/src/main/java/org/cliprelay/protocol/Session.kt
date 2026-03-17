@@ -442,12 +442,24 @@ class Session(
                     return
                 }
 
-                // Wait for DONE
+                // Wait for DONE or ERROR
                 val done = readWithTimeout(transferTimeoutMs)
-                if (done.type != MessageType.DONE) {
-                    throw ProtocolException("Expected DONE after image send, got ${done.type}")
+                when (done.type) {
+                    MessageType.DONE -> {
+                        callback.onTransferComplete(hash)
+                    }
+                    MessageType.ERROR -> {
+                        val code = JSONObject(String(done.payload)).optString("code", "unknown")
+                        logger.warning("Receiver reported error after image transfer: $code")
+                        callback.onImageSendFailed("Receiver error: $code")
+                        return
+                    }
+                    else -> {
+                        logger.warning("Expected DONE or ERROR after image send, got ${done.type}")
+                        callback.onImageSendFailed("Unexpected response: ${done.type}")
+                        return
+                    }
                 }
-                callback.onTransferComplete(hash)
             }
             MessageType.REJECT -> {
                 val rejectJson = JSONObject(String(response.payload))
@@ -552,6 +564,13 @@ class Session(
         } catch (e: TcpTransferException) {
             val errorJson = JSONObject().apply {
                 put("code", "transfer_failed")
+            }
+            MessageCodec.write(output, Message(MessageType.ERROR, errorJson.toString().toByteArray()))
+        } catch (e: Exception) {
+            logger.warning("Image receive failed: ${e.message}")
+            val errorJson = JSONObject().apply {
+                put("code", "transfer_failed")
+                put("message", e.message ?: "unknown")
             }
             MessageCodec.write(output, Message(MessageType.ERROR, errorJson.toString().toByteArray()))
         } finally {
