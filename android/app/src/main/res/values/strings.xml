@@ -42,5 +42,5 @@
     <string name="tile_not_paired">Not paired</string>
     <string name="auto_copy_needs_accessibility">Not working — tap to enable Accessibility permission</string>
     <string name="image_sync_setting_title">Image sync (experimental)</string>
-    <string name="image_sync_setting_subtitle">Sync images between devices over fast Wi-Fi</string>
+    <string name="image_sync_setting_subtitle">Sync images between devices over Wi-Fi</string>
 </resources>
