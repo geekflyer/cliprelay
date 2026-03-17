@@ -438,7 +438,8 @@ class Session(
                         put("code", "connection_failed")
                     }
                     MessageCodec.write(output, Message(MessageType.ERROR, errorJson.toString().toByteArray()))
-                    throw ProtocolException("Image TCP send failed after retry: ${lastError.message}")
+                    callback.onImageSendFailed(lastError.message ?: "TCP connection failed")
+                    return
                 }
 
                 // Wait for DONE
@@ -804,5 +805,6 @@ interface SessionCallback {
     fun onRichMediaSettingChanged(enabled: Boolean) {}
     fun onImageReceived(data: ByteArray, contentType: String, hash: String) {}
     fun onImageRejected(reason: String) {}
+    fun onImageSendFailed(reason: String) {}
     fun isDeviceAwake(): Boolean = true
 }

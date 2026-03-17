@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Dedup: hash of the last clipboard we received from the remote side
     private var lastReceivedHash: String?
+    private var lastReceivedImageHash: String?
 
     private var clipboardMonitor: ClipboardMonitor?
     private var awaitingNewPairingConnection = false
@@ -69,12 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.toggleImageSync()
         }
         statusBarController.isImageSyncEnabled = { [weak self] in
-            guard let self, let secret = self.connectedSecret else {
-                // Fall back to checking the first paired device's setting
-                guard let self else { return false }
-                return self.pairingManager.loadDevices().first?.richMediaEnabled ?? false
-            }
+            guard let self, let secret = self.connectedSecret else { return false }
             return self.pairingManager.loadDevices().first(where: { $0.sharedSecret == secret })?.richMediaEnabled ?? false
+        }
+        statusBarController.isDeviceConnected = { [weak self] in
+            self?.connectedSecret != nil
         }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()
@@ -94,6 +94,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Clipboard monitor triggers outbound sends via Session
         clipboardMonitor = ClipboardMonitor { [weak self] text in
             self?.onClipboardChange(text)
+        }
+        clipboardMonitor?.onImageChange = { [weak self] imageData, contentType, hash in
+            guard let self = self else { return }
+            guard self.lastReceivedImageHash != hash else { return }
+            guard self.activeSettingsProvider?.isRichMediaEnabled() == true else { return }
+            self.activeSession?.sendImage(imageData, contentType: contentType)
         }
 
         // Start scanning and monitoring
@@ -539,6 +545,16 @@ extension AppDelegate: SessionDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.clipboardWriter.writeText(text)
             self?.notificationManager.postClipboardReceived(text: text)
+            self?.statusBarController.flashSyncIndicator()
+        }
+    }
+
+    func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String) {
+        lastReceivedImageHash = hash
+        appLogger.info("[App] Received image from Android (\(data.count) bytes, \(contentType))")
+
+        DispatchQueue.main.async { [weak self] in
+            self?.clipboardWriter.writeImage(data)
             self?.statusBarController.flashSyncIndicator()
         }
     }

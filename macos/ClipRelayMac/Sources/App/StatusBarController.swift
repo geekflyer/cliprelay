@@ -12,6 +12,7 @@ final class StatusBarController {
     var isLaunchAtLoginEnabled: (() -> Bool)?
     var onToggleImageSync: (() -> Void)?
     var isImageSyncEnabled: (() -> Bool)?
+    var isDeviceConnected: (() -> Bool)?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
@@ -145,13 +146,16 @@ final class StatusBarController {
         }
         menu.addItem(launchItem)
 
+        let deviceConnected = isDeviceConnected?() ?? false
         let imageSyncItem = NSMenuItem(
             title: "Image Sync (Experimental)",
-            action: #selector(handleToggleImageSync),
+            action: deviceConnected ? #selector(handleToggleImageSync) : nil,
             keyEquivalent: ""
         )
         imageSyncItem.target = self
-        if isImageSyncEnabled?() == true {
+        if !deviceConnected {
+            imageSyncItem.isEnabled = false
+        } else if isImageSyncEnabled?() == true {
             imageSyncItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
         }
         menu.addItem(imageSyncItem)
