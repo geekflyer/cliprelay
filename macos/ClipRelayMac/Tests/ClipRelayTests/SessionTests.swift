@@ -869,6 +869,217 @@ final class SessionTests: XCTestCase {
         cleanupManual(env)
     }
 
+    // MARK: - Image transfer tests
+
+    func testSendImageSendsCorrectOfferJSON() {
+        let env = createManualStreams()
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.transferTimeoutSeconds = 5.0
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(hello?.type, .hello)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Queue an image
+        let imageData = Data((0..<100).map { UInt8($0 % 256) })
+        session.sendImage(imageData, contentType: "image/png")
+
+        // Read the OFFER
+        let offer = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(offer?.type, .offer)
+
+        guard let payload = offer?.payload,
+              let json = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else {
+            XCTFail("Failed to parse OFFER payload")
+            session.close(); cleanupManual(env); return
+        }
+
+        XCTAssertEqual(json["type"] as? String, "image/png")
+        XCTAssertEqual(json["size"] as? Int, 100)
+        XCTAssertNotNil(json["hash"])
+        XCTAssertNotNil(json["senderIp"])
+
+        let expectedHash = Session.sha256Hex(imageData)
+        XCTAssertEqual(json["hash"] as? String, expectedHash)
+
+        // Send REJECT so session doesn't hang
+        let rejectJSON: [String: Any] = ["reason": "test"]
+        let rejectData = try! JSONSerialization.data(withJSONObject: rejectJSON)
+        writeMessage(Message(type: .reject, payload: rejectData), to: env.writeToSession)
+
+        Thread.sleep(forTimeInterval: 0.2)
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testHandleInboundImageOfferRejectsWhenFeatureDisabled() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: false, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send image OFFER
+        let offerJSON: [String: Any] = [
+            "hash": "abc123",
+            "size": 1000,
+            "type": "image/png",
+            "senderIp": "192.168.1.10"
+        ]
+        let offerData = try! JSONSerialization.data(withJSONObject: offerJSON)
+        writeMessage(Message(type: .offer, payload: offerData), to: env.writeToSession)
+
+        // Read REJECT
+        let reject = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(reject?.type, .reject)
+
+        if let rejectPayload = reject?.payload,
+           let rejectJson = try? JSONSerialization.jsonObject(with: rejectPayload) as? [String: Any] {
+            XCTAssertEqual(rejectJson["reason"] as? String, "feature_disabled")
+        } else {
+            XCTFail("Failed to parse REJECT payload")
+        }
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testHandleInboundImageOfferRejectsOversizedImages() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send image OFFER with size > 10MB
+        let offerJSON: [String: Any] = [
+            "hash": "abc123",
+            "size": 11 * 1024 * 1024,
+            "type": "image/png",
+            "senderIp": "192.168.1.10"
+        ]
+        let offerData = try! JSONSerialization.data(withJSONObject: offerJSON)
+        writeMessage(Message(type: .offer, payload: offerData), to: env.writeToSession)
+
+        // Read REJECT
+        let reject = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(reject?.type, .reject)
+
+        if let rejectPayload = reject?.payload,
+           let rejectJson = try? JSONSerialization.jsonObject(with: rejectPayload) as? [String: Any] {
+            XCTAssertEqual(rejectJson["reason"] as? String, "size_exceeded")
+        } else {
+            XCTFail("Failed to parse REJECT payload")
+        }
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testHandleInboundImageOfferStartsTcpServerAndSendsAccept() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.transferTimeoutSeconds = 5.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send a small image OFFER
+        let offerJSON: [String: Any] = [
+            "hash": "abc123",
+            "size": 100,
+            "type": "image/png",
+            "senderIp": "127.0.0.1"
+        ]
+        let offerData = try! JSONSerialization.data(withJSONObject: offerJSON)
+        writeMessage(Message(type: .offer, payload: offerData), to: env.writeToSession)
+
+        // Read ACCEPT
+        let accept = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(accept?.type, .accept)
+
+        if let acceptPayload = accept?.payload,
+           let acceptJson = try? JSONSerialization.jsonObject(with: acceptPayload) as? [String: Any] {
+            XCTAssertNotNil(acceptJson["tcpHost"])
+            XCTAssertNotNil(acceptJson["tcpPort"])
+            if let tcpPort = acceptJson["tcpPort"] as? Int {
+                XCTAssertTrue(tcpPort > 0, "TCP port should be positive")
+            }
+        } else {
+            XCTFail("Failed to parse ACCEPT payload")
+        }
+
+        // Close without sending data (session will eventually error/timeout, OK for this test)
+        session.close()
+        cleanupManual(env)
+    }
+
     // MARK: - Test Infrastructure
 
     struct PairedSessionEnv {
@@ -1024,6 +1235,8 @@ final class TestSessionDelegate: SessionDelegate {
     var onTransferComplete: (Session, String) -> Void = { _, _ in }
     var onError: (Session, Error) -> Void = { _, _ in }
     var onRichMediaChanged: (Session, Bool) -> Void = { _, _ in }
+    var onImageReceived: (Session, Data, String, String) -> Void = { _, _, _, _ in }
+    var onImageRejected: (Session, String) -> Void = { _, _ in }
     var knownHashes = Set<String>()
 
     func sessionDidBecomeReady(_ session: Session) { onReady(session) }
@@ -1040,6 +1253,12 @@ final class TestSessionDelegate: SessionDelegate {
     func session(_ session: Session, didCompletePairingWithSecret sharedSecret: Data, remoteName: String?) {}
     func session(_ session: Session, didChangeRichMediaSetting enabled: Bool) {
         onRichMediaChanged(session, enabled)
+    }
+    func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String) {
+        onImageReceived(session, data, contentType, hash)
+    }
+    func session(_ session: Session, imageWasRejected reason: String) {
+        onImageRejected(session, reason)
     }
 }
 
