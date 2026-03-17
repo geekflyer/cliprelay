@@ -1,0 +1,13 @@
+{
+  "description": "Cross-platform image transfer test vector. 1x1 red pixel PNG with known SHA-256 hash.",
+  "test_png": {
+    "hex": "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f8cfc0000003010100c9fe92ef0000000049454e44ae426082",
+    "size": 69,
+    "content_type": "image/png",
+    "sha256": "b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640"
+  },
+  "encryption": {
+    "session_key_hex": "43be2016a0af75fa1ebf036a385f21cb0ea4eae72086e0d84c7b1408e953aa6a",
+    "note": "Encryption uses random nonce so ciphertext varies per run. Both platforms must round-trip: seal then open produces original PNG bytes. Cross-platform: Android-sealed blob must open on macOS and vice-versa (tested via fixture-generated blob in CI)."
+  }
+}

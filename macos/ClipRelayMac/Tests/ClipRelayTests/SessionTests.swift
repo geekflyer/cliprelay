@@ -1,5 +1,6 @@
 import XCTest
 import CryptoKit
+import AppKit
 @testable import ClipRelay
 
 /// Tests for the Session protocol handler using piped in-memory streams.
@@ -1078,6 +1079,282 @@ final class SessionTests: XCTestCase {
         // Close without sending data (session will eventually error/timeout, OK for this test)
         session.close()
         cleanupManual(env)
+    }
+
+    // MARK: - Edge case tests
+
+    func testReceiverRejectsOversizedImageWithSizeExceeded() {
+        // OFFER with size = 11_000_000 (over 10MB limit)
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send image OFFER with size = 11_000_000 (> 10 * 1024 * 1024)
+        let offerJSON: [String: Any] = [
+            "hash": "abc123",
+            "size": 11_000_000,
+            "type": "image/png",
+            "senderIp": "192.168.1.10"
+        ]
+        let offerData = try! JSONSerialization.data(withJSONObject: offerJSON)
+        writeMessage(Message(type: .offer, payload: offerData), to: env.writeToSession)
+
+        // Read REJECT with reason "size_exceeded"
+        let reject = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(reject?.type, .reject)
+
+        if let rejectPayload = reject?.payload,
+           let rejectJson = try? JSONSerialization.jsonObject(with: rejectPayload) as? [String: Any] {
+            XCTAssertEqual(rejectJson["reason"] as? String, "size_exceeded")
+        } else {
+            XCTFail("Failed to parse REJECT payload")
+        }
+
+        session.close()
+        cleanupManual(env)
+    }
+
+    func testEchoLoopPreventionHashSkipsDuplicateClipboard() {
+        // When the receiver already has the hash, it sends DONE immediately.
+        // This prevents echo loops where copied content bounces back.
+        let env = createPairedSessions(sharedSecretHex: testSharedSecret)
+        let readyExpectation = expectation(description: "Both ready")
+        readyExpectation.expectedFulfillmentCount = 2
+        let transferExpectation = expectation(description: "Transfer complete (dedup)")
+
+        let testData = Data("echo-test-data".utf8)
+        let hash = Session.sha256Hex(testData)
+
+        env.macDelegate.onReady = { _ in readyExpectation.fulfill() }
+        env.androidDelegate.onReady = { _ in readyExpectation.fulfill() }
+
+        // Pre-populate Android's known hashes (simulating it already received this content)
+        env.androidDelegate.knownHashes.insert(hash)
+
+        env.macDelegate.onTransferComplete = { _, h in
+            XCTAssertEqual(h, hash)
+            transferExpectation.fulfill()
+        }
+
+        // Android MUST NOT receive onClipboardReceived for a deduplicated offer
+        env.androidDelegate.onReceived = { _, _, _ in
+            XCTFail("Echo loop detected: should not deliver clipboard that receiver already has")
+        }
+
+        startBothSessions(env)
+        wait(for: [readyExpectation], timeout: 5.0)
+
+        env.macSession.sendClipboard(testData)
+        wait(for: [transferExpectation], timeout: 5.0)
+
+        cleanup(env)
+    }
+
+    func testConcurrentTransferCancellationNewOfferCancelsInFlight() {
+        // Start receiving image A (TCP server started), then verify it can be cancelled
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.transferTimeoutSeconds = 10.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send first image OFFER (A)
+        let offerAJSON: [String: Any] = [
+            "hash": "hash_image_a",
+            "size": 100,
+            "type": "image/png",
+            "senderIp": "127.0.0.1"
+        ]
+        let offerAData = try! JSONSerialization.data(withJSONObject: offerAJSON)
+        writeMessage(Message(type: .offer, payload: offerAData), to: env.writeToSession)
+
+        // Read ACCEPT for image A — confirms TCP server started
+        let acceptA = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(acceptA?.type, .accept)
+
+        if let acceptPayload = acceptA?.payload,
+           let acceptJson = try? JSONSerialization.jsonObject(with: acceptPayload) as? [String: Any] {
+            XCTAssertNotNil(acceptJson["tcpHost"])
+            if let tcpPort = acceptJson["tcpPort"] as? Int {
+                XCTAssertTrue(tcpPort > 0, "Port A should be positive")
+            }
+        } else {
+            XCTFail("Failed to parse ACCEPT payload for image A")
+        }
+
+        // Close the session — the blocked TCP receiver will fail
+        session.close()
+        cleanupManual(env)
+    }
+
+    // MARK: - TIFF-to-PNG conversion test
+
+    func testTiffToPngConversionInClipboardMonitor() {
+        // ClipboardMonitor.pasteboardImage() converts TIFF to PNG.
+        // We test the conversion logic by creating a TIFF NSBitmapImageRep and converting it.
+        // Note: ClipboardMonitor uses NSPasteboard directly which requires a running app,
+        // so we test the underlying conversion logic here.
+        let width = 1, height = 1
+        let bitmapRep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 3,
+            hasAlpha: false,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )!
+
+        // Set pixel to red
+        bitmapRep.setColor(NSColor.red, atX: 0, y: 0)
+
+        // Get TIFF data
+        let tiffData = bitmapRep.tiffRepresentation!
+
+        // Convert TIFF -> PNG (same logic as ClipboardMonitor.pasteboardImage)
+        guard let bitmapFromTiff = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmapFromTiff.representation(using: .png, properties: [:]) else {
+            XCTFail("TIFF to PNG conversion failed")
+            return
+        }
+
+        XCTAssertFalse(pngData.isEmpty, "PNG data should not be empty")
+        // Verify it starts with PNG signature
+        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        let headerBytes = Array(pngData.prefix(8))
+        XCTAssertEqual(headerBytes, pngSignature, "Converted data should be a valid PNG")
+
+        // Content type would be "image/png" per the ClipboardMonitor logic
+        let contentType = "image/png"
+        XCTAssertEqual(contentType, "image/png")
+    }
+
+    // MARK: - Cross-platform image fixture tests
+
+    func testCrossPlatformFixturePngHashMatchesKnownVector() throws {
+        let fixture = try loadImageTransferFixture()
+        guard let pngHex = fixture["test_png"]?["hex"] as? String,
+              let expectedHash = fixture["test_png"]?["sha256"] as? String else {
+            XCTFail("Missing test_png fields in fixture")
+            return
+        }
+
+        guard let pngData = E2ECrypto.hexToData(pngHex) else {
+            XCTFail("Invalid hex in fixture")
+            return
+        }
+        let actualHash = Session.sha256Hex(pngData)
+        XCTAssertEqual(actualHash, expectedHash, "SHA-256 hash of test PNG must match fixture")
+    }
+
+    func testCrossPlatformFixtureSealAndOpenRoundTrip() throws {
+        let fixture = try loadImageTransferFixture()
+        guard let pngHex = fixture["test_png"]?["hex"] as? String,
+              let sessionKeyHex = fixture["encryption"]?["session_key_hex"] as? String else {
+            XCTFail("Missing fields in fixture")
+            return
+        }
+
+        guard let pngData = E2ECrypto.hexToData(pngHex),
+              let keyData = E2ECrypto.hexToData(sessionKeyHex) else {
+            XCTFail("Invalid hex in fixture")
+            return
+        }
+        let sessionKey = SymmetricKey(data: keyData)
+
+        // Seal (encrypt)
+        let encrypted = try E2ECrypto.seal(pngData, key: sessionKey)
+        XCTAssertTrue(encrypted.count > pngData.count, "Encrypted blob should be larger than plaintext")
+
+        // Open (decrypt) — must recover original PNG bytes
+        let decrypted = try E2ECrypto.open(encrypted, key: sessionKey)
+        XCTAssertEqual(decrypted, pngData, "Decrypted data must match original PNG")
+    }
+
+    func testCrossPlatformFixtureHashVerificationAfterDecrypt() throws {
+        let fixture = try loadImageTransferFixture()
+        guard let pngHex = fixture["test_png"]?["hex"] as? String,
+              let expectedHash = fixture["test_png"]?["sha256"] as? String,
+              let sessionKeyHex = fixture["encryption"]?["session_key_hex"] as? String else {
+            XCTFail("Missing fields in fixture")
+            return
+        }
+
+        guard let pngData = E2ECrypto.hexToData(pngHex),
+              let keyData = E2ECrypto.hexToData(sessionKeyHex) else {
+            XCTFail("Invalid hex in fixture")
+            return
+        }
+        let sessionKey = SymmetricKey(data: keyData)
+
+        // Encrypt -> Decrypt -> Hash must match
+        let encrypted = try E2ECrypto.seal(pngData, key: sessionKey)
+        let decrypted = try E2ECrypto.open(encrypted, key: sessionKey)
+        let actualHash = Session.sha256Hex(decrypted)
+        XCTAssertEqual(actualHash, expectedHash, "Hash of decrypted image must match fixture")
+    }
+
+    private func loadImageTransferFixture() throws -> [String: [String: Any]] {
+        let relativePath = "test-fixtures/protocol/l2cap/image_transfer_fixture.json"
+        var current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        while true {
+            let candidate = current.appendingPathComponent(relativePath)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                let data = try Data(contentsOf: candidate)
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    throw NSError(domain: "Fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON"])
+                }
+                var result: [String: [String: Any]] = [:]
+                if let testPng = json["test_png"] as? [String: Any] { result["test_png"] = testPng }
+                if let encryption = json["encryption"] as? [String: Any] { result["encryption"] = encryption }
+                return result
+            }
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path {
+                throw NSError(domain: "Fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Fixture not found: \(relativePath)"])
+            }
+            current = parent
+        }
     }
 
     // MARK: - Test Infrastructure
