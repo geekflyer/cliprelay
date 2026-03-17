@@ -8,28 +8,32 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-class PairingStore(context: Context) {
+class PairingStore internal constructor(private val encryptedPrefs: SharedPreferences?) {
     companion object {
         private const val TAG = "PairingStore"
         private const val PREFS_NAME = "cliprelay_pairing"
-        private const val KEY_SHARED_SECRET = "shared_secret"
+        internal const val KEY_SHARED_SECRET = "shared_secret"
+        internal const val KEY_RICH_MEDIA_ENABLED = "rich_media_enabled"
+        internal const val KEY_RICH_MEDIA_ENABLED_CHANGED_AT = "rich_media_enabled_changed_at"
     }
 
-    private val encryptedPrefs: SharedPreferences? = try {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    } catch (e: Exception) {
-        Log.e(TAG, "EncryptedSharedPreferences unavailable; pairing will not be possible on this device", e)
-        null
-    }
+    constructor(context: Context) : this(
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "EncryptedSharedPreferences unavailable; pairing will not be possible on this device", e)
+            null
+        }
+    )
 
     fun saveSharedSecret(secret: String): Boolean {
         val prefs = encryptedPrefs
@@ -47,8 +51,28 @@ class PairingStore(context: Context) {
         return readSecret(encryptedPrefs)
     }
 
+    fun isRichMediaEnabled(): Boolean {
+        val prefs = encryptedPrefs ?: return false
+        return runCatching { prefs.getBoolean(KEY_RICH_MEDIA_ENABLED, false) }.getOrDefault(false)
+    }
+
+    fun getRichMediaEnabledChangedAt(): Long {
+        val prefs = encryptedPrefs ?: return 0L
+        return runCatching { prefs.getLong(KEY_RICH_MEDIA_ENABLED_CHANGED_AT, 0L) }.getOrDefault(0L)
+    }
+
+    fun setRichMediaEnabled(enabled: Boolean, changedAt: Long) {
+        val prefs = encryptedPrefs ?: return
+        runCatching {
+            prefs.edit()
+                .putBoolean(KEY_RICH_MEDIA_ENABLED, enabled)
+                .putLong(KEY_RICH_MEDIA_ENABLED_CHANGED_AT, changedAt)
+                .apply()
+        }
+    }
+
     fun clear() {
-        clearSecret(encryptedPrefs)
+        clearAll(encryptedPrefs)
     }
 
     private fun readSecret(prefs: SharedPreferences?): String? {
@@ -56,10 +80,14 @@ class PairingStore(context: Context) {
         return runCatching { prefs.getString(KEY_SHARED_SECRET, null) }.getOrNull()
     }
 
-    private fun clearSecret(prefs: SharedPreferences?) {
+    private fun clearAll(prefs: SharedPreferences?) {
         if (prefs == null) return
         runCatching {
-            prefs.edit().remove(KEY_SHARED_SECRET).apply()
+            prefs.edit()
+                .remove(KEY_SHARED_SECRET)
+                .remove(KEY_RICH_MEDIA_ENABLED)
+                .remove(KEY_RICH_MEDIA_ENABLED_CHANGED_AT)
+                .apply()
         }
     }
 }
