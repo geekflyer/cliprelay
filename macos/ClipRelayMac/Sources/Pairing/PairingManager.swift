@@ -11,6 +11,27 @@ struct PairedDevice: Codable, Equatable {
     let sharedSecret: String // 64-char hex (ECDH-derived root secret)
     let displayName: String
     let datePaired: Date
+    var richMediaEnabled: Bool
+    var richMediaEnabledChangedAt: Int64 // Unix seconds
+
+    init(sharedSecret: String, displayName: String, datePaired: Date,
+         richMediaEnabled: Bool = false, richMediaEnabledChangedAt: Int64 = 0) {
+        self.sharedSecret = sharedSecret
+        self.displayName = displayName
+        self.datePaired = datePaired
+        self.richMediaEnabled = richMediaEnabled
+        self.richMediaEnabledChangedAt = richMediaEnabledChangedAt
+    }
+
+    // Custom decoding to handle existing data without the new fields
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sharedSecret = try container.decode(String.self, forKey: .sharedSecret)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        datePaired = try container.decode(Date.self, forKey: .datePaired)
+        richMediaEnabled = try container.decodeIfPresent(Bool.self, forKey: .richMediaEnabled) ?? false
+        richMediaEnabledChangedAt = try container.decodeIfPresent(Int64.self, forKey: .richMediaEnabledChangedAt) ?? 0
+    }
 }
 
 final class PairingManager {
@@ -47,6 +68,14 @@ final class PairingManager {
     func removeDevice(secret: String) {
         var devices = loadDevices()
         devices.removeAll { $0.sharedSecret == secret }
+        persist(devices)
+    }
+
+    func setRichMediaEnabled(_ enabled: Bool, changedAt: Int64, forSecret secret: String) {
+        var devices = loadDevices()
+        guard let index = devices.firstIndex(where: { $0.sharedSecret == secret }) else { return }
+        devices[index].richMediaEnabled = enabled
+        devices[index].richMediaEnabledChangedAt = changedAt
         persist(devices)
     }
 
