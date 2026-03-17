@@ -487,6 +487,54 @@ final class SessionTests: XCTestCase {
         cleanup(env)
     }
 
+    // MARK: - New message type routing tests
+
+    func testConfigUpdateDuringListenDoesNotCrash() {
+        let env = createManualStreams()
+        let readyExpectation = expectation(description: "Session ready")
+        let errorExpectation = expectation(description: "Error should not fire")
+        errorExpectation.isInverted = true
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+        delegate.onError = { _, _ in errorExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        // Complete handshake
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(hello?.type, .hello)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send CONFIG_UPDATE — session should not crash
+        let configMsg = Message(type: .configUpdate, payload: Data(#"{"images":true}"#.utf8))
+        writeMessage(configMsg, to: env.writeToSession)
+
+        // Send REJECT — session should not crash
+        let rejectMsg = Message(type: .reject, payload: Data(#"{"reason":"unsupported"}"#.utf8))
+        writeMessage(rejectMsg, to: env.writeToSession)
+
+        // Send ERROR — session should not crash
+        let errorMsg = Message(type: .error, payload: Data(#"{"message":"test error"}"#.utf8))
+        writeMessage(errorMsg, to: env.writeToSession)
+
+        // Wait briefly to confirm no error fires (inverted expectation)
+        wait(for: [errorExpectation], timeout: 1.0)
+
+        session.close()
+        cleanupManual(env)
+    }
+
     // MARK: - Test Infrastructure
 
     struct PairedSessionEnv {

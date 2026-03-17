@@ -3,6 +3,7 @@
 import Foundation
 import CommonCrypto
 import CryptoKit
+import os
 
 // MARK: - Session Delegate
 
@@ -47,6 +48,7 @@ enum SessionMode {
 /// Threading: call `listenForMessages()` on a background thread. Use `sendClipboard()`
 /// from any thread — it queues the transfer for the listen loop.
 final class Session {
+    private let logger = Logger(subsystem: "org.cliprelay", category: "Session")
     private let inputStream: InputStream
     private let outputStream: OutputStream
     private let isInitiator: Bool
@@ -280,8 +282,14 @@ final class Session {
         switch msg.type {
         case .offer:
             try handleInboundOffer(msg)
+        case .configUpdate:
+            break // handled in later task
+        case .reject:
+            break // handled in later task
+        case .error:
+            break // handled in later task
         default:
-            throw SessionError.unexpectedMessage("Unexpected message type: \(msg.type)")
+            logger.warning("Ignoring unexpected message type: \(String(describing: msg.type))")
         }
     }
 
