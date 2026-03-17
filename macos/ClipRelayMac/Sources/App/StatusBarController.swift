@@ -10,6 +10,8 @@ final class StatusBarController {
     var onForgetDeviceRequested: ((String) -> Void)?
     var onToggleLaunchAtLogin: (() -> Void)?
     var isLaunchAtLoginEnabled: (() -> Bool)?
+    var onToggleImageSync: (() -> Void)?
+    var isImageSyncEnabled: (() -> Bool)?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
@@ -143,6 +145,17 @@ final class StatusBarController {
         }
         menu.addItem(launchItem)
 
+        let imageSyncItem = NSMenuItem(
+            title: "Image Sync (Experimental)",
+            action: #selector(handleToggleImageSync),
+            keyEquivalent: ""
+        )
+        imageSyncItem.target = self
+        if isImageSyncEnabled?() == true {
+            imageSyncItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+        }
+        menu.addItem(imageSyncItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -249,6 +262,12 @@ final class StatusBarController {
     @objc
     private func handleToggleLaunchAtLogin() {
         onToggleLaunchAtLogin?()
+        renderMenu()
+    }
+
+    @objc
+    private func handleToggleImageSync() {
+        onToggleImageSync?()
         renderMenu()
     }
 

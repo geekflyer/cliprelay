@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeSession: Session?
     private var sessionThread: Thread?
     private var connectedSecret: String?
+    private var activeSettingsProvider: DeviceSettingsProvider?
     private var pendingClipboardPayload: Data?
 
     // Dedup: hash of the last clipboard we received from the remote side
@@ -63,6 +64,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusBarController.isLaunchAtLoginEnabled = {
             SMAppService.mainApp.status == .enabled
+        }
+        statusBarController.onToggleImageSync = { [weak self] in
+            self?.toggleImageSync()
+        }
+        statusBarController.isImageSyncEnabled = { [weak self] in
+            guard let self, let secret = self.connectedSecret else {
+                // Fall back to checking the first paired device's setting
+                guard let self else { return false }
+                return self.pairingManager.loadDevices().first?.richMediaEnabled ?? false
+            }
+            return self.pairingManager.loadDevices().first(where: { $0.sharedSecret == secret })?.richMediaEnabled ?? false
         }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()
@@ -237,6 +249,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Image Sync Toggle
+
+    private func toggleImageSync() {
+        // Determine which device to toggle — prefer connected, fall back to first paired
+        let secret = connectedSecret ?? pairingManager.loadDevices().first?.sharedSecret
+        guard let secret else { return }
+
+        let devices = pairingManager.loadDevices()
+        guard let device = devices.first(where: { $0.sharedSecret == secret }) else { return }
+
+        let newEnabled = !device.richMediaEnabled
+        let changedAt = Int64(Date().timeIntervalSince1970)
+        pairingManager.setRichMediaEnabled(newEnabled, changedAt: changedAt, forSecret: secret)
+
+        // Send CONFIG_UPDATE to the remote device
+        activeSession?.sendConfigUpdate()
+
+        appLogger.info("[App] Image sync toggled to \(newEnabled)")
+    }
+
     // MARK: - Menu Helpers
 
     private func refreshTrustedPeersMenu() {
@@ -289,10 +321,13 @@ extension AppDelegate: ConnectionManagerDelegate {
         outputStream.remove(from: .main, forMode: .common)
 
         // Create session (Mac = initiator)
+        let settingsProvider = DeviceSettingsProvider(pairingManager: pairingManager, secret: token)
         let session = Session(inputStream: inputStream, outputStream: outputStream,
                               isInitiator: true, delegate: self,
                               sharedSecretHex: token)
         session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        session.settingsProvider = settingsProvider
+        activeSettingsProvider = settingsProvider
         activeSession = session
 
         // Run session on background thread
@@ -367,6 +402,7 @@ extension AppDelegate: ConnectionManagerDelegate {
 
         activeSession?.close()
         activeSession = nil
+        activeSettingsProvider = nil
         connectedSecret = nil
         sessionThread = nil
 
@@ -390,7 +426,7 @@ extension AppDelegate: ConnectionManagerDelegate {
             return
         }
 
-        // Create session in pairing mode
+        // Create session in pairing mode (settingsProvider wired after pairing completes)
         let session = Session(inputStream: inputStream, outputStream: outputStream,
                               isInitiator: true, delegate: self,
                               mode: .pairing(privateKey: privateKey))
@@ -519,6 +555,11 @@ extension AppDelegate: SessionDelegate {
         pairingManager.addDevice(device)
         pairingManager.clearEphemeralKey()
 
+        // Wire settings provider now that we have the secret
+        let settingsProvider = DeviceSettingsProvider(pairingManager: pairingManager, secret: secretHex)
+        session.settingsProvider = settingsProvider
+        activeSettingsProvider = settingsProvider
+
         // Clear pairing mode and set the matched token so that if the BLE
         // connection drops, didDisconnectPeripheral properly notifies us
         // (matchedToken was nil during pairing discovery).
@@ -568,5 +609,25 @@ extension AppDelegate: SessionDelegate {
 
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool {
         return hash == lastReceivedHash
+    }
+
+    func session(_ session: Session, didChangeRichMediaSetting enabled: Bool) {
+        appLogger.info("[App] Remote changed image sync setting to \(enabled)")
+        // The settings provider already persisted the change via resolveSettings/handleConfigUpdate.
+        // Just refresh the menu so the checkmark reflects the new state.
+        DispatchQueue.main.async { [weak self] in
+            self?.statusBarController.setConnectedPeers(self?.connectedPeers() ?? [])
+        }
+    }
+
+    private func connectedPeers() -> [PeerSummary] {
+        guard let token = connectedSecret else { return [] }
+        let deviceName = pairingManager.loadDevices().first(where: { $0.sharedSecret == token })?.displayName ?? "Android"
+        return [PeerSummary(
+            id: deviceStableID(token: token),
+            description: deviceName,
+            secret: token,
+            deviceTagHex: formattedDeviceTagHex(token: token)
+        )]
     }
 }
