@@ -60,6 +60,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val ACTION_VERSION_MISMATCH = "org.cliprelay.action.VERSION_MISMATCH"
         const val ACTION_GHOST_FINISHED = "org.cliprelay.action.GHOST_FINISHED"
         const val ACTION_ACCESSIBILITY_COPY_DETECTED = "org.cliprelay.action.ACCESSIBILITY_COPY_DETECTED"
+        const val ACTION_SEND_CONFIG_UPDATE = "org.cliprelay.action.SEND_CONFIG_UPDATE"
+        const val ACTION_RICH_MEDIA_SETTING_CHANGED = "org.cliprelay.action.RICH_MEDIA_SETTING_CHANGED"
+        const val EXTRA_RICH_MEDIA_ENABLED = "extra_rich_media_enabled"
 
         const val PREFS_NAME = "cliprelay_state"
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
@@ -197,6 +200,10 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             }
             ACTION_ACCESSIBILITY_COPY_DETECTED -> {
                 handleClipboardChanged()
+                return START_STICKY
+            }
+            ACTION_SEND_CONFIG_UPDATE -> {
+                activeSession?.sendConfigUpdate()
                 return START_STICKY
             }
             ACTION_PUSH_TEXT -> {
@@ -379,7 +386,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             isInitiator = false,
             this,  // SessionCallback
             mode = mode,
-            sharedSecretHex = secret
+            sharedSecretHex = secret,
+            settingsProvider = pairingStore
         )
         session.localName = android.os.Build.MODEL
         activeSession = session
@@ -507,6 +515,13 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         pairingIntent.putExtra(EXTRA_DEVICE_NAME, remoteName)
         sendBroadcast(pairingIntent)
         publishDirectShareShortcut(remoteName)
+    }
+
+    override fun onRichMediaSettingChanged(enabled: Boolean) {
+        val intent = Intent(ACTION_RICH_MEDIA_SETTING_CHANGED)
+        intent.setPackage(packageName)
+        intent.putExtra(EXTRA_RICH_MEDIA_ENABLED, enabled)
+        sendBroadcast(intent)
     }
 
     // ── Outbound (Android → Mac) ─────────────────────────────────────

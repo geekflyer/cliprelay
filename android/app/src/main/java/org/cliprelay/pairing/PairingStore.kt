@@ -7,8 +7,9 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import org.cliprelay.protocol.SettingsProvider
 
-class PairingStore internal constructor(private val encryptedPrefs: SharedPreferences?) {
+class PairingStore internal constructor(private val encryptedPrefs: SharedPreferences?) : SettingsProvider {
     companion object {
         private const val TAG = "PairingStore"
         private const val PREFS_NAME = "cliprelay_pairing"
@@ -51,17 +52,17 @@ class PairingStore internal constructor(private val encryptedPrefs: SharedPrefer
         return readSecret(encryptedPrefs)
     }
 
-    fun isRichMediaEnabled(): Boolean {
+    override fun isRichMediaEnabled(): Boolean {
         val prefs = encryptedPrefs ?: return false
         return runCatching { prefs.getBoolean(KEY_RICH_MEDIA_ENABLED, false) }.getOrDefault(false)
     }
 
-    fun getRichMediaEnabledChangedAt(): Long {
+    override fun getRichMediaEnabledChangedAt(): Long {
         val prefs = encryptedPrefs ?: return 0L
         return runCatching { prefs.getLong(KEY_RICH_MEDIA_ENABLED_CHANGED_AT, 0L) }.getOrDefault(0L)
     }
 
-    fun setRichMediaEnabled(enabled: Boolean, changedAt: Long) {
+    override fun setRichMediaEnabled(enabled: Boolean, changedAt: Long) {
         val prefs = encryptedPrefs ?: return
         runCatching {
             prefs.edit()

@@ -28,6 +28,9 @@ class MainViewModel : ViewModel() {
     private val _autoCopyEnabled = MutableStateFlow(false)
     val autoCopyEnabled: StateFlow<Boolean> = _autoCopyEnabled.asStateFlow()
 
+    private val _imageSyncEnabled = MutableStateFlow(false)
+    val imageSyncEnabled: StateFlow<Boolean> = _imageSyncEnabled.asStateFlow()
+
     private val _autoCopyAccessibilityEnabled = MutableStateFlow(false)
     val autoCopyAccessibilityEnabled: StateFlow<Boolean> = _autoCopyAccessibilityEnabled.asStateFlow()
 
@@ -38,10 +41,11 @@ class MainViewModel : ViewModel() {
     private val _clipboardTransfer = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val clipboardTransfer: SharedFlow<Boolean> = _clipboardTransfer
 
-    fun initState(isPaired: Boolean, deviceName: String? = null, deviceTag: String? = null, autoClearEnabled: Boolean = false, autoCopyEnabled: Boolean = false) {
+    fun initState(isPaired: Boolean, deviceName: String? = null, deviceTag: String? = null, autoClearEnabled: Boolean = false, autoCopyEnabled: Boolean = false, imageSyncEnabled: Boolean = false) {
         _state.value = if (isPaired) AppState.Searching(deviceName, deviceTag) else AppState.Unpaired
         _autoClearEnabled.value = autoClearEnabled
         _autoCopyEnabled.value = autoCopyEnabled
+        _imageSyncEnabled.value = imageSyncEnabled
     }
 
     fun onPaired(deviceTag: String? = null) {
@@ -79,6 +83,10 @@ class MainViewModel : ViewModel() {
 
     fun onAutoCopySettingChanged(enabled: Boolean) {
         _autoCopyEnabled.value = enabled
+    }
+
+    fun onImageSyncSettingChanged(enabled: Boolean) {
+        _imageSyncEnabled.value = enabled
     }
 
     fun onAccessibilityStateChanged(enabled: Boolean) {

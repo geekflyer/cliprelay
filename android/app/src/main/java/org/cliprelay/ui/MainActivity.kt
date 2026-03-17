@@ -53,6 +53,10 @@ class MainActivity : AppCompatActivity() {
                 ClipRelayService.ACTION_VERSION_MISMATCH -> {
                     viewModel.onVersionMismatch()
                 }
+                ClipRelayService.ACTION_RICH_MEDIA_SETTING_CHANGED -> {
+                    val enabled = intent.getBooleanExtra(ClipRelayService.EXTRA_RICH_MEDIA_ENABLED, false)
+                    viewModel.onImageSyncSettingChanged(enabled)
+                }
             }
         }
     }
@@ -99,7 +103,8 @@ class MainActivity : AppCompatActivity() {
         ensureServiceRunning()
         clipboardSettingsStore = ClipboardSettingsStore(this)
 
-        val secret = PairingStore(this).loadSharedSecret()
+        val pairingStore = PairingStore(this)
+        val secret = pairingStore.loadSharedSecret()
         val isPaired = secret != null
         val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
             .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
@@ -109,7 +114,8 @@ class MainActivity : AppCompatActivity() {
         }
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         val autoCopyEnabled = clipboardSettingsStore.isAutoCopyEnabled()
-        viewModel.initState(isPaired, deviceName, deviceTag, autoClearEnabled, autoCopyEnabled)
+        val imageSyncEnabled = pairingStore.isRichMediaEnabled()
+        viewModel.initState(isPaired, deviceName, deviceTag, autoClearEnabled, autoCopyEnabled, imageSyncEnabled)
 
         setContent {
             val state by viewModel.state.collectAsState()
@@ -117,6 +123,7 @@ class MainActivity : AppCompatActivity() {
             val autoClearEnabled by viewModel.autoClearEnabled.collectAsState()
             val autoCopyEnabled by viewModel.autoCopyEnabled.collectAsState()
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
+            val imageSyncEnabled by viewModel.imageSyncEnabled.collectAsState()
             val showVersionMismatch by viewModel.showVersionMismatch.collectAsState()
 
             if (showVersionMismatch) {
@@ -130,6 +137,7 @@ class MainActivity : AppCompatActivity() {
                 autoClearEnabled = autoClearEnabled,
                 autoCopyEnabled = autoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
+                imageSyncEnabled = imageSyncEnabled,
                 onPairClick = {
                     scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
                 },
@@ -157,6 +165,13 @@ class MainActivity : AppCompatActivity() {
                     viewModel.onAutoCopySettingChanged(enabled)
                     clipboardSettingsStore.setAutoCopyEnabled(enabled)
                 },
+                onImageSyncSettingChanged = { enabled ->
+                    viewModel.onImageSyncSettingChanged(enabled)
+                    PairingStore(this).setRichMediaEnabled(enabled, System.currentTimeMillis() / 1000)
+                    val configIntent = Intent(this, ClipRelayService::class.java)
+                    configIntent.action = ClipRelayService.ACTION_SEND_CONFIG_UPDATE
+                    startServiceSafely(configIntent)
+                },
                 onAutoCopyFixClick = {
                     // Broken state: row tapped — open accessibility settings to fix
                     val accessibilityIntent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -175,6 +190,7 @@ class MainActivity : AppCompatActivity() {
             it.addAction(ClipRelayService.ACTION_PAIRING_COMPLETE)
             it.addAction(ClipRelayService.ACTION_CLIPBOARD_TRANSFER)
             it.addAction(ClipRelayService.ACTION_VERSION_MISMATCH)
+            it.addAction(ClipRelayService.ACTION_RICH_MEDIA_SETTING_CHANGED)
         }
         ContextCompat.registerReceiver(
             this,
