@@ -11,6 +11,9 @@ enum MessageType: UInt8 {
     case accept = 0x11
     case payload = 0x12
     case done = 0x13
+    case configUpdate = 0x14
+    case reject = 0x15
+    case error = 0x16
 }
 
 struct Message {

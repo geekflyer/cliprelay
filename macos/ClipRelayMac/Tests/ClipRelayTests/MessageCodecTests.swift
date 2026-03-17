@@ -58,6 +58,42 @@ final class MessageCodecTests: XCTestCase {
         XCTAssertEqual(decoded.payload, payload)
     }
 
+    func testRoundTripConfigUpdate() throws {
+        let payload = Data(#"{"imageSupport":true}"#.utf8)
+        let msg = Message(type: .configUpdate, payload: payload)
+        try assertRoundTrip(msg)
+    }
+
+    func testRoundTripReject() throws {
+        let payload = Data(#"{"reason":"unsupported"}"#.utf8)
+        let msg = Message(type: .reject, payload: payload)
+        try assertRoundTrip(msg)
+    }
+
+    func testRoundTripError() throws {
+        let payload = Data(#"{"code":500,"message":"internal error"}"#.utf8)
+        let msg = Message(type: .error, payload: payload)
+        try assertRoundTrip(msg)
+    }
+
+    func testConfigUpdateTypeByte() {
+        let msg = Message(type: .configUpdate, payload: Data())
+        let encoded = MessageCodec.encode(msg)
+        XCTAssertEqual(encoded[4], 0x14)
+    }
+
+    func testRejectTypeByte() {
+        let msg = Message(type: .reject, payload: Data())
+        let encoded = MessageCodec.encode(msg)
+        XCTAssertEqual(encoded[4], 0x15)
+    }
+
+    func testErrorTypeByte() {
+        let msg = Message(type: .error, payload: Data())
+        let encoded = MessageCodec.encode(msg)
+        XCTAssertEqual(encoded[4], 0x16)
+    }
+
     // MARK: - Error cases
 
     func testDecodeUnknownTypeThrows() {
