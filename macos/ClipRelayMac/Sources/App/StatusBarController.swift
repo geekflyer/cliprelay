@@ -148,7 +148,7 @@ final class StatusBarController {
 
         let deviceConnected = isDeviceConnected?() ?? false
         let imageSyncItem = NSMenuItem(
-            title: "Image Sync (Experimental)",
+            title: "Image Sync (experimental)",
             action: deviceConnected ? #selector(handleToggleImageSync) : nil,
             keyEquivalent: ""
         )
