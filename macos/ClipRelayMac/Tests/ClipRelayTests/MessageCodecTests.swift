@@ -96,12 +96,49 @@ final class MessageCodecTests: XCTestCase {
 
     // MARK: - Error cases
 
-    func testDecodeUnknownTypeThrows() {
+    func testDecodeUnknownTypeSkipsToNextMessage() throws {
+        // Unknown type 0xFF with 4 bytes payload, followed by a valid DONE message
+        let unknownMsg = hexToData("00000005ff74657374") // type=0xFF, payload="test"
+        let donePayload = Data(#"{"ok":true}"#.utf8)
+        let doneMsg = MessageCodec.encode(Message(type: .done, payload: donePayload))
+
+        var combined = Data()
+        combined.append(unknownMsg)
+        combined.append(doneMsg)
+
+        var offset = 0
+        let decoded = try MessageCodec.decode(from: combined, offset: &offset)
+        XCTAssertEqual(decoded.type, .done)
+        XCTAssertEqual(decoded.payload, donePayload)
+        XCTAssertEqual(offset, combined.count)
+    }
+
+    func testDecodeUnknownTypeFromInputStream() throws {
+        // Unknown type 0xFF with 4 bytes payload, followed by a valid DONE message
+        let unknownMsg = hexToData("00000005ff74657374")
+        let donePayload = Data(#"{"ok":true}"#.utf8)
+        let doneMsg = MessageCodec.encode(Message(type: .done, payload: donePayload))
+
+        var combined = Data()
+        combined.append(unknownMsg)
+        combined.append(doneMsg)
+
+        let stream = InputStream(data: combined)
+        stream.open()
+        defer { stream.close() }
+
+        let decoded = try MessageCodec.decode(from: stream)
+        XCTAssertEqual(decoded.type, .done)
+        XCTAssertEqual(decoded.payload, donePayload)
+    }
+
+    func testDecodeUnknownTypeOnlyThrowsIncompleteHeader() {
+        // Only an unknown message with no valid message after — should throw incompleteHeader
         let encoded = hexToData("00000005ff74657374")
         var offset = 0
         XCTAssertThrowsError(try MessageCodec.decode(from: encoded, offset: &offset)) { error in
-            guard case ProtocolError.unknownType(0xFF) = error else {
-                XCTFail("Expected unknownType, got \(error)")
+            guard case ProtocolError.incompleteHeader = error else {
+                XCTFail("Expected incompleteHeader (no more data after skipping unknown), got \(error)")
                 return
             }
         }

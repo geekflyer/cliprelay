@@ -311,9 +311,11 @@ final class SessionTests: XCTestCase {
 
         wait(for: [readyExpectation], timeout: 3.0)
 
-        // Send garbage (invalid message type 0xFF)
+        // Send garbage (invalid message type 0xFF) — unknown types are skipped,
+        // so close the stream afterwards to trigger an error.
         let garbage: [UInt8] = [0x00, 0x00, 0x00, 0x01, 0xFF]
         env.writeToSession.write(garbage, maxLength: garbage.count)
+        env.writeToSession.close()
 
         wait(for: [errorExpectation], timeout: 3.0)
         session.close()

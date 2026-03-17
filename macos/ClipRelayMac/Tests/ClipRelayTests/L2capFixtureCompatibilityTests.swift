@@ -74,7 +74,28 @@ final class L2capFixtureCompatibilityTests: XCTestCase {
     // MARK: - Negative tests
 
     func testNegativeUnknownType() throws {
-        try assertNegativeCase(name: "unknown_type")
+        // Unknown types are now skipped gracefully. When only an unknown-type
+        // message is present with no valid message after, decode exhausts the
+        // buffer and throws incompleteHeader.
+        let fixture = try L2capFixtureLoader.load()
+        guard let entry = fixture.negativeCases.first(where: { $0.name == "unknown_type" }) else {
+            XCTFail("Negative case 'unknown_type' not found in fixture")
+            return
+        }
+        let encodedData = hexToData(entry.encodedHex)
+        var offset = 0
+        XCTAssertThrowsError(
+            try MessageCodec.decode(from: encodedData, offset: &offset),
+            "Expected error after skipping unknown type"
+        ) { error in
+            guard let protocolError = error as? ProtocolError else {
+                XCTFail("Expected ProtocolError, got \(error)")
+                return
+            }
+            // After skipping the unknown message, there's no more data → incompleteHeader
+            XCTAssertEqual(protocolError, .incompleteHeader,
+                "Expected .incompleteHeader after skipping unknown type, got \(protocolError)")
+        }
     }
 
     func testNegativeTruncatedHeader() throws {

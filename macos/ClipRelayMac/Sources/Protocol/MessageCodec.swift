@@ -1,6 +1,7 @@
 // Binary wire format: length-prefixed message types and encoding/decoding for the L2CAP protocol.
 
 import Foundation
+import os
 
 enum MessageType: UInt8 {
     case hello = 0x01
@@ -50,77 +51,88 @@ enum MessageCodec {
         return data
     }
 
+    private static let log = Logger(subsystem: "org.cliprelay", category: "MessageCodec")
+
     /// Decode a message from a Data buffer at a given offset.
     /// Advances `offset` past the consumed bytes on success.
+    /// Skips over messages with unknown types.
     static func decode(from data: Data, offset: inout Int) throws -> Message {
-        guard data.count - offset >= headerSize else {
-            throw ProtocolError.incompleteHeader
+        while true {
+            guard data.count - offset >= headerSize else {
+                throw ProtocolError.incompleteHeader
+            }
+
+            let messageLength = Int(
+                UInt32(data[offset]) << 24 |
+                UInt32(data[offset + 1]) << 16 |
+                UInt32(data[offset + 2]) << 8 |
+                UInt32(data[offset + 3])
+            )
+
+            offset += headerSize
+
+            if messageLength <= 0 {
+                throw ProtocolError.emptyMessage
+            }
+
+            if messageLength > maxMessageSize {
+                throw ProtocolError.messageTooLarge(messageLength)
+            }
+
+            guard data.count - offset >= messageLength else {
+                throw ProtocolError.incompleteBody
+            }
+
+            let typeByte = data[offset]
+            guard let type = MessageType(rawValue: typeByte) else {
+                log.warning("Skipping unknown message type 0x\(String(format: "%02x", typeByte))")
+                offset += messageLength
+                continue
+            }
+
+            let payloadStart = offset + 1
+            let payloadEnd = offset + messageLength
+            let payload = data[payloadStart..<payloadEnd]
+
+            offset = payloadEnd
+
+            return Message(type: type, payload: Data(payload))
         }
-
-        let messageLength = Int(
-            UInt32(data[offset]) << 24 |
-            UInt32(data[offset + 1]) << 16 |
-            UInt32(data[offset + 2]) << 8 |
-            UInt32(data[offset + 3])
-        )
-
-        offset += headerSize
-
-        if messageLength <= 0 {
-            throw ProtocolError.emptyMessage
-        }
-
-        if messageLength > maxMessageSize {
-            throw ProtocolError.messageTooLarge(messageLength)
-        }
-
-        guard data.count - offset >= messageLength else {
-            throw ProtocolError.incompleteBody
-        }
-
-        let typeByte = data[offset]
-        guard let type = MessageType(rawValue: typeByte) else {
-            throw ProtocolError.unknownType(typeByte)
-        }
-
-        let payloadStart = offset + 1
-        let payloadEnd = offset + messageLength
-        let payload = data[payloadStart..<payloadEnd]
-
-        offset = payloadEnd
-
-        return Message(type: type, payload: Data(payload))
     }
 
     /// Decode a message from an InputStream (blocking read).
+    /// Skips over messages with unknown types.
     static func decode(from inputStream: InputStream) throws -> Message {
-        let headerBytes = try readExactly(from: inputStream, count: headerSize, onFail: .incompleteHeader)
+        while true {
+            let headerBytes = try readExactly(from: inputStream, count: headerSize, onFail: .incompleteHeader)
 
-        let messageLength = Int(
-            UInt32(headerBytes[0]) << 24 |
-            UInt32(headerBytes[1]) << 16 |
-            UInt32(headerBytes[2]) << 8 |
-            UInt32(headerBytes[3])
-        )
+            let messageLength = Int(
+                UInt32(headerBytes[0]) << 24 |
+                UInt32(headerBytes[1]) << 16 |
+                UInt32(headerBytes[2]) << 8 |
+                UInt32(headerBytes[3])
+            )
 
-        if messageLength <= 0 {
-            throw ProtocolError.emptyMessage
+            if messageLength <= 0 {
+                throw ProtocolError.emptyMessage
+            }
+
+            if messageLength > maxMessageSize {
+                throw ProtocolError.messageTooLarge(messageLength)
+            }
+
+            let body = try readExactly(from: inputStream, count: messageLength, onFail: .incompleteBody)
+
+            let typeByte = body[0]
+            guard let type = MessageType(rawValue: typeByte) else {
+                log.warning("Skipping unknown message type 0x\(String(format: "%02x", typeByte))")
+                continue
+            }
+
+            let payload = messageLength > 1 ? Data(body[1...]) : Data()
+
+            return Message(type: type, payload: payload)
         }
-
-        if messageLength > maxMessageSize {
-            throw ProtocolError.messageTooLarge(messageLength)
-        }
-
-        let body = try readExactly(from: inputStream, count: messageLength, onFail: .incompleteBody)
-
-        let typeByte = body[0]
-        guard let type = MessageType(rawValue: typeByte) else {
-            throw ProtocolError.unknownType(typeByte)
-        }
-
-        let payload = messageLength > 1 ? Data(body[1...]) : Data()
-
-        return Message(type: type, payload: payload)
     }
 
     private static func readExactly(from stream: InputStream, count: Int, onFail: ProtocolError) throws -> [UInt8] {
