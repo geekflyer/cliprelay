@@ -121,6 +121,25 @@ class ConnectionManager: NSObject {
         state = .idle
     }
 
+    /// Tear down the current connection and start the reconnection cycle.
+    /// Use when the session layer detects a failure but the BLE link may still be alive.
+    func triggerReconnect() {
+        switch state {
+        case .connecting(let peripheral, _),
+             .openingL2CAP(let peripheral),
+             .connected(let peripheral):
+            l2capChannel = nil
+            matchedToken = nil
+            centralManager?.cancelPeripheralConnection(peripheral)
+            // didDisconnectPeripheral will set state to .idle and call scheduleReconnect()
+        case .scanning:
+            break  // already scanning for devices
+        case .idle:
+            resetReconnectDelay()
+            startScanning()
+        }
+    }
+
     // MARK: - Health Check
 
     private func startHealthCheck() {
@@ -132,6 +151,20 @@ class ConnectionManager: NSObject {
 
     private func performHealthCheck() {
         guard centralManager?.state == .poweredOn else { return }
+
+        // If we've been scanning without finding a device, cycle the scan.
+        // CoreBluetooth's allowDuplicates=false caches discovered peripherals;
+        // stopping and restarting clears the cache so peripherals whose
+        // advertisements were previously incomplete (missing scan response)
+        // will be reported again.
+        if case .scanning = state {
+            connLogger.info("Health check: cycling stale scan")
+            centralManager?.stopScan()
+            state = .idle
+            startScanning()
+            return
+        }
+
         guard case .idle = state else { return }
         guard reconnectTimer == nil else { return }
         connLogger.info("Health check: idle with no reconnect scheduled, restarting scan")

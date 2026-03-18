@@ -602,6 +602,8 @@ extension AppDelegate: SessionDelegate {
 
         if case SessionError.versionMismatch = error {
             activeSession = nil
+            activeSettingsProvider = nil
+            connectedSecret = nil
             sessionThread = nil
             DispatchQueue.main.async { [weak self] in
                 self?.statusBarController.setConnectedPeers([])
@@ -614,13 +616,18 @@ extension AppDelegate: SessionDelegate {
         }
 
         activeSession = nil
+        activeSettingsProvider = nil
+        connectedSecret = nil
         sessionThread = nil
 
         DispatchQueue.main.async { [weak self] in
             self?.statusBarController.setConnectedPeers([])
         }
 
-        // ConnectionManager handles reconnect automatically
+        // The BLE link may still be alive even though the session failed.
+        // Explicitly tear down the peripheral connection so that
+        // didDisconnectPeripheral fires and triggers the reconnection cycle.
+        connectionManager?.triggerReconnect()
     }
 
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool {
