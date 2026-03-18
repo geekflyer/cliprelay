@@ -147,6 +147,8 @@ build_mac() {
   <true/>
   <key>SUFeedURL</key>
   <string>https://raw.githubusercontent.com/geekflyer/cliprelay/sparkle/appcast.xml</string>
+  <key>SUScheduledCheckInterval</key>
+  <integer>7200</integer>
   ${SPARKLE_PLIST_KEYS}
 </dict>
 </plist>
