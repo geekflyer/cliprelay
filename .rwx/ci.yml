@@ -1,8 +1,18 @@
 on:
+  cli:
+    init:
+      repository: ${{ event.git.url }}
+      ref: ${{ event.git.sha }}
   github:
     push:
       if: ${{ event.git.branch == 'main' }}
-    pull_request: {}
+      init:
+        repository: ${{ event.git.url }}
+        ref: ${{ event.git.sha }}
+    pull_request:
+      init:
+        repository: ${{ event.git.url }}
+        ref: ${{ event.git.sha }}
 
 base:
   image: ubuntu:24.04
@@ -13,12 +23,9 @@ tasks:
   - key: clone
     call: git/clone 2.0.6
     with:
-      github-token: ${{ github.token }}
-      # TODO: Verify git/clone supports depth/fetch-tags params.
-      # Original GHA used fetch-depth: 0 and fetch-tags: true.
-      # If build scripts rely on git tags for versioning, add:
-      #   depth: 0
-      # or run `git fetch --tags --unshallow` in a subsequent task.
+      repository: ${{ init.repository }}
+      ref: ${{ init.ref }}
+      fetch-full-depth: true
 
   # --- Android pipeline ---
   - key: setup-java
