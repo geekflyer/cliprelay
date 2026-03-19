@@ -6,11 +6,12 @@ on:
 
 base:
   image: ubuntu:24.04
+  config: rwx/base 1.0.0
 
 tasks:
   # --- Clone ---
   - key: clone
-    call: git/clone 2.0.3
+    call: git/clone 2.0.6
     with:
       github-token: ${{ github.token }}
       # TODO: Verify git/clone supports depth/fetch-tags params.
