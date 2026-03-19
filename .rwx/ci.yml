@@ -23,7 +23,7 @@ tasks:
       repository: https://github.com/geekflyer/cliprelay.git
       ref: ${{ init.ref }}
       github-token: ${{ github.token }}
-      fetch-full-depth: true
+      preserve-git-dir: true
 
   # --- Android pipeline ---
   - key: setup-java
