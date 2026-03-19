@@ -1,0 +1,43 @@
+on:
+  github:
+    push:
+      if: ${{ event.git.branch == 'main' }}
+    pull_request: {}
+
+base:
+  image: ubuntu:24.04
+
+tasks:
+  # --- Clone ---
+  - key: clone
+    call: git/clone 2.0.3
+    with:
+      github-token: ${{ github.token }}
+      # TODO: Verify git/clone supports depth/fetch-tags params.
+      # Original GHA used fetch-depth: 0 and fetch-tags: true.
+      # If build scripts rely on git tags for versioning, add:
+      #   depth: 0
+      # or run `git fetch --tags --unshallow` in a subsequent task.
+
+  # --- Android pipeline ---
+  - key: setup-java
+    use: [clone]
+    run: |
+      apt-get update -qq && apt-get install -y -qq openjdk-17-jdk > /dev/null
+      echo "/usr/lib/jvm/java-17-openjdk-amd64" > $RWX_ENV/JAVA_HOME
+
+  - key: test-android
+    use: [setup-java]
+    run: cd android && ./gradlew testDebugUnitTest
+
+  - key: build-android
+    use: [test-android]
+    run: ./scripts/build-all.sh --android-only
+
+  # --- macOS pipeline ---
+  # TODO: RWX does not currently support macOS runners.
+  # The test-build-mac job (swift test + build) requires macOS with Xcode.
+  # This job must remain in GitHub Actions or be migrated when RWX adds macOS support.
+  # Original steps:
+  #   - swift test --package-path macos/ClipRelayMac
+  #   - ./scripts/build-all.sh --mac-only
