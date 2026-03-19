@@ -26,15 +26,25 @@ tasks:
       preserve-git-dir: true
 
   # --- Android pipeline ---
-  - key: setup-java
+  - key: setup-android
     use: [clone]
     run: |
       sudo apt-get update -qq
       sudo apt-get install -y -qq openjdk-17-jdk
       echo "/usr/lib/jvm/java-17-openjdk-amd64" > $RWX_ENV/JAVA_HOME
 
+      export ANDROID_HOME="$HOME/android-sdk"
+      mkdir -p "$ANDROID_HOME/cmdline-tools"
+      cd /tmp
+      curl -sSL -o cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+      unzip -q cmdline-tools.zip
+      mv cmdline-tools "$ANDROID_HOME/cmdline-tools/latest"
+      yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+      "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+      echo "$ANDROID_HOME" > $RWX_ENV/ANDROID_HOME
+
   - key: test-android
-    use: [setup-java]
+    use: [setup-android]
     run: cd android && ./gradlew testDebugUnitTest
 
   - key: build-android
