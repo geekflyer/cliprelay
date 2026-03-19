@@ -1,17 +1,14 @@
 on:
   cli:
     init:
-      repository: ${{ event.git.url }}
       ref: ${{ event.git.sha }}
   github:
     push:
       if: ${{ event.git.branch == 'main' }}
       init:
-        repository: ${{ event.git.url }}
         ref: ${{ event.git.sha }}
     pull_request:
       init:
-        repository: ${{ event.git.url }}
         ref: ${{ event.git.sha }}
 
 base:
@@ -23,8 +20,9 @@ tasks:
   - key: clone
     call: git/clone 2.0.6
     with:
-      repository: ${{ init.repository }}
+      repository: https://github.com/geekflyer/cliprelay.git
       ref: ${{ init.ref }}
+      github-token: ${{ github.token }}
       fetch-full-depth: true
 
   # --- Android pipeline ---
