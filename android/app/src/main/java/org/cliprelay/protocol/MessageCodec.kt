@@ -6,7 +6,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.util.logging.Logger
+import android.util.Log
 
 enum class MessageType(val byte: Byte) {
     HELLO(0x01),
@@ -45,7 +45,7 @@ class VersionMismatchException(val version: Int) : ProtocolException("Unsupporte
 object MessageCodec {
     const val MAX_MESSAGE_SIZE = 200_000
     private const val HEADER_SIZE = 4
-    private val log = Logger.getLogger("MessageCodec")
+    private const val TAG = "MessageCodec"
 
     fun encode(message: Message): ByteArray {
         val messageLength = 1 + message.payload.size // type byte + payload
@@ -76,7 +76,7 @@ object MessageCodec {
             val typeByte = body[0]
             val type = MessageType.fromByteOrNull(typeByte)
             if (type == null) {
-                log.warning("Skipping unknown message type: 0x${typeByte.toUByte().toString(16).padStart(2, '0')}")
+                Log.w(TAG, "Skipping unknown message type: 0x${typeByte.toUByte().toString(16).padStart(2, '0')}")
                 continue
             }
             val payload = body.copyOfRange(1, body.size)

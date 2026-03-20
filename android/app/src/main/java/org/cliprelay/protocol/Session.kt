@@ -15,7 +15,7 @@ import java.security.PrivateKey
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.logging.Logger
+import android.util.Log
 import javax.crypto.SecretKey
 
 // ── Settings Provider ───────────────────────────────────────────────
@@ -63,7 +63,6 @@ class Session(
     internal var pairingTimeoutMs: Long = 60_000L,
     private val settingsProvider: SettingsProvider? = null
 ) {
-    private val logger = Logger.getLogger("Session")
     private val closed = AtomicBoolean(false)
 
     /** Local device name sent during handshake. Set before calling performHandshake(). */
@@ -329,7 +328,7 @@ class Session(
             MessageType.CONFIG_UPDATE -> handleConfigUpdate(msg)
             MessageType.REJECT -> { /* handled in later task */ }
             MessageType.ERROR -> { /* handled in later task */ }
-            else -> logger.warning("Ignoring unexpected message type: ${msg.type}")
+            else -> Log.w(TAG, "Ignoring unexpected message type: ${msg.type}")
         }
     }
 
@@ -450,12 +449,12 @@ class Session(
                     }
                     MessageType.ERROR -> {
                         val code = JSONObject(String(done.payload)).optString("code", "unknown")
-                        logger.warning("Receiver reported error after image transfer: $code")
+                        Log.w(TAG, "Receiver reported error after image transfer: $code")
                         callback.onImageSendFailed("Receiver error: $code")
                         return
                     }
                     else -> {
-                        logger.warning("Expected DONE or ERROR after image send, got ${done.type}")
+                        Log.w(TAG, "Expected DONE or ERROR after image send, got ${done.type}")
                         callback.onImageSendFailed("Unexpected response: ${done.type}")
                         return
                     }
@@ -464,13 +463,13 @@ class Session(
             MessageType.REJECT -> {
                 val rejectJson = JSONObject(String(response.payload))
                 val reason = rejectJson.optString("reason", "unknown")
-                logger.info("Image rejected: $reason")
+                Log.i(TAG, "Image rejected: $reason")
                 callback.onImageRejected(reason)
             }
             MessageType.ERROR -> {
                 val errorJson = JSONObject(String(response.payload))
                 val code = errorJson.optString("code", "unknown")
-                logger.warning("Image error from receiver: $code")
+                Log.w(TAG, "Image error from receiver: $code")
             }
             else -> throw ProtocolException("Expected ACCEPT, REJECT, or ERROR, got ${response.type}")
         }
@@ -567,7 +566,7 @@ class Session(
             }
             MessageCodec.write(output, Message(MessageType.ERROR, errorJson.toString().toByteArray()))
         } catch (e: Exception) {
-            logger.warning("Image receive failed: ${e.message}")
+            Log.w(TAG, "Image receive failed: ${e.message}")
             val errorJson = JSONObject().apply {
                 put("code", "transfer_failed")
                 put("message", e.message ?: "unknown")
@@ -807,6 +806,8 @@ class Session(
     }
 
     companion object {
+        private const val TAG = "Session"
+
         internal fun sha256Hex(data: ByteArray): String {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             return digest.digest(data).joinToString("") { "%02x".format(it) }
