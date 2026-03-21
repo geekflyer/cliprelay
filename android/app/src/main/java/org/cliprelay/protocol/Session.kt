@@ -61,6 +61,7 @@ class Session(
     internal var handshakeTimeoutMs: Long = 5_000L,
     internal var transferTimeoutMs: Long = 30_000L,
     internal var pairingTimeoutMs: Long = 60_000L,
+    internal var inboundImageAcceptWindowMs: Long = 10_000L,
     private val settingsProvider: SettingsProvider? = null
 ) {
     private val tag = "Session"
@@ -505,8 +506,8 @@ class Session(
             return
         }
 
-        // Check device awake state (Android only)
-        if (!callback.isDeviceAwake()) {
+        // Give the user a short window to unlock/wake the device before rejecting.
+        if (!waitForDeviceAwake()) {
             val rejectJson = JSONObject().apply {
                 put("reason", "device_locked")
             }
@@ -804,6 +805,18 @@ class Session(
         json.put("richMediaEnabledChangedAt", sp.getRichMediaEnabledChangedAt())
         val msg = Message(MessageType.CONFIG_UPDATE, json.toString().toByteArray())
         configUpdateQueue.put(msg)
+    }
+
+    private fun waitForDeviceAwake(): Boolean {
+        if (callback.isDeviceAwake()) return true
+
+        val deadline = System.currentTimeMillis() + inboundImageAcceptWindowMs
+        while (!closed.get() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(100)
+            if (callback.isDeviceAwake()) return true
+        }
+
+        return callback.isDeviceAwake()
     }
 
     companion object {
