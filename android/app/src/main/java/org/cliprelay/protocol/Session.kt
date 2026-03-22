@@ -808,14 +808,21 @@ class Session(
     }
 
     private fun waitForDeviceAwake(): Boolean {
+        if (closed.get()) return false
         if (callback.isDeviceAwake()) return true
 
         val deadline = System.currentTimeMillis() + inboundImageAcceptWindowMs
         while (!closed.get() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(100)
+            try {
+                Thread.sleep(100)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
             if (callback.isDeviceAwake()) return true
         }
 
+        if (closed.get()) return false
         return callback.isDeviceAwake()
     }
 

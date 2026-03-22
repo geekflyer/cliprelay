@@ -1835,6 +1835,7 @@ class SessionTest {
         var onRichMediaChanged: (Boolean) -> Unit = {}
         var onImageReceived: (ByteArray, String, String) -> Unit = { _, _, _ -> }
         var onImageRejected: (String) -> Unit = {}
+        @Volatile
         var deviceAwake: Boolean = true
         val knownHashes = CopyOnWriteArrayList<String>()
 
