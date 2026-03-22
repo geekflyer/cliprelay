@@ -822,8 +822,7 @@ class Session(
             if (callback.isDeviceAwake()) return true
         }
 
-        if (closed.get()) return false
-        return callback.isDeviceAwake()
+        return false
     }
 
     companion object {

@@ -8,6 +8,7 @@ import java.io.PipedOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 /**
@@ -1413,9 +1414,14 @@ class SessionTest {
 
         val sp = TestSettingsProvider(enabled = true, changedAt = 1000)
         val readyLatch = CountDownLatch(1)
+        val wakeWaitStarted = CountDownLatch(1)
+        val deviceAwake = AtomicBoolean(false)
         val callback = TestCallback()
         callback.onReady = { readyLatch.countDown() }
-        callback.deviceAwake = false
+        callback.deviceAwakeProvider = {
+            wakeWaitStarted.countDown()
+            deviceAwake.get()
+        }
 
         val session = Session(
             input = macInput,
@@ -1446,10 +1452,8 @@ class SessionTest {
         }
         MessageCodec.write(toMac, Message(MessageType.OFFER, offerJson.toString().toByteArray()))
 
-        Thread {
-            Thread.sleep(150)
-            callback.deviceAwake = true
-        }.start()
+        assertTrue("Session should start waiting for device wake", wakeWaitStarted.await(1, TimeUnit.SECONDS))
+        deviceAwake.set(true)
 
         val accept = MessageCodec.decode(fromMac)
         assertEquals(MessageType.ACCEPT, accept.type)
@@ -1837,6 +1841,7 @@ class SessionTest {
         var onImageRejected: (String) -> Unit = {}
         @Volatile
         var deviceAwake: Boolean = true
+        var deviceAwakeProvider: (() -> Boolean)? = null
         val knownHashes = CopyOnWriteArrayList<String>()
 
         override fun onSessionReady() = onReady()
@@ -1853,7 +1858,7 @@ class SessionTest {
             onImageReceived.invoke(data, contentType, hash)
         override fun onImageRejected(reason: String) =
             onImageRejected.invoke(reason)
-        override fun isDeviceAwake(): Boolean = deviceAwake
+        override fun isDeviceAwake(): Boolean = deviceAwakeProvider?.invoke() ?: deviceAwake
     }
 
     /** In-memory settings provider for tests. */
