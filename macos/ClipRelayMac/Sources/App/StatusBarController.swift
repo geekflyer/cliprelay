@@ -288,7 +288,6 @@ final class StatusBarController {
         renderMenu()
     }
 
-
     @objc
     private func handleForgetDevice(_ sender: NSMenuItem) {
         guard let token = sender.representedObject as? String else { return }
