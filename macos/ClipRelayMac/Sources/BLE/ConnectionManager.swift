@@ -72,6 +72,8 @@ class ConnectionManager: NSObject {
     static let maxReconnectDelay: TimeInterval = 30.0
     static let healthCheckInterval: TimeInterval = 60.0
     /// Max time to wait in .connecting/.openingL2CAP before giving up.
+    /// Actual detection time is up to connectingTimeout + healthCheckInterval
+    /// since the health check runs on a 60s repeating timer.
     static let connectingTimeout: TimeInterval = 15.0
 
     override init() {
@@ -179,8 +181,12 @@ class ConnectionManager: NSObject {
                 connectingStartTime = nil
                 l2capChannel = nil
                 matchedToken = nil
+                // Set state to .idle immediately rather than waiting for
+                // didDisconnectPeripheral — the CB delegate may never fire
+                // in edge cases (sleep/wake BLE stack races).
+                state = .idle
                 centralManager?.cancelPeripheralConnection(peripheral)
-                // didDisconnectPeripheral will set state to .idle and call scheduleReconnect()
+                scheduleReconnect()
             }
             return
         default:
