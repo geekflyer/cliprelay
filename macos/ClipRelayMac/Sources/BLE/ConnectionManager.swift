@@ -64,9 +64,15 @@ class ConnectionManager: NSObject {
     private var matchedToken: String?
     private var healthCheckTimer: Timer?
 
+    /// Timestamp when we entered .connecting or .openingL2CAP state.
+    /// Used by health check to detect stuck connection attempts.
+    private var connectingStartTime: Date?
+
     static let serviceUUID = CBUUID(string: "c10b0001-1234-5678-9abc-def012345678")
     static let maxReconnectDelay: TimeInterval = 30.0
     static let healthCheckInterval: TimeInterval = 60.0
+    /// Max time to wait in .connecting/.openingL2CAP before giving up.
+    static let connectingTimeout: TimeInterval = 15.0
 
     override init() {
         super.init()
@@ -94,7 +100,15 @@ class ConnectionManager: NSObject {
         guard case .idle = state else { return }
         state = .scanning
         connLogger.info("Starting BLE scan for ClipRelay peripherals")
-        centralManager.scanForPeripherals(withServices: [Self.serviceUUID], options: nil)
+        // allowDuplicates=true ensures we receive scan response data (manufacturer
+        // data with device tag + PSM) even if CoreBluetooth initially reports the
+        // peripheral with only the advertisement packet. Without this, a peripheral
+        // discovered without scan response data is cached and never re-reported,
+        // permanently blocking reconnection.
+        centralManager.scanForPeripherals(
+            withServices: [Self.serviceUUID],
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+        )
     }
 
     func disconnect() {
@@ -118,6 +132,7 @@ class ConnectionManager: NSObject {
 
         l2capChannel = nil
         matchedToken = nil
+        connectingStartTime = nil
         state = .idle
     }
 
@@ -130,6 +145,7 @@ class ConnectionManager: NSObject {
              .connected(let peripheral):
             l2capChannel = nil
             matchedToken = nil
+            connectingStartTime = nil
             centralManager?.cancelPeripheralConnection(peripheral)
             // didDisconnectPeripheral will set state to .idle and call scheduleReconnect()
         case .scanning:
@@ -152,22 +168,43 @@ class ConnectionManager: NSObject {
     private func performHealthCheck() {
         guard centralManager?.state == .poweredOn else { return }
 
-        // If we've been scanning without finding a device, cycle the scan.
-        // CoreBluetooth's allowDuplicates=false caches discovered peripherals;
-        // stopping and restarting clears the cache so peripherals whose
-        // advertisements were previously incomplete (missing scan response)
-        // will be reported again.
+        // Handle stuck connection attempts: if we've been in .connecting or
+        // .openingL2CAP for too long, cancel and start over. This prevents
+        // permanent stalls when the L2CAP open hangs (e.g., wrong PSM after
+        // Android BLE stack restart).
+        switch state {
+        case .connecting(let peripheral, _), .openingL2CAP(let peripheral):
+            if let start = connectingStartTime, -start.timeIntervalSinceNow > Self.connectingTimeout {
+                connLogger.warning("Health check: connection attempt stuck for \(Int(-start.timeIntervalSinceNow))s, cancelling")
+                connectingStartTime = nil
+                l2capChannel = nil
+                matchedToken = nil
+                centralManager?.cancelPeripheralConnection(peripheral)
+                // didDisconnectPeripheral will set state to .idle and call scheduleReconnect()
+            }
+            return
+        default:
+            break
+        }
+
+        // If we're scanning, cycle the scan periodically.
+        // CoreBluetooth may not deliver scan response data on every report;
+        // cycling ensures we get fresh advertisement data.
         if case .scanning = state {
-            connLogger.info("Health check: cycling stale scan")
+            connLogger.info("Health check: cycling scan")
             centralManager?.stopScan()
             state = .idle
             startScanning()
             return
         }
 
+        // If we're connected, the session layer handles liveness detection
+        // via heartbeat PINGs. Nothing to do here.
         guard case .idle = state else { return }
-        guard reconnectTimer == nil else { return }
-        connLogger.info("Health check: idle with no reconnect scheduled, restarting scan")
+
+        // If idle with no reconnect scheduled (e.g., timer expired but
+        // startScanning failed due to a transient BT state), restart.
+        connLogger.info("Health check: idle with no active reconnect, restarting scan")
         resetReconnectDelay()
         startScanning()
     }
@@ -176,7 +213,10 @@ class ConnectionManager: NSObject {
 
     private func scheduleReconnect() {
         reconnectTimer?.invalidate()
-        reconnectTimer = Timer.scheduledTimer(withTimeInterval: reconnectDelay, repeats: false) { [weak self] _ in
+        let delay = reconnectDelay
+        connLogger.info("Scheduling reconnect in \(delay, format: .fixed(precision: 1))s")
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.reconnectTimer = nil  // clear reference so health check doesn't skip
             self?.startScanning()
         }
         reconnectDelay = min(reconnectDelay * 2, Self.maxReconnectDelay)
@@ -228,13 +268,26 @@ extension ConnectionManager: CBCentralManagerDelegate {
             startHealthCheck()
             startScanning()
         } else {
+            // BT powered off or transitioning — any in-progress connection is dead.
+            // CoreBluetooth will fire didDisconnectPeripheral for connected peripherals,
+            // but clear our tracking state now to be safe.
+            connectingStartTime = nil
             state = .idle
         }
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                          advertisementData: [String: Any], rssi: NSNumber) {
-        // Extract device tag and PSM from manufacturer data
+        // Ignore discoveries if we're already connecting or connected
+        // (with allowDuplicates=true, we get many callbacks)
+        switch state {
+        case .connecting, .openingL2CAP, .connected:
+            return
+        default:
+            break
+        }
+
+        // Extract device tag and PSM from manufacturer data (in scan response)
         guard let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data else { return }
         guard let tag = Self.extractDeviceTag(from: mfgData) else { return }
         guard let psm = Self.extractPSM(from: mfgData) else { return }
@@ -247,6 +300,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
 
                 central.stopScan()
                 state = .connecting(peripheral, psm)
+                connectingStartTime = Date()
                 peripheral.delegate = self
                 central.connect(peripheral)
             }
@@ -261,6 +315,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
         // Stop scanning, connect (will open L2CAP after BLE connection)
         central.stopScan()
         state = .connecting(peripheral, psm)
+        connectingStartTime = Date()
         peripheral.delegate = self
         central.connect(peripheral)
     }
@@ -273,11 +328,13 @@ extension ConnectionManager: CBCentralManagerDelegate {
         }
         connLogger.info("Connected to peripheral, opening L2CAP channel (PSM=\(psm))")
         state = .openingL2CAP(peripheral)
+        connectingStartTime = Date()  // reset timeout for L2CAP open phase
         peripheral.openL2CAPChannel(psm)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         connLogger.info("Failed to connect: \(error?.localizedDescription ?? "unknown")")
+        connectingStartTime = nil
         state = .idle
         scheduleReconnect()
     }
@@ -288,6 +345,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
         let token = matchedToken
         l2capChannel = nil
         matchedToken = nil
+        connectingStartTime = nil
         state = .idle
         if let token = token {
             delegate?.connectionManager(self, didDisconnectFor: token)
@@ -300,6 +358,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
 
 extension ConnectionManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
+        connectingStartTime = nil
         guard let channel = channel, error == nil else {
             connLogger.error("L2CAP open failed: \(error?.localizedDescription ?? "nil channel")")
             centralManager.cancelPeripheralConnection(peripheral)

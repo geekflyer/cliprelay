@@ -303,6 +303,8 @@ final class Session {
                     let msg = try MessageCodec.decode(from: inputStream)
                     try handleInbound(msg)
                 } else {
+                    // Check stream and connection health
+                    try checkStreamHealth()
                     // Brief sleep to avoid busy-waiting
                     Thread.sleep(forTimeInterval: 0.01)
                 }
@@ -315,6 +317,18 @@ final class Session {
             inputStream.close()
             outputStream.close()
             delegate?.session(self, didFailWithError: error)
+        }
+    }
+
+    /// Check stream status for early detection of dead connections.
+    private func checkStreamHealth() throws {
+        let inStatus = inputStream.streamStatus
+        if inStatus == .atEnd || inStatus == .error || inStatus == .closed || inStatus == .notOpen {
+            throw SessionError.protocolError("Input stream ended (status: \(inStatus.rawValue))")
+        }
+        let outStatus = outputStream.streamStatus
+        if outStatus == .error || outStatus == .closed || outStatus == .notOpen {
+            throw SessionError.protocolError("Output stream ended (status: \(outStatus.rawValue))")
         }
     }
 

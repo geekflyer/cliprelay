@@ -320,6 +320,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: ConnectionManagerDelegate {
     func connectionManager(_ manager: ConnectionManager, didEstablishChannel inputStream: InputStream,
                            outputStream: OutputStream, for token: String) {
+        // Close any stale session before creating a new one. This prevents the
+        // old session thread's error callback from disrupting the new session.
+        if let oldSession = activeSession {
+            appLogger.info("[App] Closing stale session before new connection")
+            oldSession.close()
+        }
+        activeSession = nil
+        activeSettingsProvider = nil
+        sessionThread = nil
+
         connectedSecret = token
 
         // Remove streams from the main RunLoop — Session runs them on its own background thread
@@ -361,6 +371,20 @@ extension AppDelegate: ConnectionManagerDelegate {
     }
 
     func connectionManager(_ manager: ConnectionManager, didUpdateBluetoothState state: CBManagerState) {
+        // When BT powers off, the active session's streams become dead.
+        // Close the session now so a zombie thread doesn't interfere with reconnection.
+        if state != .poweredOn, let session = activeSession {
+            appLogger.info("[App] BT state changed to \(state.rawValue), closing active session")
+            session.close()
+            activeSession = nil
+            activeSettingsProvider = nil
+            connectedSecret = nil
+            sessionThread = nil
+            DispatchQueue.main.async { [weak self] in
+                self?.statusBarController.setConnectedPeers([])
+            }
+        }
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             switch state {
@@ -599,6 +623,14 @@ extension AppDelegate: SessionDelegate {
 
     func session(_ session: Session, didFailWithError error: Error) {
         appLogger.error("[App] Session error: \(error.localizedDescription)")
+
+        // Ignore errors from a stale session that was already replaced.
+        // This prevents a zombie session thread from disrupting a new,
+        // working connection.
+        guard activeSession === session else {
+            appLogger.info("[App] Ignoring error from stale session")
+            return
+        }
 
         if case SessionError.versionMismatch = error {
             activeSession = nil
