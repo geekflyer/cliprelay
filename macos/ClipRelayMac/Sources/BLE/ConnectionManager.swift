@@ -207,7 +207,7 @@ class ConnectionManager: NSObject {
         }
 
         // If we're connected, the session layer handles liveness detection
-        // via heartbeat PINGs. Nothing to do here.
+        // via stream status checks. Nothing to do here.
         guard case .idle = state else { return }
 
         // If idle with no reconnect scheduled (e.g., timer expired but
