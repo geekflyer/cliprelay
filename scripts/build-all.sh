@@ -10,6 +10,8 @@ DIST_DIR="$ROOT_DIR/dist"
 MAC_PROJECT_DIR="$ROOT_DIR/macos/ClipRelayMac"
 ANDROID_PROJECT_DIR="$ROOT_DIR/android"
 
+# EdDSA public key for Sparkle update signature verification.
+# This is the verification (public) key — safe to commit. Override via SPARKLE_PUBLIC_KEY env var if needed.
 SPARKLE_PUBLIC_KEY="${SPARKLE_PUBLIC_KEY:-MvvTVBZwmJX4xjRViW6SBISRMDdzdVkVdO5KVB/7z8I=}"
 SPARKLE_PLIST_KEYS="<key>SUPublicEDKey</key>
     <string>${SPARKLE_PUBLIC_KEY}</string>"
