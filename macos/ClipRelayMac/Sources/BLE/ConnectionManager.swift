@@ -101,7 +101,7 @@ class ConnectionManager: NSObject {
         guard centralManager?.state == .poweredOn else { return }
         guard case .idle = state else { return }
         state = .scanning
-        connLogger.info("Starting BLE scan for ClipRelay peripherals")
+        connLogger.notice("Starting BLE scan for ClipRelay peripherals")
         // allowDuplicates=true ensures we receive scan response data (manufacturer
         // data with device tag + PSM) even if CoreBluetooth initially reports the
         // peripheral with only the advertisement packet. Without this, a peripheral
@@ -199,7 +199,7 @@ class ConnectionManager: NSObject {
         // CoreBluetooth may not deliver scan response data on every report;
         // cycling ensures we get fresh advertisement data.
         if case .scanning = state {
-            connLogger.info("Health check: cycling scan")
+            connLogger.notice("Health check: cycling scan")
             centralManager?.stopScan()
             state = .idle
             startScanning()
@@ -212,7 +212,7 @@ class ConnectionManager: NSObject {
 
         // If idle with no reconnect scheduled (e.g., timer expired but
         // startScanning failed due to a transient BT state), restart.
-        connLogger.info("Health check: idle with no active reconnect, restarting scan")
+        connLogger.notice("Health check: idle with no active reconnect, restarting scan")
         resetReconnectDelay()
         startScanning()
     }
@@ -222,7 +222,7 @@ class ConnectionManager: NSObject {
     private func scheduleReconnect() {
         reconnectTimer?.invalidate()
         let delay = reconnectDelay
-        connLogger.info("Scheduling reconnect in \(delay, format: .fixed(precision: 1))s")
+        connLogger.notice("Scheduling reconnect in \(delay, format: .fixed(precision: 1))s")
         reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             self?.reconnectTimer = nil  // clear reference so health check doesn't skip
             self?.startScanning()
@@ -269,7 +269,7 @@ class ConnectionManager: NSObject {
 
 extension ConnectionManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        connLogger.info("Bluetooth state: \(central.state.rawValue)")
+        connLogger.notice("Bluetooth state: \(central.state.rawValue)")
         delegate?.connectionManager(self, didUpdateBluetoothState: central.state)
         if central.state == .poweredOn {
             reconnectDelay = 1.0  // reset backoff on BT power cycle
@@ -304,7 +304,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
         if let expectedPairingTag = pairingTag {
             if tag == expectedPairingTag {
                 matchedToken = nil  // no token yet — will be set after ECDH
-                connLogger.info("Matched pairing tag, PSM=\(psm)")
+                connLogger.notice("Matched pairing tag, PSM=\(psm)")
 
                 central.stopScan()
                 state = .connecting(peripheral, psm)
@@ -318,7 +318,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
         // Match against paired tokens
         guard let matched = pairedDevices().first(where: { $0.tag == tag }) else { return }
         matchedToken = matched.token
-        connLogger.info("Matched device tag for token, PSM=\(psm)")
+        connLogger.notice("Matched device tag for token, PSM=\(psm)")
 
         // Stop scanning, connect (will open L2CAP after BLE connection)
         central.stopScan()
@@ -334,14 +334,14 @@ extension ConnectionManager: CBCentralManagerDelegate {
             centralManager.cancelPeripheralConnection(peripheral)
             return
         }
-        connLogger.info("Connected to peripheral, opening L2CAP channel (PSM=\(psm))")
+        connLogger.notice("Connected to peripheral, opening L2CAP channel (PSM=\(psm))")
         state = .openingL2CAP(peripheral)
         connectingStartTime = Date()  // reset timeout for L2CAP open phase
         peripheral.openL2CAPChannel(psm)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        connLogger.info("Failed to connect: \(error?.localizedDescription ?? "unknown")")
+        connLogger.notice("Failed to connect: \(error?.localizedDescription ?? "unknown")")
         connectingStartTime = nil
         state = .idle
         scheduleReconnect()
@@ -349,7 +349,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
                          error: Error?) {
-        connLogger.info("Disconnected: \(error?.localizedDescription ?? "clean")")
+        connLogger.notice("Disconnected: \(error?.localizedDescription ?? "clean")")
         let token = matchedToken
         l2capChannel = nil
         matchedToken = nil
@@ -377,7 +377,7 @@ extension ConnectionManager: CBPeripheralDelegate {
         l2capChannel = channel
         state = .connected(peripheral)
         reconnectDelay = 1.0  // reset backoff on successful connection
-        connLogger.info("L2CAP channel established, handing off to delegate")
+        connLogger.notice("L2CAP channel established, handing off to delegate")
 
         // Schedule streams on main RunLoop (avoids threading pitfalls on macOS)
         channel.inputStream.schedule(in: .main, forMode: .common)

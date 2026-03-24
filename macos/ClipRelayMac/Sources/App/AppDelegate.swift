@@ -11,6 +11,7 @@ private let appLogger = Logger(subsystem: "org.cliprelay", category: "App")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updaterController: SPUStandardUpdaterController
+    private let updaterDriverDelegate = UpdaterDriverDelegate()
     private let pairingManager = PairingManager()
     private let statusBarController: StatusBarController
     private let clipboardWriter = ClipboardWriter()
@@ -18,7 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let pairingWindowController = PairingWindowController()
 
     override init() {
-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: false, updaterDelegate: nil, userDriverDelegate: updaterDriverDelegate)
         statusBarController = StatusBarController(updaterController: updaterController)
         super.init()
     }
@@ -41,6 +43,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let bluetoothOffDebounceDelay: TimeInterval = 60.0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Start the Sparkle updater now that the app is fully launched.
+        // Creating the controller with startingUpdater:false in init() and
+        // deferring start to here avoids a race where the updater's scheduled
+        // cycle fires before the runloop is running.
+        updaterController.startUpdater()
+        if updaterController.updater.automaticallyChecksForUpdates {
+            updaterController.updater.checkForUpdatesInBackground()
+        }
+
         notificationManager.requestAuthorization()
         pairingManager.removePendingDevices()
         enableLaunchAtLoginIfFirstRun()
@@ -125,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(true, forKey: key)
         do {
             try SMAppService.mainApp.register()
-            appLogger.info("[App] Launch at login enabled on first run")
+            appLogger.notice("[App] Launch at login enabled on first run")
         } catch {
             appLogger.error("[App] Failed to enable launch at login: \(error.localizedDescription)")
         }
@@ -155,9 +166,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Try to send immediately
         if let session = activeSession {
             session.sendClipboard(plainData)
-            appLogger.info("[App] Queued clipboard for send (\(plainData.count) bytes)")
+            appLogger.notice("[App] Queued clipboard for send (\(plainData.count) bytes)")
         } else {
-            appLogger.info("[App] Clipboard cached for send on reconnect (\(plainData.count) bytes)")
+            appLogger.notice("[App] Clipboard cached for send on reconnect (\(plainData.count) bytes)")
         }
     }
 
@@ -205,7 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         pairingWindowController.close()
         refreshTrustedPeersMenu()
-        appLogger.info("[App] Pairing completed")
+        appLogger.notice("[App] Pairing completed")
     }
 
     private func cancelPendingPairingFlow(removePendingDevice: Bool) {
@@ -272,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Send CONFIG_UPDATE to the remote device
         activeSession?.sendConfigUpdate()
 
-        appLogger.info("[App] Image sync toggled to \(newEnabled)")
+        appLogger.notice("[App] Image sync toggled to \(newEnabled)")
     }
 
     // MARK: - Menu Helpers
@@ -323,7 +334,7 @@ extension AppDelegate: ConnectionManagerDelegate {
         // Close any stale session before creating a new one. This prevents the
         // old session thread's error callback from disrupting the new session.
         if let oldSession = activeSession {
-            appLogger.info("[App] Closing stale session before new connection")
+            appLogger.notice("[App] Closing stale session before new connection")
             oldSession.close()
         }
         activeSession = nil
@@ -367,14 +378,14 @@ extension AppDelegate: ConnectionManagerDelegate {
 
         // UI update deferred to sessionDidBecomeReady (after handshake exchanges device name)
 
-        appLogger.info("[App] L2CAP channel established, starting handshake")
+        appLogger.notice("[App] L2CAP channel established, starting handshake")
     }
 
     func connectionManager(_ manager: ConnectionManager, didUpdateBluetoothState state: CBManagerState) {
         // When BT powers off, the active session's streams become dead.
         // Close the session now so a zombie thread doesn't interfere with reconnection.
         if state != .poweredOn, let session = activeSession {
-            appLogger.info("[App] BT state changed to \(state.rawValue), closing active session")
+            appLogger.notice("[App] BT state changed to \(state.rawValue), closing active session")
             session.close()
             activeSession = nil
             activeSettingsProvider = nil
@@ -428,7 +439,7 @@ extension AppDelegate: ConnectionManagerDelegate {
     }
 
     func connectionManager(_ manager: ConnectionManager, didDisconnectFor token: String) {
-        appLogger.info("[App] Connection lost for token")
+        appLogger.notice("[App] Connection lost for token")
 
         activeSession?.close()
         activeSession = nil
@@ -480,7 +491,7 @@ extension AppDelegate: ConnectionManagerDelegate {
         thread.start()
         sessionThread = thread
 
-        appLogger.info("[App] Pairing L2CAP channel established, starting ECDH handshake")
+        appLogger.notice("[App] Pairing L2CAP channel established, starting ECDH handshake")
     }
 
     private func handleSessionEnded(_ endedSession: Session) {
@@ -512,7 +523,7 @@ extension AppDelegate: ConnectionManagerDelegate {
 extension AppDelegate: SessionDelegate {
     func sessionDidBecomeReady(_ session: Session) {
         let remoteName = session.remoteName
-        appLogger.info("[App] Session handshake complete — remote device: \(remoteName ?? "unknown", privacy: .private)")
+        appLogger.notice("[App] Session handshake complete — remote device: \(remoteName ?? "unknown", privacy: .private)")
 
         // Update stored device name from handshake and refresh UI
         if let token = connectedSecret {
@@ -544,7 +555,7 @@ extension AppDelegate: SessionDelegate {
         // If there's a pending clipboard payload, send it
         if let pending = pendingClipboardPayload {
             session.sendClipboard(pending)
-            appLogger.info("[App] Sent pending clipboard after reconnect (\(pending.count) bytes)")
+            appLogger.notice("[App] Sent pending clipboard after reconnect (\(pending.count) bytes)")
         }
     }
 
@@ -564,7 +575,7 @@ extension AppDelegate: SessionDelegate {
             .joined()
         lastReceivedHash = textHash
 
-        appLogger.info("[App] Received clipboard from Android (\(text.count) chars)")
+        appLogger.notice("[App] Received clipboard from Android (\(text.count) chars)")
 
         DispatchQueue.main.async { [weak self] in
             self?.clipboardWriter.writeText(text)
@@ -575,7 +586,7 @@ extension AppDelegate: SessionDelegate {
 
     func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String) {
         lastReceivedImageHash = hash
-        appLogger.info("[App] Received image from Android (\(data.count) bytes, \(contentType))")
+        appLogger.notice("[App] Received image from Android (\(data.count) bytes, \(contentType))")
 
         DispatchQueue.main.async { [weak self] in
             self?.clipboardWriter.writeImage(data, contentType: contentType)
@@ -613,7 +624,7 @@ extension AppDelegate: SessionDelegate {
     }
 
     func session(_ session: Session, didCompleteTransfer hash: String) {
-        appLogger.info("[App] Transfer complete (hash: \(hash.prefix(8))...)")
+        appLogger.notice("[App] Transfer complete (hash: \(hash.prefix(8))...)")
         pendingClipboardPayload = nil  // transfer succeeded, clear pending
 
         DispatchQueue.main.async { [weak self] in
@@ -628,7 +639,7 @@ extension AppDelegate: SessionDelegate {
         // This prevents a zombie session thread from disrupting a new,
         // working connection.
         guard activeSession === session else {
-            appLogger.info("[App] Ignoring error from stale session")
+            appLogger.notice("[App] Ignoring error from stale session")
             return
         }
 
@@ -667,7 +678,7 @@ extension AppDelegate: SessionDelegate {
     }
 
     func session(_ session: Session, didChangeRichMediaSetting enabled: Bool) {
-        appLogger.info("[App] Remote changed image sync setting to \(enabled)")
+        appLogger.notice("[App] Remote changed image sync setting to \(enabled)")
         // The settings provider already persisted the change via resolveSettings/handleConfigUpdate.
         // Just refresh the menu so the checkmark reflects the new state.
         DispatchQueue.main.async { [weak self] in

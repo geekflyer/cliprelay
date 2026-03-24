@@ -539,7 +539,7 @@ final class Session {
         case .reject:
             let rejectJson = (try? JSONSerialization.jsonObject(with: response.payload) as? [String: Any]) ?? [:]
             let reason = rejectJson["reason"] as? String ?? "unknown"
-            logger.info("Image rejected: \(reason)")
+            logger.notice("Image rejected: \(reason)")
             delegate?.session(self, imageWasRejected: reason)
 
         case .error:
