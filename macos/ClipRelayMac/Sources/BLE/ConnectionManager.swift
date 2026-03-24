@@ -186,7 +186,9 @@ class ConnectionManager: NSObject {
                 // in edge cases (sleep/wake BLE stack races).
                 state = .idle
                 centralManager?.cancelPeripheralConnection(peripheral)
-                scheduleReconnect()
+                // Don't call scheduleReconnect() here — didDisconnectPeripheral
+                // will handle it if it fires. If it doesn't, the next health
+                // check will see .idle and restart scanning.
             }
             return
         default:
