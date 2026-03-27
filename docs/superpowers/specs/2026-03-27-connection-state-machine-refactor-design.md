@@ -183,6 +183,8 @@ protocol ConnectionControllerDelegate: AnyObject {
                               didSyncClipboard hash: String)
     func connectionController(_ c: ConnectionController,
                               didChangeImageSyncSetting enabled: Bool)
+    func connectionController(_ c: ConnectionController,
+                              imageTransferFailed reason: String)
 }
 ```
 
@@ -208,6 +210,10 @@ var isImageSyncEnabled: Bool { get }
 ### Dedup & Pending Clipboard
 
 ConnectionController owns dedup state (`lastReceivedTextHash`, `lastReceivedImageHash`) and `pendingClipboard`. Dedup is checked before notifying the delegate. Pending clipboard is sent automatically when session becomes ready and cleared on successful transfer (`didCompleteTransfer` callback from Session). AppDelegate does not touch any of this.
+
+**Image transfer failures:** Session's `imageWasRejected` and `imageSendFailed` callbacks are forwarded through SessionAdapter to the connection queue. ConnectionController surfaces these via the `imageTransferFailed(reason:)` delegate method so AppDelegate can log or display feedback.
+
+**CONFIG_UPDATE flow:** `toggleImageSync()` dispatches to the connection queue, reads the current setting from PairingManager, flips it, persists via PairingManager, and if the state is `.ready`, calls `session.sendConfigUpdate()` to notify the remote device. Incoming CONFIG_UPDATE messages arrive via Session's `didChangeRichMediaSetting` callback, are routed through SessionAdapter to the connection queue, where ConnectionController persists the remote's setting via PairingManager (last-write-wins by timestamp) and notifies AppDelegate via `didChangeImageSyncSetting`. ConnectionController also wires a `DeviceSettingsProvider` to the Session when entering `.handshaking` state (normal path) or after pairing completes (pairing path), matching the current behavior.
 
 **`alreadyHasHash` synchronous callback:** Session calls `session(_:alreadyHasHash:) -> Bool` synchronously from the session thread. Since this only reads `lastReceivedTextHash` (written on the connection queue), the SessionAdapter handles it by reading the value directly with a lightweight lock rather than async dispatch. This is the one exception to the "all session callbacks dispatch to connection queue" pattern — a synchronous return value requires it.
 
