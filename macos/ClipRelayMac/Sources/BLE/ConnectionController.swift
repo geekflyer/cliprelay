@@ -110,6 +110,13 @@ class ConnectionController: NSObject {
     private var pairingTag: Data?
     private var pairingPrivateKey: Curve25519.KeyAgreement.PrivateKey?
 
+    // MARK: Session Adapter
+
+    /// Retained to prevent adapter deallocation during session lifetime.
+    fileprivate var currentAdapter: SessionAdapter?
+    /// Strong reference to settings provider (Session.settingsProvider is weak).
+    private var settingsProviderRef: DeviceSettingsProvider?
+
     // MARK: Dedup
 
     fileprivate var lastReceivedTextHash: String?
@@ -118,11 +125,6 @@ class ConnectionController: NSObject {
     // MARK: Pending
 
     private var pendingClipboard: Data?
-
-    // MARK: Settings Provider
-
-    /// Strong reference to keep the settings provider alive (Session.settingsProvider is weak).
-    private var settingsProviderRef: SettingsProvider?
 
     // MARK: - Init
 
@@ -523,14 +525,6 @@ extension ConnectionController: CBPeripheralDelegate {
 // MARK: - Session Start
 
 extension ConnectionController {
-
-    /// Retained to prevent adapter deallocation during session lifetime.
-    private static var currentAdapterKey: UInt8 = 0
-
-    fileprivate var currentAdapter: SessionAdapter? {
-        get { objc_getAssociatedObject(self, &Self.currentAdapterKey) as? SessionAdapter }
-        set { objc_setAssociatedObject(self, &Self.currentAdapterKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
-    }
 
     fileprivate func startSession(channel: CBL2CAPChannel, token: String?, gen: UInt, isPairing: Bool) {
         guard let inputStream = channel.inputStream, let outputStream = channel.outputStream else {
