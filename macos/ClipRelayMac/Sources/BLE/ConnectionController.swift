@@ -283,6 +283,7 @@ class ConnectionController: NSObject {
             log("startScanning: not idle (\(state))")
             return
         }
+        log("Scanning (paired: \(pairedDeviceTags().count))")
         transition(to: .scanning, reason: "startScanning")
         centralManager.scanForPeripherals(
             withServices: [Self.serviceUUID],
@@ -548,6 +549,7 @@ extension ConnectionController: CBCentralManagerDelegate {
         // Check against paired devices
         let paired = pairedDeviceTags()
         if let matched = paired.first(where: { $0.tag == deviceTag }) {
+            log("Matched device tag, PSM=\(psm), RSSI=\(RSSI)")
             central.stopScan()
             generation &+= 1
             transition(
