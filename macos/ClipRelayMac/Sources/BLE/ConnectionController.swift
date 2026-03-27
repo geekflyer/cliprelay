@@ -11,8 +11,8 @@ import os
 enum ConnectionState: CustomStringConvertible {
     case idle
     case scanning
-    case bleConnecting(CBPeripheral, CBL2CAPPSM, generation: UInt)
-    case l2capOpening(CBPeripheral, generation: UInt)
+    case bleConnecting(CBPeripheral, CBL2CAPPSM, token: String, generation: UInt)
+    case l2capOpening(CBPeripheral, token: String, generation: UInt)
     case pairingConnecting(CBPeripheral, CBL2CAPPSM, generation: UInt)
     case pairingL2CAP(CBPeripheral, generation: UInt)
     case pairingHandshake(Session, generation: UInt)
@@ -23,8 +23,8 @@ enum ConnectionState: CustomStringConvertible {
         switch self {
         case .idle, .scanning:
             return nil
-        case .bleConnecting(_, _, let g),
-             .l2capOpening(_, let g),
+        case .bleConnecting(_, _, _, let g),
+             .l2capOpening(_, _, let g),
              .pairingConnecting(_, _, let g),
              .pairingL2CAP(_, let g),
              .pairingHandshake(_, let g),
@@ -38,8 +38,8 @@ enum ConnectionState: CustomStringConvertible {
         switch self {
         case .idle: return "idle"
         case .scanning: return "scanning"
-        case .bleConnecting(_, let psm, let g): return "bleConnecting(psm=\(psm), gen=\(g))"
-        case .l2capOpening(_, let g): return "l2capOpening(gen=\(g))"
+        case .bleConnecting(_, let psm, _, let g): return "bleConnecting(psm=\(psm), gen=\(g))"
+        case .l2capOpening(_, _, let g): return "l2capOpening(gen=\(g))"
         case .pairingConnecting(_, let psm, let g): return "pairingConnecting(psm=\(psm), gen=\(g))"
         case .pairingL2CAP(_, let g): return "pairingL2CAP(gen=\(g))"
         case .pairingHandshake(_, let g): return "pairingHandshake(gen=\(g))"
@@ -215,8 +215,8 @@ class ConnectionController: NSObject {
 
     private func trackedPeripheral(from state: ConnectionState) -> CBPeripheral? {
         switch state {
-        case .bleConnecting(let p, _, _),
-             .l2capOpening(let p, _),
+        case .bleConnecting(let p, _, _, _),
+             .l2capOpening(let p, _, _),
              .pairingConnecting(let p, _, _),
              .pairingL2CAP(let p, _):
             return p
@@ -362,12 +362,163 @@ class ConnectionController: NSObject {
     }
 }
 
-// MARK: - CBCentralManagerDelegate (Task 3)
+// MARK: - CBCentralManagerDelegate
 
 extension ConnectionController: CBCentralManagerDelegate {
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {}
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        log("BT state: \(central.state.rawValue)")
+        if central.state == .poweredOn {
+            resetReconnectDelay()
+            startHealthCheck()
+            startScanning()
+        } else {
+            transitionToIdle(reason: "BT state \(central.state.rawValue)", reconnect: false)
+        }
+        let btState = central.state
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.didUpdateBluetoothState(state: btState)
+        }
+    }
+
+    func centralManager(
+        _ central: CBCentralManager,
+        didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any],
+        rssi RSSI: NSNumber
+    ) {
+        guard case .scanning = state else { return }
+
+        guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
+              let deviceTag = Self.extractDeviceTag(from: manufacturerData),
+              let psm = Self.extractPSM(from: manufacturerData)
+        else { return }
+
+        // Check for active pairing request
+        if let pairingTag, pairingTag == deviceTag {
+            central.stopScan()
+            generation &+= 1
+            transition(
+                to: .pairingConnecting(peripheral, psm, generation: generation),
+                reason: "pairingDiscovered"
+            )
+            connectingStartTime = Date()
+            peripheral.delegate = self
+            central.connect(peripheral, options: nil)
+            return
+        }
+
+        // Check against paired devices
+        let paired = pairedDeviceTags()
+        if let matched = paired.first(where: { $0.tag == deviceTag }) {
+            central.stopScan()
+            generation &+= 1
+            transition(
+                to: .bleConnecting(peripheral, psm, token: matched.token, generation: generation),
+                reason: "pairedDeviceDiscovered"
+            )
+            connectingStartTime = Date()
+            peripheral.delegate = self
+            central.connect(peripheral, options: nil)
+        }
+    }
+
+    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        switch state {
+        case .bleConnecting(_, let psm, let token, let gen) where gen == generation:
+            transition(
+                to: .l2capOpening(peripheral, token: token, generation: gen),
+                reason: "didConnect"
+            )
+            connectingStartTime = nil
+            peripheral.openL2CAPChannel(psm)
+
+        case .pairingConnecting(_, let psm, let gen) where gen == generation:
+            transition(
+                to: .pairingL2CAP(peripheral, generation: gen),
+                reason: "didConnect(pairing)"
+            )
+            connectingStartTime = nil
+            peripheral.openL2CAPChannel(psm)
+
+        default:
+            log("Stale didConnect (\(state)), cancelling")
+            central.cancelPeripheralConnection(peripheral)
+        }
+    }
+
+    func centralManager(
+        _ central: CBCentralManager,
+        didFailToConnect peripheral: CBPeripheral,
+        error: Error?
+    ) {
+        log("didFailToConnect: \(error?.localizedDescription ?? "unknown")")
+        central.cancelPeripheralConnection(peripheral)
+        transitionToIdle(reason: "didFailToConnect", reconnect: true)
+    }
+
+    func centralManager(
+        _ central: CBCentralManager,
+        didDisconnectPeripheral peripheral: CBPeripheral,
+        error: Error?
+    ) {
+        log("didDisconnect (\(state)): \(error?.localizedDescription ?? "clean")")
+
+        guard state.generation == generation else {
+            log("Stale didDisconnect (state gen \(state.generation?.description ?? "nil") != \(generation))")
+            return
+        }
+
+        switch state {
+        case .bleConnecting, .l2capOpening, .pairingConnecting, .pairingL2CAP:
+            transitionToIdle(reason: "didDisconnect(connecting)", reconnect: true)
+        case .handshaking, .ready, .pairingHandshake:
+            transitionToIdle(reason: "didDisconnect(session)", reconnect: true)
+        case .idle, .scanning:
+            log("didDisconnect while \(state), ignoring")
+        }
+    }
 }
 
-// MARK: - CBPeripheralDelegate (Task 3)
+// MARK: - CBPeripheralDelegate
 
-extension ConnectionController: CBPeripheralDelegate {}
+extension ConnectionController: CBPeripheralDelegate {
+
+    func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
+        connectingStartTime = nil
+
+        if let error {
+            log("L2CAP open error: \(error.localizedDescription)")
+            centralManager?.cancelPeripheralConnection(peripheral)
+            return
+        }
+
+        guard let channel else {
+            log("L2CAP open returned nil channel")
+            centralManager?.cancelPeripheralConnection(peripheral)
+            return
+        }
+
+        l2capChannel = channel
+
+        switch state {
+        case .l2capOpening(_, let token, let gen) where gen == generation:
+            startSession(channel: channel, token: token, gen: gen, isPairing: false)
+
+        case .pairingL2CAP(_, let gen) where gen == generation:
+            startSession(channel: channel, token: nil, gen: gen, isPairing: true)
+
+        default:
+            log("Stale didOpen (\(state)), cancelling")
+            centralManager?.cancelPeripheralConnection(peripheral)
+        }
+    }
+}
+
+// MARK: - Session Start (Task 4)
+
+extension ConnectionController {
+    fileprivate func startSession(channel: CBL2CAPChannel, token: String?, gen: UInt, isPairing: Bool) {
+        // Implemented in Task 4
+    }
+}
