@@ -364,6 +364,10 @@ extension ConnectionManager: CBCentralManagerDelegate {
         // Without this, repeated failures accumulate until CB reports
         // "maximum number of connections for this client".
         central.cancelPeripheralConnection(peripheral)
+        // Clear matchedToken before state reset so the didDisconnectPeripheral
+        // triggered by cancelPeripheralConnection sees idle + nil token and
+        // returns early (no double scheduleReconnect/delegate notification).
+        matchedToken = nil
         connectingStartTime = nil
         l2capChannel = nil
         state = .idle
@@ -391,8 +395,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
             // Already scanning for a new connection. A stale disconnect arriving
             // here should not interrupt the scan. Only clean up matchedToken if
             // it was left over from the old connection.
-            if matchedToken != nil {
-                let token = matchedToken!
+            if let token = matchedToken {
                 matchedToken = nil
                 l2capChannel = nil
                 delegate?.connectionManager(self, didDisconnectFor: token)
