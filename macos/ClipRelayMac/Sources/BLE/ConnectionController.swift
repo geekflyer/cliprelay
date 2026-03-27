@@ -101,8 +101,8 @@ class ConnectionController: NSObject {
     // MARK: Reconnect
 
     private var reconnectDelay: TimeInterval = 1.0
-    private var reconnectTimer: Timer?
-    private var healthCheckTimer: Timer?
+    private var reconnectTimer: DispatchSourceTimer?
+    private var healthCheckTimer: DispatchSourceTimer?
 
     // MARK: Pairing
 
@@ -236,11 +236,130 @@ class ConnectionController: NSObject {
         }
     }
 
-    // MARK: - Timers (placeholders — filled in Task 2)
+    // MARK: - Timers
 
-    func startHealthCheck() {}
+    private func startHealthCheck() {
+        healthCheckTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + Self.healthCheckInterval, repeating: Self.healthCheckInterval)
+        timer.setEventHandler { [weak self] in self?.performHealthCheck() }
+        timer.resume()
+        healthCheckTimer = timer
+    }
 
-    func scheduleReconnect() {}
+    private func scheduleReconnect() {
+        reconnectTimer?.cancel()
+        let delay = reconnectDelay
+        log("Scheduling reconnect in \(String(format: "%.1f", delay))s")
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + delay)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.reconnectTimer = nil
+            self.startScanning()
+        }
+        timer.resume()
+        reconnectTimer = timer
+        reconnectDelay = min(reconnectDelay * 2, Self.maxReconnectDelay)
+    }
+
+    // MARK: - Scanning
+
+    func startScanning() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard centralManager.state == .poweredOn else {
+            log("startScanning: BT not poweredOn (\(centralManager.state.rawValue))")
+            return
+        }
+        guard case .idle = state else {
+            log("startScanning: not idle (\(state))")
+            return
+        }
+        transition(to: .scanning, reason: "startScanning")
+        centralManager.scanForPeripherals(
+            withServices: [Self.serviceUUID],
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+        )
+    }
+
+    // MARK: - Health Check
+
+    private func performHealthCheck() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard centralManager.state == .poweredOn else { return }
+
+        switch state {
+        case .bleConnecting, .l2capOpening, .pairingConnecting, .pairingL2CAP:
+            if let start = connectingStartTime,
+               Date().timeIntervalSince(start) > Self.connectingTimeout {
+                log("Health check: connecting timed out")
+                transitionToIdle(reason: "connectingTimeout", reconnect: true)
+            }
+        case .scanning:
+            // Cycle the scan to pick up new advertisements
+            centralManager.stopScan()
+            centralManager.scanForPeripherals(
+                withServices: [Self.serviceUUID],
+                options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+            )
+        case .idle:
+            resetReconnectDelay()
+            startScanning()
+        case .handshaking, .ready:
+            break
+        case .pairingHandshake:
+            break
+        }
+    }
+
+    // MARK: - Reconnect Delay
+
+    func resetReconnectDelay() {
+        reconnectDelay = 1.0
+    }
+
+    @discardableResult
+    func nextReconnectDelay() -> TimeInterval {
+        let current = reconnectDelay
+        reconnectDelay = min(reconnectDelay * 2, Self.maxReconnectDelay)
+        return current
+    }
+
+    // MARK: - Paired Device Lookup
+
+    private func pairedDeviceTags() -> [(token: String, tag: Data)] {
+        pairingManager.loadDevices().compactMap { device in
+            guard let tag = pairingManager.deviceTag(for: device.sharedSecret) else { return nil }
+            return (token: device.sharedSecret, tag: tag)
+        }
+    }
+
+    // MARK: - Manufacturer Data Extraction
+
+    static func extractDeviceTag(from manufacturerData: Data) -> Data? {
+        guard manufacturerData.count >= 10 else { return nil }
+        return manufacturerData[2..<10]
+    }
+
+    static func extractPSM(from manufacturerData: Data) -> CBL2CAPPSM? {
+        guard manufacturerData.count >= 12 else { return nil }
+        let psm = UInt16(manufacturerData[10]) << 8 | UInt16(manufacturerData[11])
+        guard psm > 0 else { return nil }
+        return CBL2CAPPSM(psm)
+    }
+
+    // MARK: - Disconnect
+
+    func disconnect() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.healthCheckTimer?.cancel()
+            self.healthCheckTimer = nil
+            self.reconnectTimer?.cancel()
+            self.reconnectTimer = nil
+            self.transitionToIdle(reason: "disconnect", reconnect: false)
+        }
+    }
 }
 
 // MARK: - CBCentralManagerDelegate (Task 3)
