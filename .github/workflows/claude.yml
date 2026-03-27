@@ -48,7 +48,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           branch_prefix: "claude/"
-          claude_args: "--dangerously-skip-permissions"
+          claude_args: "--dangerously-skip-permissions --model claude-opus-4-6"
 
           # For label-triggered issues, tell Claude what to do.
           # For @claude comments, the comment itself is the instruction.
