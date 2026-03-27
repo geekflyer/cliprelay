@@ -378,6 +378,7 @@ extension AppDelegate: ConnectionManagerDelegate {
 
         // UI update deferred to sessionDidBecomeReady (after handshake exchanges device name)
 
+        NSLog("[App] L2CAP channel established, starting handshake")
         appLogger.notice("[App] L2CAP channel established, starting handshake")
     }
 
@@ -523,6 +524,7 @@ extension AppDelegate: ConnectionManagerDelegate {
 extension AppDelegate: SessionDelegate {
     func sessionDidBecomeReady(_ session: Session) {
         let remoteName = session.remoteName
+        NSLog("[App] Session ready — remote: %@", remoteName ?? "unknown")
         appLogger.notice("[App] Session handshake complete — remote device: \(remoteName ?? "unknown", privacy: .private)")
 
         // Update stored device name from handshake and refresh UI
@@ -633,6 +635,7 @@ extension AppDelegate: SessionDelegate {
     }
 
     func session(_ session: Session, didFailWithError error: Error) {
+        NSLog("[App] Session error: %@ (isActive=%d)", error.localizedDescription, activeSession === session ? 1 : 0)
         appLogger.error("[App] Session error: \(error.localizedDescription)")
 
         // Ignore errors from a stale session that was already replaced.

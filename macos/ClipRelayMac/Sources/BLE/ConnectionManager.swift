@@ -101,6 +101,7 @@ class ConnectionManager: NSObject {
         guard centralManager?.state == .poweredOn else { return }
         guard case .idle = state else { return }
         state = .scanning
+        NSLog("[BLE] Scanning for peripherals (paired devices: %d)", pairedDevices().count)
         connLogger.notice("Starting BLE scan for ClipRelay peripherals")
         // allowDuplicates=true ensures we receive scan response data (manufacturer
         // data with device tag + PSM) even if CoreBluetooth initially reports the
@@ -269,6 +270,7 @@ class ConnectionManager: NSObject {
 
 extension ConnectionManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        NSLog("[BLE] Bluetooth state: %d", central.state.rawValue)
         connLogger.notice("Bluetooth state: \(central.state.rawValue)")
         delegate?.connectionManager(self, didUpdateBluetoothState: central.state)
         if central.state == .poweredOn {
@@ -277,8 +279,22 @@ extension ConnectionManager: CBCentralManagerDelegate {
             startScanning()
         } else {
             // BT powered off or transitioning — any in-progress connection is dead.
-            // CoreBluetooth will fire didDisconnectPeripheral for connected peripherals,
-            // but clear our tracking state now to be safe.
+            // Full cleanup: cancel peripheral, clear all tracking state, and stop timers.
+            // This must happen synchronously so that when BT powers on and we start
+            // scanning, a stale didDisconnectPeripheral from the old connection doesn't
+            // clobber the new scan/connection state.
+            switch state {
+            case .connecting(let p, _), .openingL2CAP(let p), .connected(let p):
+                centralManager?.cancelPeripheralConnection(p)
+            case .scanning:
+                centralManager?.stopScan()
+            case .idle:
+                break
+            }
+            reconnectTimer?.invalidate()
+            reconnectTimer = nil
+            l2capChannel = nil
+            matchedToken = nil
             connectingStartTime = nil
             state = .idle
         }
@@ -318,6 +334,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
         // Match against paired tokens
         guard let matched = pairedDevices().first(where: { $0.tag == tag }) else { return }
         matchedToken = matched.token
+        NSLog("[BLE] Matched device tag, PSM=%d", psm)
         connLogger.notice("Matched device tag for token, PSM=\(psm)")
 
         // Stop scanning, connect (will open L2CAP after BLE connection)
@@ -334,6 +351,7 @@ extension ConnectionManager: CBCentralManagerDelegate {
             centralManager.cancelPeripheralConnection(peripheral)
             return
         }
+        NSLog("[BLE] Connected, opening L2CAP (PSM=%d)", psm)
         connLogger.notice("Connected to peripheral, opening L2CAP channel (PSM=\(psm))")
         state = .openingL2CAP(peripheral)
         connectingStartTime = Date()  // reset timeout for L2CAP open phase
@@ -342,14 +360,50 @@ extension ConnectionManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         connLogger.notice("Failed to connect: \(error?.localizedDescription ?? "unknown")")
+        // Release CoreBluetooth's internal connection bookkeeping for this peripheral.
+        // Without this, repeated failures accumulate until CB reports
+        // "maximum number of connections for this client".
+        central.cancelPeripheralConnection(peripheral)
         connectingStartTime = nil
+        l2capChannel = nil
         state = .idle
         scheduleReconnect()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
                          error: Error?) {
+        NSLog("[BLE] Disconnected: %@ (state=%@)", error?.localizedDescription ?? "clean", "\(state)")
         connLogger.notice("Disconnected: \(error?.localizedDescription ?? "clean")")
+
+        // Guard against stale disconnects: after a BT power cycle, CoreBluetooth
+        // may fire didDisconnectPeripheral for the old connection AFTER we've
+        // already started scanning or connecting to the same device. Only process
+        // the disconnect if the peripheral matches what we're currently tracking,
+        // or if we have leftover state (matchedToken) to clean up.
+        switch state {
+        case .connecting(let tracked, _), .openingL2CAP(let tracked), .connected(let tracked):
+            guard peripheral === tracked else {
+                NSLog("[BLE] Ignoring stale disconnect for untracked peripheral")
+                connLogger.notice("Ignoring stale disconnect for untracked peripheral")
+                return
+            }
+        case .scanning:
+            // Already scanning for a new connection. A stale disconnect arriving
+            // here should not interrupt the scan. Only clean up matchedToken if
+            // it was left over from the old connection.
+            if matchedToken != nil {
+                let token = matchedToken!
+                matchedToken = nil
+                l2capChannel = nil
+                delegate?.connectionManager(self, didDisconnectFor: token)
+            }
+            return
+        case .idle:
+            // If already idle with no tracked token, this is a fully stale
+            // disconnect (e.g., from BT power cycle cleanup). Nothing to do.
+            guard matchedToken != nil else { return }
+        }
+
         let token = matchedToken
         l2capChannel = nil
         matchedToken = nil
@@ -377,6 +431,7 @@ extension ConnectionManager: CBPeripheralDelegate {
         l2capChannel = channel
         state = .connected(peripheral)
         reconnectDelay = 1.0  // reset backoff on successful connection
+        NSLog("[BLE] L2CAP channel established")
         connLogger.notice("L2CAP channel established, handing off to delegate")
 
         // Schedule streams on main RunLoop (avoids threading pitfalls on macOS)
