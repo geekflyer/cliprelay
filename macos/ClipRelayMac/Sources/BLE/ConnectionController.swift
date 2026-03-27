@@ -207,6 +207,7 @@ class ConnectionController: NSObject {
         pairingTag = nil
         pairingPrivateKey = nil
         pendingClipboard = nil
+        settingsProviderRef = nil
 
         // Increment generation so any in-flight callbacks from the old connection are ignored
         generation &+= 1
@@ -366,6 +367,135 @@ class ConnectionController: NSObject {
             self.reconnectTimer = nil
             self.transitionToIdle(reason: "disconnect", reconnect: false)
         }
+    }
+}
+
+// MARK: - Public API
+
+struct PairingInfo {
+    let uri: URL
+}
+
+extension ConnectionController {
+
+    // MARK: Pairing
+
+    /// Start pairing flow. Generates ECDH key pair, returns QR URI.
+    /// PairingManager operations happen on the calling thread (main).
+    /// BLE scanning dispatched to connection queue.
+    func startPairing() -> PairingInfo? {
+        pairingManager.removePendingDevices()
+        let privateKey = pairingManager.generateKeyPair()
+        guard let uri = pairingManager.pairingURI(publicKey: privateKey.publicKey) else { return nil }
+        let tag = PairingManager.pairingTag(from: privateKey.publicKey.rawRepresentation)
+        queue.async { [self] in
+            pairingPrivateKey = privateKey
+            pairingTag = tag
+            if case .scanning = state { centralManager?.stopScan() }
+            transition(to: .idle, reason: "entering pairing mode")
+            startScanning()
+        }
+        return PairingInfo(uri: uri)
+    }
+
+    func cancelPairing() {
+        queue.async { [self] in
+            pairingManager.clearEphemeralKey()
+            pairingManager.removePendingDevices()
+            switch state {
+            case .scanning, .pairingConnecting, .pairingL2CAP, .pairingHandshake:
+                transitionToIdle(reason: "pairing cancelled", reconnect: false)
+            default:
+                pairingTag = nil
+                pairingPrivateKey = nil
+            }
+        }
+    }
+
+    // MARK: Sending
+
+    func sendClipboard(_ text: String) {
+        queue.async { [self] in
+            guard let data = text.data(using: .utf8) else { return }
+            let hash = Session.sha256Hex(data)
+            guard hash != lastReceivedTextHash else { return }
+            pendingClipboard = data
+            if case .ready(let session, _, _) = state {
+                session.sendClipboard(data)
+                log("Queued clipboard (\(data.count) bytes)")
+            } else {
+                log("Clipboard cached for reconnect (\(data.count) bytes)")
+            }
+        }
+    }
+
+    func sendImage(_ data: Data, contentType: String) {
+        queue.async { [self] in
+            let hash = Session.sha256Hex(data)
+            guard hash != lastReceivedImageHash else { return }
+            guard case .ready(let session, _, _) = state else { return }
+            guard self.isImageSyncEnabled else { return }
+            session.sendImage(data, contentType: contentType)
+        }
+    }
+
+    // MARK: Device Management
+
+    func forgetDevice(token: String) {
+        queue.async { [self] in
+            pairingManager.removeDevice(secret: token)
+            switch state {
+            case .ready(_, let t, _) where t == token:
+                transitionToIdle(reason: "device forgotten", reconnect: false)
+            case .handshaking(_, let t, _) where t == token:
+                transitionToIdle(reason: "device forgotten", reconnect: false)
+            case .bleConnecting, .l2capOpening:
+                transitionToIdle(reason: "device forgotten", reconnect: false)
+            default:
+                break
+            }
+            if case .idle = state, !pairingManager.loadDevices().isEmpty {
+                startScanning()
+            }
+        }
+    }
+
+    var pairedDevices: [PairedDevice] {
+        pairingManager.loadDevices()
+    }
+
+    // MARK: Settings
+
+    func toggleImageSync() {
+        queue.async { [self] in
+            let secret: String?
+            if case .ready(_, let token, _) = state {
+                secret = token
+            } else {
+                secret = pairingManager.loadDevices().first?.sharedSecret
+            }
+            guard let secret else { return }
+            let devices = pairingManager.loadDevices()
+            guard let device = devices.first(where: { $0.sharedSecret == secret }) else { return }
+            let newEnabled = !device.richMediaEnabled
+            let changedAt = Int64(Date().timeIntervalSince1970)
+            pairingManager.setRichMediaEnabled(newEnabled, changedAt: changedAt, forSecret: secret)
+            if case .ready(let session, _, _) = state {
+                session.sendConfigUpdate()
+            }
+            log("Image sync toggled to \(newEnabled)")
+        }
+    }
+
+    var isImageSyncEnabled: Bool {
+        guard let secret = currentToken else { return false }
+        return pairingManager.loadDevices()
+            .first(where: { $0.sharedSecret == secret })?.richMediaEnabled ?? false
+    }
+
+    private var currentToken: String? {
+        if case .ready(_, let token, _) = state { return token }
+        return nil
     }
 }
 
