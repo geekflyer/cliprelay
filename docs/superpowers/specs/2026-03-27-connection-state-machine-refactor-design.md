@@ -46,7 +46,10 @@ enum ConnectionState {
 }
 ```
 
-States carry their owned objects (peripheral, session, token) directly. No separate instance variables for tracked objects.
+States carry their primary owned objects (peripheral, session, token) directly. Two deliberate exceptions kept as instance variables:
+
+- **`l2capChannel: CBL2CAPChannel?`** — CoreBluetooth deallocates the channel if no strong reference is held. The channel is set when `didOpen` fires and cleared in `transitionToIdle`. It doesn't belong in the enum because it's a retain-only reference that no state transition logic reads.
+- **`connectingStartTime: Date?`** — Metadata about when we entered a connecting state, used only by the health check timeout. Set when entering `bleConnecting`/`l2capOpening`/`pairingConnecting`/`pairingL2CAP`, cleared in `transitionToIdle`.
 
 ### Generation Counter
 
@@ -137,7 +140,15 @@ private class SessionAdapter: SessionDelegate {
 
 Each new connection creates a new `SessionAdapter` with the current generation. Stale session threads that outlive their connection attempt produce callbacks with an old generation, which are silently dropped.
 
-Stream scheduling follows the same pattern as today: streams opened on the connection queue (in `didOpen`), removed, then rescheduled on the session thread's RunLoop before handshake.
+**Stream scheduling sequence** (all on the connection queue unless noted):
+
+1. `didOpen` callback (connection queue): schedule streams on a temporary RunLoop source and open them. This satisfies CoreBluetooth's requirement that streams be opened promptly.
+2. `startSession` (connection queue): spawn the session thread.
+3. Session thread (background): remove streams from any previous RunLoop scheduling, re-schedule on the thread's own RunLoop, then call `performHandshake()` + `listenForMessages()`.
+
+This matches the current pattern but all setup steps happen on the connection queue instead of main.
+
+**Concurrent close safety:** When `transitionToIdle` calls `session.close()`, Session's `_closed` flag (NSLock-protected) ensures only one path executes the close body. If the session thread concurrently detects a stream error and also tries to close, the lock prevents double-close. The session thread's error callback dispatches to the connection queue via SessionAdapter, where the stale generation check drops it. This is a residual race on Foundation stream `.close()` calls (not documented as thread-safe for concurrent close), inherited from the current code. Acceptable risk given no crashes observed in practice.
 
 ### Pairing
 
@@ -147,6 +158,8 @@ Pairing uses dedicated states in the same enum rather than a separate flow. Disc
 - If normal: `scanning → bleConnecting → l2capOpening → handshaking → ready`
 
 Both paths converge at `handshaking` (since the pairing handshake transitions into a normal HELLO/WELCOME handshake within the same Session). One state machine, no coordination logic between separate flows.
+
+**Pairing key flow:** `startPairing()` generates an ECDH private key via `PairingManager`, stores it as `pairingPrivateKey`, computes the `pairingTag` from the public key, and begins scanning. When the pairing device is found and L2CAP is established, the controller creates a Session with `mode: .pairing(privateKey: pairingPrivateKey!)` and transitions to `.pairingHandshake`. The private key is cleared in `transitionToIdle`.
 
 ### Public API
 
@@ -166,8 +179,16 @@ protocol ConnectionControllerDelegate: AnyObject {
                               didEncounterError error: ConnectionError)
     func connectionController(_ c: ConnectionController,
                               didUpdateBluetoothState available: Bool)
+    func connectionController(_ c: ConnectionController,
+                              didSyncClipboard hash: String)
+    func connectionController(_ c: ConnectionController,
+                              didChangeImageSyncSetting enabled: Bool)
 }
 ```
+
+**Error types:** `ConnectionError` distinguishes recoverable errors (BLE disconnect, session error) from non-recoverable ones (`versionMismatch`). ConnectionController suppresses reconnection for `versionMismatch` internally. AppDelegate uses the error type to decide whether to show a user-facing alert.
+
+**Bluetooth debounce:** `didUpdateBluetoothState` fires immediately on state change. AppDelegate retains its existing 60-second debounce timer for the "Bluetooth is off" alert — this is UI policy, not connection logic.
 
 Public methods:
 
@@ -182,16 +203,20 @@ var pairedDevices: [PairedDevice] { get }
 var isImageSyncEnabled: Bool { get }
 ```
 
+**Dependencies:** ConnectionController receives `PairingManager` as an init parameter. It uses PairingManager to look up paired device tags for discovery matching, store new paired devices, read/write rich media settings, and remove forgotten devices.
+
 ### Dedup & Pending Clipboard
 
-ConnectionController owns dedup state (`lastReceivedTextHash`, `lastReceivedImageHash`) and `pendingClipboard`. Dedup is checked before notifying the delegate. Pending clipboard is sent automatically when session becomes ready. AppDelegate does not touch any of this.
+ConnectionController owns dedup state (`lastReceivedTextHash`, `lastReceivedImageHash`) and `pendingClipboard`. Dedup is checked before notifying the delegate. Pending clipboard is sent automatically when session becomes ready and cleared on successful transfer (`didCompleteTransfer` callback from Session). AppDelegate does not touch any of this.
+
+**`alreadyHasHash` synchronous callback:** Session calls `session(_:alreadyHasHash:) -> Bool` synchronously from the session thread. Since this only reads `lastReceivedTextHash` (written on the connection queue), the SessionAdapter handles it by reading the value directly with a lightweight lock rather than async dispatch. This is the one exception to the "all session callbacks dispatch to connection queue" pattern — a synchronous return value requires it.
 
 ### Reconnection & Health Checks
 
 Same logic as the current implementation:
 
 - **Reconnection:** Exponential backoff 1s → 2s → 4s → 8s → 16s → 30s cap. Reset on successful connection or BT power-on. Uses `DispatchSourceTimer` on the connection queue.
-- **Health check:** 60s repeating timer. Detects stuck connecting states (15s timeout), cycles stale scans, recovers idle states with no active reconnect. Uses `DispatchSourceTimer` on the connection queue.
+- **Health check:** 60s repeating timer. Detects stuck connecting states (15s timeout), **cycles stale scans** (stop + restart to force CoreBluetooth to re-deliver advertisement data with `allowDuplicates`, working around CB's peripheral caching quirk), and recovers idle states with no active reconnect. Uses `DispatchSourceTimer` on the connection queue.
 
 ### Logging
 
@@ -217,7 +242,7 @@ Every state transition is logged via the `transition(to:reason:)` method, giving
 ## File Changes
 
 **New:**
-- `Sources/BLE/ConnectionController.swift` (~500 lines) — unified state machine
+- `Sources/BLE/ConnectionController.swift` (~600-700 lines) — unified state machine
 
 **Deleted:**
 - `Sources/BLE/ConnectionManager.swift` (~400 lines) — fully replaced
