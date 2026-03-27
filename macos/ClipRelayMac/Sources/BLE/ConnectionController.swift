@@ -112,12 +112,17 @@ class ConnectionController: NSObject {
 
     // MARK: Dedup
 
-    private var lastReceivedTextHash: String?
-    private var lastReceivedImageHash: String?
+    fileprivate var lastReceivedTextHash: String?
+    fileprivate var lastReceivedImageHash: String?
 
     // MARK: Pending
 
     private var pendingClipboard: Data?
+
+    // MARK: Settings Provider
+
+    /// Strong reference to keep the settings provider alive (Session.settingsProvider is weak).
+    private var settingsProviderRef: SettingsProvider?
 
     // MARK: - Init
 
@@ -515,10 +520,260 @@ extension ConnectionController: CBPeripheralDelegate {
     }
 }
 
-// MARK: - Session Start (Task 4)
+// MARK: - Session Start
 
 extension ConnectionController {
+
+    /// Retained to prevent adapter deallocation during session lifetime.
+    private static var currentAdapterKey: UInt8 = 0
+
+    fileprivate var currentAdapter: SessionAdapter? {
+        get { objc_getAssociatedObject(self, &Self.currentAdapterKey) as? SessionAdapter }
+        set { objc_setAssociatedObject(self, &Self.currentAdapterKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
+    }
+
     fileprivate func startSession(channel: CBL2CAPChannel, token: String?, gen: UInt, isPairing: Bool) {
-        // Implemented in Task 4
+        guard let inputStream = channel.inputStream, let outputStream = channel.outputStream else {
+            log("L2CAP channel missing streams")
+            transitionToIdle(reason: "missing streams", reconnect: true)
+            return
+        }
+
+        // Open streams temporarily on main RunLoop (CoreBluetooth requirement)
+        inputStream.schedule(in: .main, forMode: .common)
+        outputStream.schedule(in: .main, forMode: .common)
+        inputStream.open()
+        outputStream.open()
+
+        let adapter = SessionAdapter(controller: self, generation: gen)
+        currentAdapter = adapter
+
+        let session: Session
+        if isPairing {
+            guard let privateKey = pairingPrivateKey else {
+                log("Pairing channel but no ephemeral key")
+                transitionToIdle(reason: "missing pairing key", reconnect: false)
+                return
+            }
+            session = Session(inputStream: inputStream, outputStream: outputStream,
+                              isInitiator: true, delegate: adapter,
+                              mode: .pairing(privateKey: privateKey))
+            session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+            transition(to: .pairingHandshake(session, generation: gen), reason: "pairing handshake")
+        } else {
+            guard let token else {
+                log("Normal channel but no token")
+                transitionToIdle(reason: "missing token", reconnect: false)
+                return
+            }
+            let settingsProvider = DeviceSettingsProvider(pairingManager: pairingManager, secret: token)
+            session = Session(inputStream: inputStream, outputStream: outputStream,
+                              isInitiator: true, delegate: adapter, sharedSecretHex: token)
+            session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+            session.settingsProvider = settingsProvider
+            transition(to: .handshaking(session, token: token, generation: gen), reason: "handshake")
+        }
+
+        reconnectDelay = 1.0  // reset backoff on successful L2CAP
+
+        // Spawn session thread
+        let thread = Thread { [weak self] in
+            inputStream.remove(from: .main, forMode: .common)
+            outputStream.remove(from: .main, forMode: .common)
+            let runLoop = RunLoop.current
+            inputStream.schedule(in: runLoop, forMode: .common)
+            outputStream.schedule(in: runLoop, forMode: .common)
+            session.performHandshake()
+            session.listenForMessages()
+            // Session ended — clean up adapter reference
+            self?.queue.async { self?.currentAdapter = nil }
+        }
+        thread.name = isPairing ? "L2CAP-Pairing" : "L2CAP-Session"
+        thread.start()
+    }
+}
+
+// MARK: - Session Event Handlers
+
+extension ConnectionController {
+
+    fileprivate func handleSessionReady(_ session: Session, generation gen: UInt) {
+        let remoteName = session.remoteName
+        guard case .handshaking(_, let token, let g) = state, g == gen else {
+            log("Stale sessionReady (gen \(gen) != \(generation))")
+            return
+        }
+        // Update stored device name
+        if let name = remoteName {
+            let devices = pairingManager.loadDevices()
+            if let existing = devices.first(where: { $0.sharedSecret == token && $0.displayName != name }) {
+                pairingManager.removeDevice(secret: token)
+                let updated = PairedDevice(sharedSecret: existing.sharedSecret, displayName: name,
+                                           datePaired: existing.datePaired,
+                                           richMediaEnabled: existing.richMediaEnabled,
+                                           richMediaEnabledChangedAt: existing.richMediaEnabledChangedAt)
+                pairingManager.addDevice(updated)
+            }
+        }
+        transition(to: .ready(session, token: token, generation: gen), reason: "handshake complete")
+        log("Session ready — remote: \(remoteName ?? "unknown")")
+        // Send pending clipboard
+        if let pending = pendingClipboard {
+            session.sendClipboard(pending)
+            log("Sent pending clipboard (\(pending.count) bytes)")
+        }
+    }
+
+    fileprivate func handleSessionError(_ error: Error) {
+        log("Session error: \(error)")
+        if case SessionError.versionMismatch(let v) = error {
+            transitionToIdle(reason: "version mismatch (v\(v))", reconnect: false)
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.didEncounterError(error: .versionMismatch(v))
+            }
+            return
+        }
+        transitionToIdle(reason: "session error", reconnect: true)
+    }
+
+    fileprivate func handleClipboardReceived(plaintext: Data, hash: String) {
+        lastReceivedTextHash = hash
+        currentAdapter?.lastTextHash = hash
+        guard let text = String(data: plaintext, encoding: .utf8) else {
+            log("Received data not valid UTF-8")
+            return
+        }
+        log("Received clipboard (\(text.count) chars)")
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.didReceiveClipboard(text: text)
+        }
+    }
+
+    fileprivate func handleImageReceived(data: Data, contentType: String, hash: String) {
+        lastReceivedImageHash = hash
+        log("Received image (\(data.count) bytes, \(contentType))")
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.didReceiveImage(data: data, contentType: contentType)
+        }
+    }
+
+    fileprivate func handleTransferComplete(hash: String) {
+        log("Transfer complete (\(hash.prefix(8))...)")
+        pendingClipboard = nil
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.didSyncClipboard(hash: hash)
+        }
+    }
+
+    fileprivate func handlePairingComplete(sharedSecret: Data, remoteName: String?) {
+        let secretHex = sharedSecret.map { String(format: "%02x", $0) }.joined()
+        log("Pairing complete")
+        let device = PairedDevice(sharedSecret: secretHex, displayName: remoteName ?? "Android", datePaired: Date())
+        pairingManager.addDevice(device)
+        pairingManager.clearEphemeralKey()
+        // Wire settings provider (hold strong ref via settingsProviderRef so weak var isn't immediately nil)
+        if let session = activeSession(from: state) {
+            let provider = DeviceSettingsProvider(pairingManager: pairingManager, secret: secretHex)
+            settingsProviderRef = provider
+            session.settingsProvider = provider
+        }
+        pairingTag = nil
+        pairingPrivateKey = nil
+        // Transition from pairingHandshake to handshaking
+        if case .pairingHandshake(let session, let gen) = state, gen == generation {
+            transition(to: .handshaking(session, token: secretHex, generation: gen), reason: "pairing complete")
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.didCompletePairing(deviceName: remoteName)
+        }
+    }
+
+    fileprivate func handleRichMediaSettingChanged(enabled: Bool) {
+        log("Remote changed image sync to \(enabled)")
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.didChangeImageSyncSetting(enabled: enabled)
+        }
+    }
+
+    fileprivate func handleImageTransferFailed(reason: String) {
+        log("Image transfer failed: \(reason)")
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.imageTransferFailed(reason: reason)
+        }
+    }
+}
+
+// MARK: - SessionAdapter
+
+/// Bridges `SessionDelegate` callbacks (fired on the session thread) to
+/// `ConnectionController` handler methods on its serial queue, guarded by generation.
+private class SessionAdapter: NSObject, SessionDelegate {
+    weak var controller: ConnectionController?
+    let generation: UInt
+
+    private let hashLock = NSLock()
+    private var _lastTextHash: String?
+
+    var lastTextHash: String? {
+        get { hashLock.lock(); defer { hashLock.unlock() }; return _lastTextHash }
+        set { hashLock.lock(); defer { hashLock.unlock() }; _lastTextHash = newValue }
+    }
+
+    init(controller: ConnectionController, generation: UInt) {
+        self.controller = controller
+        self.generation = generation
+        self._lastTextHash = controller.lastReceivedTextHash
+        super.init()
+    }
+
+    /// Dispatch a block on the controller's queue, guarded by generation.
+    private func dispatch(_ work: @escaping (ConnectionController) -> Void) {
+        controller?.queue.async { [weak controller, generation] in
+            guard let controller, controller.generation == generation else { return }
+            work(controller)
+        }
+    }
+
+    // MARK: SessionDelegate
+
+    func sessionDidBecomeReady(_ session: Session) {
+        dispatch { $0.handleSessionReady(session, generation: self.generation) }
+    }
+
+    func session(_ session: Session, didFailWithError error: Error) {
+        dispatch { $0.handleSessionError(error) }
+    }
+
+    func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String) {
+        lastTextHash = hash
+        dispatch { $0.handleClipboardReceived(plaintext: plaintext, hash: hash) }
+    }
+
+    func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String) {
+        dispatch { $0.handleImageReceived(data: data, contentType: contentType, hash: hash) }
+    }
+
+    func session(_ session: Session, didCompleteTransfer hash: String) {
+        dispatch { $0.handleTransferComplete(hash: hash) }
+    }
+
+    func session(_ session: Session, didCompletePairingWithSecret sharedSecret: Data, remoteName: String?) {
+        dispatch { $0.handlePairingComplete(sharedSecret: sharedSecret, remoteName: remoteName) }
+    }
+
+    func session(_ session: Session, didChangeRichMediaSetting enabled: Bool) {
+        dispatch { $0.handleRichMediaSettingChanged(enabled: enabled) }
+    }
+
+    func session(_ session: Session, imageWasRejected reason: String) {
+        dispatch { $0.handleImageTransferFailed(reason: "rejected: \(reason)") }
+    }
+
+    func session(_ session: Session, imageSendFailed reason: String) {
+        dispatch { $0.handleImageTransferFailed(reason: "send failed: \(reason)") }
+    }
+
+    func session(_ session: Session, alreadyHasHash hash: String) -> Bool {
+        return lastTextHash == hash
     }
 }
