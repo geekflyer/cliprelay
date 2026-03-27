@@ -527,37 +527,41 @@ extension AppDelegate: SessionDelegate {
         NSLog("[App] Session ready — remote: %@", remoteName ?? "unknown")
         appLogger.notice("[App] Session handshake complete — remote device: \(remoteName ?? "unknown", privacy: .private)")
 
-        // Update stored device name from handshake and refresh UI
-        if let token = connectedSecret {
-            // Update the persisted device name if the remote sent one
-            if let name = remoteName {
-                let devices = pairingManager.loadDevices()
-                if let existing = devices.first(where: { $0.sharedSecret == token && $0.displayName != name }) {
-                    pairingManager.removeDevice(secret: token)
-                    let updated = PairedDevice(sharedSecret: existing.sharedSecret, displayName: name, datePaired: existing.datePaired)
-                    pairingManager.addDevice(updated)
+        // Dispatch to main to synchronize with CB callbacks and UI state.
+        // The session thread calls this after handshake completes.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            // Update stored device name from handshake and refresh UI
+            if let token = self.connectedSecret {
+                // Update the persisted device name if the remote sent one
+                if let name = remoteName {
+                    let devices = self.pairingManager.loadDevices()
+                    if let existing = devices.first(where: { $0.sharedSecret == token && $0.displayName != name }) {
+                        self.pairingManager.removeDevice(secret: token)
+                        let updated = PairedDevice(sharedSecret: existing.sharedSecret, displayName: name, datePaired: existing.datePaired)
+                        self.pairingManager.addDevice(updated)
+                    }
                 }
-            }
 
-            let deviceName = remoteName
-                ?? pairingManager.loadDevices().first(where: { $0.sharedSecret == token })?.displayName
-                ?? "Android"
+                let deviceName = remoteName
+                    ?? self.pairingManager.loadDevices().first(where: { $0.sharedSecret == token })?.displayName
+                    ?? "Android"
 
-            DispatchQueue.main.async { [weak self] in
-                self?.updateConnectedPeersMenu(token: token, deviceName: deviceName, connected: true)
+                self.updateConnectedPeersMenu(token: token, deviceName: deviceName, connected: true)
 
                 // Complete pairing if we were waiting for a new connection
-                if self?.awaitingNewPairingConnection == true {
-                    self?.completePairing(secret: token, deviceName: remoteName)
-                    self?.refreshTrustedPeersMenu()
+                if self.awaitingNewPairingConnection {
+                    self.completePairing(secret: token, deviceName: remoteName)
+                    self.refreshTrustedPeersMenu()
                 }
             }
-        }
 
-        // If there's a pending clipboard payload, send it
-        if let pending = pendingClipboardPayload {
-            session.sendClipboard(pending)
-            appLogger.notice("[App] Sent pending clipboard after reconnect (\(pending.count) bytes)")
+            // If there's a pending clipboard payload, send it
+            if let pending = self.pendingClipboardPayload {
+                session.sendClipboard(pending)
+                appLogger.notice("[App] Sent pending clipboard after reconnect (\(pending.count) bytes)")
+            }
         }
     }
 
@@ -638,42 +642,43 @@ extension AppDelegate: SessionDelegate {
         NSLog("[App] Session error: %@ (isActive=%d)", error.localizedDescription, activeSession === session ? 1 : 0)
         appLogger.error("[App] Session error: \(error.localizedDescription)")
 
-        // Ignore errors from a stale session that was already replaced.
-        // This prevents a zombie session thread from disrupting a new,
-        // working connection.
-        guard activeSession === session else {
-            appLogger.notice("[App] Ignoring error from stale session")
-            return
-        }
+        // Dispatch to main to synchronize with CB callbacks and ConnectionManager state.
+        // The session thread calls this when the listen loop or handshake fails.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
 
-        if case SessionError.versionMismatch = error {
-            activeSession = nil
-            activeSettingsProvider = nil
-            connectedSecret = nil
-            sessionThread = nil
-            DispatchQueue.main.async { [weak self] in
-                self?.statusBarController.setConnectedPeers([])
-                self?.showBluetoothAlert(
+            // Ignore errors from a stale session that was already replaced.
+            // This prevents a zombie session thread from disrupting a new,
+            // working connection.
+            guard self.activeSession === session else {
+                appLogger.notice("[App] Ignoring error from stale session")
+                return
+            }
+
+            if case SessionError.versionMismatch = error {
+                self.activeSession = nil
+                self.activeSettingsProvider = nil
+                self.connectedSecret = nil
+                self.sessionThread = nil
+                self.statusBarController.setConnectedPeers([])
+                self.showBluetoothAlert(
                     message: "App Update Required",
                     info: "Your Android app needs to be updated to continue syncing. Update via Google Play."
                 )
+                return
             }
-            return
+
+            self.activeSession = nil
+            self.activeSettingsProvider = nil
+            self.connectedSecret = nil
+            self.sessionThread = nil
+            self.statusBarController.setConnectedPeers([])
+
+            // The BLE link may still be alive even though the session failed.
+            // Explicitly tear down the peripheral connection so that
+            // didDisconnectPeripheral fires and triggers the reconnection cycle.
+            self.connectionManager?.triggerReconnect()
         }
-
-        activeSession = nil
-        activeSettingsProvider = nil
-        connectedSecret = nil
-        sessionThread = nil
-
-        DispatchQueue.main.async { [weak self] in
-            self?.statusBarController.setConnectedPeers([])
-        }
-
-        // The BLE link may still be alive even though the session failed.
-        // Explicitly tear down the peripheral connection so that
-        // didDisconnectPeripheral fires and triggers the reconnection cycle.
-        connectionManager?.triggerReconnect()
     }
 
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool {
