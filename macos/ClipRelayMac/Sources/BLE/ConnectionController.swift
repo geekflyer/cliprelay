@@ -460,7 +460,9 @@ extension ConnectionController {
                 transitionToIdle(reason: "device forgotten", reconnect: false)
             case .handshaking(_, let t, _) where t == token:
                 transitionToIdle(reason: "device forgotten", reconnect: false)
-            case .bleConnecting, .l2capOpening:
+            case .bleConnecting(_, _, let t, _) where t == token:
+                transitionToIdle(reason: "device forgotten", reconnect: false)
+            case .l2capOpening(_, let t, _) where t == token:
                 transitionToIdle(reason: "device forgotten", reconnect: false)
             default:
                 break
@@ -552,6 +554,9 @@ extension ConnectionController: CBCentralManagerDelegate {
             return
         }
 
+        // In pairing mode, only match the pairing tag — don't connect to existing paired devices
+        if pairingTag != nil { return }
+
         // Check against paired devices
         let paired = pairedDeviceTags()
         if let matched = paired.first(where: { $0.tag == deviceTag }) {
@@ -575,7 +580,7 @@ extension ConnectionController: CBCentralManagerDelegate {
                 to: .l2capOpening(peripheral, token: token, generation: gen),
                 reason: "didConnect"
             )
-            connectingStartTime = nil
+            connectingStartTime = Date()  // reset for L2CAP open timeout
             peripheral.openL2CAPChannel(psm)
 
         case .pairingConnecting(_, let psm, let gen) where gen == generation:
@@ -583,7 +588,7 @@ extension ConnectionController: CBCentralManagerDelegate {
                 to: .pairingL2CAP(peripheral, generation: gen),
                 reason: "didConnect(pairing)"
             )
-            connectingStartTime = nil
+            connectingStartTime = Date()  // reset for L2CAP open timeout
             peripheral.openL2CAPChannel(psm)
 
         default:
@@ -699,6 +704,7 @@ extension ConnectionController {
                 return
             }
             let settingsProvider = DeviceSettingsProvider(pairingManager: pairingManager, secret: token)
+            settingsProviderRef = settingsProvider  // retain (Session.settingsProvider is weak)
             session = Session(inputStream: inputStream, outputStream: outputStream,
                               isInitiator: true, delegate: adapter, sharedSecretHex: token)
             session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
