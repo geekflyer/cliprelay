@@ -88,9 +88,15 @@ class ConnectionController: NSObject {
 
     // MARK: State
 
+    /// Internal state — only access from the connection queue.
     private(set) var state: ConnectionState = .idle
     private(set) var generation: UInt = 0
     weak var delegate: ConnectionControllerDelegate?
+
+    /// Main-thread-safe cached values, updated on every state transition.
+    /// Use these from AppDelegate/UI closures instead of reading `state` directly.
+    private(set) var isConnected: Bool = false
+    private(set) var connectedToken: String?
 
     // MARK: BLE
 
@@ -164,16 +170,20 @@ class ConnectionController: NSObject {
             let token: String?
             let deviceName: String?
             switch newState {
-            case .ready(_, let t, _), .handshaking(_, let t, _):
+            case .ready(_, let t, _):
                 token = t
-                deviceName = pairingManager.loadDevices().first(where: { $0.sharedSecret == token })?.displayName
+                deviceName = pairingManager.loadDevices().first(where: { $0.sharedSecret == t })?.displayName
             default:
                 token = nil
                 deviceName = nil
             }
             let connected = nowReady
+            // Update main-thread-safe cached values
             DispatchQueue.main.async { [weak self] in
-                self?.delegate?.didChangeState(connected: connected, deviceName: deviceName, token: token)
+                guard let self else { return }
+                self.isConnected = connected
+                self.connectedToken = token
+                self.delegate?.didChangeState(connected: connected, deviceName: deviceName, token: token)
             }
         }
     }
@@ -201,12 +211,12 @@ class ConnectionController: NSObject {
             session.close()
         }
 
-        // Clear all connection state
+        // Clear all connection state (pendingClipboard intentionally preserved
+        // across reconnection cycles so it can be sent after reconnecting)
         l2capChannel = nil
         connectingStartTime = nil
         pairingTag = nil
         pairingPrivateKey = nil
-        pendingClipboard = nil
         settingsProviderRef = nil
 
         // Increment generation so any in-flight callbacks from the old connection are ignored
@@ -488,15 +498,11 @@ extension ConnectionController {
         }
     }
 
+    /// Safe to call from main thread — uses cached `connectedToken`.
     var isImageSyncEnabled: Bool {
-        guard let secret = currentToken else { return false }
+        guard let secret = connectedToken else { return false }
         return pairingManager.loadDevices()
             .first(where: { $0.sharedSecret == secret })?.richMediaEnabled ?? false
-    }
-
-    private var currentToken: String? {
-        if case .ready(_, let token, _) = state { return token }
-        return nil
     }
 }
 

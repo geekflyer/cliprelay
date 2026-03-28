@@ -85,9 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.connectionController?.isImageSyncEnabled ?? false
         }
         statusBarController.isDeviceConnected = { [weak self] in
-            guard let self, let cc = self.connectionController else { return false }
-            if case .ready = cc.state { return true }
-            return false
+            self?.connectionController?.isConnected ?? false
         }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()
@@ -323,7 +321,7 @@ extension AppDelegate: ConnectionControllerDelegate {
 
     func didChangeImageSyncSetting(enabled: Bool) {
         // Refresh the menu to update the checkmark
-        if let cc = connectionController, case .ready(_, let token, _) = cc.state {
+        if let cc = connectionController, let token = cc.connectedToken {
             let deviceName = cc.pairedDevices.first(where: { $0.sharedSecret == token })?.displayName ?? "Android"
             let peer = PeerSummary(id: deviceStableID(token: token), description: deviceName, secret: token, deviceTagHex: formattedDeviceTagHex(token: token))
             statusBarController.setConnectedPeers([peer])
