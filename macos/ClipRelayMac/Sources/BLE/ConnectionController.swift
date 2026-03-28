@@ -103,6 +103,10 @@ class ConnectionController: NSObject {
     private var centralManager: CBCentralManager!
     private var l2capChannel: CBL2CAPChannel?
     private var connectingStartTime: Date?
+    /// Last peripheral we attempted to connect to. Retained across transitionToIdle
+    /// so we can re-cancel it when BT powers on (cancelPeripheralConnection during
+    /// BT-off may be a no-op, leaving internal CB connection bookkeeping dangling).
+    private var lastAttemptedPeripheral: CBPeripheral?
 
     // MARK: Reconnect
 
@@ -515,6 +519,14 @@ extension ConnectionController: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         log("BT state: \(central.state.rawValue)")
         if central.state == .poweredOn {
+            // Re-cancel any peripheral from before the power cycle. cancelPeripheralConnection
+            // during BT-off is a no-op, so internal CB connection bookkeeping can accumulate
+            // across brief power nap cycles (BT on for ~2s, off, repeat). Re-cancelling now
+            // that BT is back on releases those dangling slots.
+            if let stale = lastAttemptedPeripheral {
+                central.cancelPeripheralConnection(stale)
+                lastAttemptedPeripheral = nil
+            }
             resetReconnectDelay()
             startHealthCheck()
             startScanning()
@@ -549,6 +561,7 @@ extension ConnectionController: CBCentralManagerDelegate {
                 reason: "pairingDiscovered"
             )
             connectingStartTime = Date()
+            lastAttemptedPeripheral = peripheral
             peripheral.delegate = self
             central.connect(peripheral, options: nil)
             return
@@ -568,6 +581,7 @@ extension ConnectionController: CBCentralManagerDelegate {
                 reason: "pairedDeviceDiscovered"
             )
             connectingStartTime = Date()
+            lastAttemptedPeripheral = peripheral
             peripheral.delegate = self
             central.connect(peripheral, options: nil)
         }
