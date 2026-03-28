@@ -634,13 +634,13 @@ extension ConnectionController: CBPeripheralDelegate {
 
         if let error {
             log("L2CAP open error: \(error.localizedDescription)")
-            centralManager?.cancelPeripheralConnection(peripheral)
+            transitionToIdle(reason: "L2CAP open error", reconnect: true)
             return
         }
 
         guard let channel else {
             log("L2CAP open returned nil channel")
-            centralManager?.cancelPeripheralConnection(peripheral)
+            transitionToIdle(reason: "L2CAP nil channel", reconnect: true)
             return
         }
 
