@@ -72,6 +72,98 @@ final class TcpImageReceiverTests: XCTestCase {
         XCTAssertTrue(receiveError is TcpTransferError, "Expected TcpTransferError, got \(type(of: receiveError!))")
     }
 
+    func testAcceptsConnectionWithCorrectNonce() throws {
+        let nonce = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+        let payload = Data((0..<1024).map { UInt8($0 % 256) })
+        let receiver = TcpImageReceiver(
+            expectedSize: payload.count,
+            allowedSenderIp: nil,
+            tcpNonce: nonce
+        )
+
+        let info = try receiver.start()
+        defer { receiver.closeServer() }
+
+        let expectation = self.expectation(description: "data received")
+        var received: Data?
+        var receiveError: Error?
+
+        DispatchQueue.global().async {
+            do {
+                received = try receiver.receive()
+            } catch {
+                receiveError = error
+            }
+            expectation.fulfill()
+        }
+
+        Thread.sleep(forTimeInterval: 0.05)
+
+        // Send nonce prefix followed by payload
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = info.port.bigEndian
+        "127.0.0.1".withCString { inet_pton(AF_INET, $0, &addr.sin_addr) }
+        withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                _ = connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        var combined = nonce
+        combined.append(payload)
+        combined.withUnsafeBytes { ptr in
+            _ = write(fd, ptr.baseAddress!, combined.count)
+        }
+
+        wait(for: [expectation], timeout: 5.0)
+
+        XCTAssertNil(receiveError, "Unexpected error: \(receiveError!)")
+        XCTAssertEqual(received, payload)
+    }
+
+    func testRejectsConnectionWithWrongNonce() throws {
+        let nonce = Data(repeating: 0xAA, count: 16)
+        let wrongNonce = Data(repeating: 0xBB, count: 16)
+        let payload = Data(repeating: 0x42, count: 64)
+        let receiver = TcpImageReceiver(
+            expectedSize: payload.count,
+            allowedSenderIp: nil,
+            tcpNonce: nonce,
+            noConnectionTimeoutMs: 2000,
+            maxConnections: 1
+        )
+
+        let info = try receiver.start()
+        defer { receiver.closeServer() }
+
+        let expectation = self.expectation(description: "receive completes")
+        var receiveError: Error?
+
+        DispatchQueue.global().async {
+            do {
+                _ = try receiver.receive()
+            } catch {
+                receiveError = error
+            }
+            expectation.fulfill()
+        }
+
+        Thread.sleep(forTimeInterval: 0.05)
+
+        // Send wrong nonce prefix
+        var wrongData = wrongNonce
+        wrongData.append(payload)
+        try? TcpImageSender.send(host: "127.0.0.1", port: info.port, data: wrongData)
+
+        wait(for: [expectation], timeout: 5.0)
+
+        XCTAssertNotNil(receiveError)
+        XCTAssertTrue(receiveError is TcpTransferError)
+    }
+
     func testTimesOutWhenNoConnection() throws {
         let receiver = TcpImageReceiver(
             expectedSize: 100,
