@@ -23,10 +23,13 @@ Device or other IDs):
 ## Notes
 
 ClipRelay transfers clipboard text directly between paired devices over
-Bluetooth Low Energy. No data is sent to any server, cloud service, or
-third party. The app has no backend infrastructure. All communication is
-end-to-end encrypted with AES-256-GCM using keys established during
-local QR-code pairing. No analytics, crash reporting, or telemetry is
-included.
+Bluetooth Low Energy. All communication is end-to-end encrypted with
+AES-256-GCM using keys established during local QR-code pairing.
+
+The macOS companion app sends an anonymous hourly usage heartbeat
+(random install ID, peering state, app version, OS version) to help
+measure active usage. No clipboard contents, Apple device identifiers,
+or personal information are included. The Android app does not send
+any telemetry.
 
 Privacy policy: https://cliprelay.org/privacy.html
