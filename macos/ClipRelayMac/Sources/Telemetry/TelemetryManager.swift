@@ -73,7 +73,7 @@ final class TelemetryManager {
         URLSession.shared.dataTask(with: request) { _, response, error in
             if let error {
                 logger.debug("[Telemetry] Heartbeat failed: \(error.localizedDescription)")
-            } else if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+            } else if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                 logger.debug("[Telemetry] Heartbeat sent (state: \(state.rawValue))")
             } else {
                 logger.debug("[Telemetry] Heartbeat returned unexpected status")
