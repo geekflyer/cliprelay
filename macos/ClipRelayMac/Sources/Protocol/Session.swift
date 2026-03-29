@@ -3,6 +3,7 @@
 import Foundation
 import CommonCrypto
 import CryptoKit
+import Security
 import os
 
 // MARK: - Settings Provider
@@ -496,6 +497,13 @@ final class Session {
                 throw SessionError.protocolError("Invalid ACCEPT payload for image")
             }
 
+            // Parse optional tcpNonce (new receivers include this)
+            // TODO(2026-05-01): Remove IP validation fallback — all clients should support tcpNonce by now
+            var tcpNonce: Data?
+            if let nonceHex = acceptJson["tcpNonce"] as? String {
+                tcpNonce = E2ECrypto.hexToData(nonceHex)
+            }
+
             // Encrypt image
             let encrypted = try E2ECrypto.seal(imageData, key: key)
 
@@ -503,7 +511,13 @@ final class Session {
             var lastError: Error?
             for attempt in 1...2 {
                 do {
-                    try TcpImageSender.send(host: tcpHost, port: UInt16(tcpPort), data: encrypted)
+                    try TcpImageSender.send(
+                        host: tcpHost,
+                        port: UInt16(tcpPort),
+                        data: encrypted,
+                        nonce: tcpNonce,
+                        sourceIp: LocalNetworkAddress.getLocalIPv4Address()
+                    )
                     lastError = nil
                     break
                 } catch {
@@ -558,10 +572,10 @@ final class Session {
         guard let json = try JSONSerialization.jsonObject(with: msg.payload) as? [String: Any],
               let contentType = json["type"] as? String,
               let size = json["size"] as? Int,
-              let hash = json["hash"] as? String,
-              let senderIp = json["senderIp"] as? String else {
+              let hash = json["hash"] as? String else {
             throw SessionError.protocolError("Invalid image OFFER payload")
         }
+        let senderIp = json["senderIp"] as? String
 
         // Check richMediaEnabled
         guard let sp = settingsProvider, sp.isRichMediaEnabled() else {
@@ -583,11 +597,17 @@ final class Session {
         // Cancel any in-flight transfer
         activeReceiver?.cancel()
 
+        // Generate per-transfer nonce for TCP authentication
+        var nonceBytes = [UInt8](repeating: 0, count: 16)
+        _ = SecRandomCopyBytes(kSecRandomDefault, 16, &nonceBytes)
+        let tcpNonce = Data(nonceBytes)
+
         // GCM overhead is 28 bytes (12 nonce + 16 tag)
         let expectedSize = size + 28
         let receiver = TcpImageReceiver(
             expectedSize: expectedSize,
-            allowedSenderIp: senderIp
+            allowedSenderIp: senderIp,
+            tcpNonce: tcpNonce
         )
         activeReceiver = receiver
 
@@ -599,10 +619,12 @@ final class Session {
         do {
             let serverInfo = try receiver.start()
 
-            // Send ACCEPT with TCP server info
+            // Send ACCEPT with TCP server info and nonce
+            let nonceHex = tcpNonce.map { String(format: "%02x", $0) }.joined()
             let acceptJSON: [String: Any] = [
                 "tcpHost": serverInfo.host,
-                "tcpPort": Int(serverInfo.port)
+                "tcpPort": Int(serverInfo.port),
+                "tcpNonce": nonceHex
             ]
             let acceptData = try JSONSerialization.data(withJSONObject: acceptJSON)
             try writeMessage(Message(type: .accept, payload: acceptData))
