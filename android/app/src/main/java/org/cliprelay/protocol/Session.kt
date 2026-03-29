@@ -415,6 +415,13 @@ class Session(
                 val acceptJson = JSONObject(String(response.payload))
                 val tcpHost = acceptJson.getString("tcpHost")
                 val tcpPort = acceptJson.getInt("tcpPort")
+                // Parse optional tcpNonce (new receivers include this)
+                // TODO(2026-05-01): Remove IP validation fallback — all clients should support tcpNonce by now
+                val tcpNonce = acceptJson.optString("tcpNonce").takeIf { it.isNotEmpty() }?.let { hex ->
+                    ByteArray(hex.length / 2) { i ->
+                        hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+                    }
+                }
 
                 // Encrypt image
                 val encrypted = E2ECrypto.seal(imageData, key)
@@ -423,7 +430,13 @@ class Session(
                 var lastError: Exception? = null
                 for (attempt in 1..2) {
                     try {
-                        TcpImageSender.send(tcpHost, tcpPort, encrypted)
+                        TcpImageSender.send(
+                            tcpHost,
+                            tcpPort,
+                            encrypted,
+                            nonce = tcpNonce,
+                            sourceIp = NetworkUtil.getLocalIpAddress(),
+                        )
                         lastError = null
                         break
                     } catch (e: Exception) {
@@ -483,7 +496,7 @@ class Session(
         val contentType = json.getString("type")
         val size = json.getInt("size")
         val hash = json.getString("hash")
-        val senderIp = json.getString("senderIp")
+        val senderIp = json.optString("senderIp").takeIf { it.isNotEmpty() }
 
         // Check richMediaEnabled
         val sp = settingsProvider
@@ -519,9 +532,13 @@ class Session(
 
         // GCM overhead is 28 bytes (12 nonce + 16 tag)
         val expectedSize = size + 28
+        // Generate per-transfer nonce for TCP authentication
+        val tcpNonce = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+
         val receiver = TcpImageReceiver(
             expectedSize = expectedSize,
-            allowedSenderIp = senderIp
+            allowedSenderIp = senderIp,
+            tcpNonce = tcpNonce,
         )
         activeReceiver = receiver
 
@@ -532,6 +549,7 @@ class Session(
             val acceptJson = JSONObject().apply {
                 put("tcpHost", serverInfo.host)
                 put("tcpPort", serverInfo.port)
+                put("tcpNonce", tcpNonce.joinToString("") { "%02x".format(it) })
             }
             MessageCodec.write(output, Message(MessageType.ACCEPT, acceptJson.toString().toByteArray()))
 
