@@ -100,7 +100,9 @@ final class TelemetryManager {
         }
         let newId = UUID().uuidString
         if let data = newId.data(using: .utf8) {
-            store.setData(data, for: keychainAccount)
+            if !store.setData(data, for: keychainAccount) {
+                logger.warning("[Telemetry] Failed to persist install ID — will reset on next launch")
+            }
         }
         logger.notice("[Telemetry] Generated new install ID")
         return newId
