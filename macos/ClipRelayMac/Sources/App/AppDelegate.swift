@@ -121,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Refresh trusted device list in the menu
         refreshTrustedPeersMenu()
 
-        // Anonymous usage heartbeats
+        // Anonymous usage check-ins
         telemetryManager = TelemetryManager { [weak self] in
             guard let self else { return .noPeering }
             if self.connectedSecret != nil { return .activePeering }

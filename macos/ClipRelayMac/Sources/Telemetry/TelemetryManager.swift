@@ -1,4 +1,4 @@
-// Sends periodic heartbeats with app state for anonymous usage insights.
+// Sends periodic check-ins with app state for anonymous usage insights.
 
 import Foundation
 import os
@@ -6,20 +6,22 @@ import os
 private let logger = Logger(subsystem: "org.cliprelay", category: "Telemetry")
 
 final class TelemetryManager {
-    enum HeartbeatState: String {
+    enum CheckinState: String {
         case noPeering = "no_peering"
         case idlePeering = "idle_peering"
         case activePeering = "active_peering"
     }
 
-    private let stateProvider: () -> HeartbeatState
+    private static let iso8601 = ISO8601DateFormatter()
+
+    private let stateProvider: () -> CheckinState
     private let installId: String
     private var timer: Timer?
 
     private static let checkinURL = URL(string: "https://updates.cliprelay.org/v1/checkin")!
     private static let keychainAccount = "telemetry_install_id"
 
-    init(stateProvider: @escaping () -> HeartbeatState) {
+    init(stateProvider: @escaping () -> CheckinState) {
         self.stateProvider = stateProvider
         self.installId = Self.resolveInstallId()
     }
@@ -29,7 +31,7 @@ final class TelemetryManager {
         logger.notice("[Telemetry] Scheduling first check-in in \(Int(startupDelay))s")
 
         let t = Timer(timeInterval: startupDelay, repeats: false) { [weak self] _ in
-            self?.sendHeartbeat()
+            self?.sendCheckin()
             self?.scheduleRecurring()
         }
         RunLoop.main.add(t, forMode: .common)
@@ -48,14 +50,14 @@ final class TelemetryManager {
         let interval = 3600.0 + jitter
 
         let t = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
-            self?.sendHeartbeat()
+            self?.sendCheckin()
             self?.scheduleRecurring()
         }
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
 
-    private func sendHeartbeat() {
+    private func sendCheckin() {
         let state = stateProvider()
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
         let osVersionString = "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
@@ -64,7 +66,7 @@ final class TelemetryManager {
 
         let payload: [String: String] = [
             "installId": installId,
-            "sentAt": ISO8601DateFormatter().string(from: Date()),
+            "sentAt": Self.iso8601.string(from: Date()),
             "appVersion": appVersion,
             "appBuild": appBuild,
             "platform": "macos",
