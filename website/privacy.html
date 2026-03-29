@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy — ClipRelay</title>
-  <meta name="description" content="ClipRelay privacy policy. We collect no data. Your clipboard stays between your devices.">
+  <meta name="description" content="ClipRelay privacy policy. Your clipboard stays between your devices. Only anonymous usage check-ins are collected.">
   <meta name="theme-color" content="#111820">
 
   <link rel="canonical" href="https://cliprelay.org/privacy.html">
@@ -96,13 +96,25 @@
     <a href="index.html" class="back-link">&larr; Back to home</a>
 
     <h1>Privacy Policy</h1>
-    <p class="last-updated">Last updated: March 1, 2026</p>
+    <p class="last-updated">Last updated: March 28, 2026</p>
 
     <p>ClipRelay transfers clipboard data exclusively over Bluetooth Low Energy (BLE), directly between your devices. No servers, no cloud, no internet connection required.</p>
 
     <p>All transfers are fully end-to-end encrypted with AES-256-GCM. Encryption keys are generated during pairing and never leave your devices.</p>
 
-    <p>That's it. ClipRelay has no backend, so there is nothing to collect.</p>
+    <h2>Anonymous Usage Check-In</h2>
+
+    <p>The macOS app sends an anonymous hourly usage check-in to our server while running. This check-in includes:</p>
+
+    <ul>
+      <li>A random, anonymous install identifier (not tied to your Apple ID or hardware)</li>
+      <li>Whether the app currently has paired devices and whether a session is active</li>
+      <li>App version and macOS version</li>
+    </ul>
+
+    <p>The check-in does <strong>not</strong> include any clipboard contents, Apple device identifiers, hardware identifiers, or personal information.</p>
+
+    <p>This data helps us understand how many people use ClipRelay and how the app is being used, so we can prioritize improvements.</p>
 
     <h2>Contact</h2>
     <p>If you have any questions about this privacy policy, you can reach us at <a href="mailto:info@cliprelay.org">info@cliprelay.org</a>.</p>
