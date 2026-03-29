@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastReceivedHash: String?
     private var lastReceivedImageHash: String?
 
+    private var telemetryManager: TelemetryManager?
     private var clipboardMonitor: ClipboardMonitor?
     private var awaitingNewPairingConnection = false
     private var hasShownBluetoothAlert = false
@@ -119,6 +120,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Refresh trusted device list in the menu
         refreshTrustedPeersMenu()
+
+        // Anonymous usage heartbeats
+        telemetryManager = TelemetryManager { [weak self] in
+            guard let self else { return .noPeering }
+            if self.connectedSecret != nil { return .activePeering }
+            if !self.pairingManager.loadDevices().isEmpty { return .idlePeering }
+            return .noPeering
+        }
+        telemetryManager?.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
