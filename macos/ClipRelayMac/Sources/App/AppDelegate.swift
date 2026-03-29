@@ -133,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         bluetoothOffDebounceTimer?.invalidate()
+        telemetryManager?.stop()
         clipboardMonitor?.stop()
         activeSession?.close()
         connectionManager?.disconnect()

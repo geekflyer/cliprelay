@@ -28,10 +28,17 @@ final class TelemetryManager {
         let startupDelay = Double.random(in: 30...90)
         logger.notice("[Telemetry] Scheduling first heartbeat in \(Int(startupDelay))s")
 
-        timer = Timer.scheduledTimer(withTimeInterval: startupDelay, repeats: false) { [weak self] _ in
+        let t = Timer(timeInterval: startupDelay, repeats: false) { [weak self] _ in
             self?.sendHeartbeat()
             self?.scheduleRecurring()
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
     }
 
     // MARK: - Private
@@ -40,10 +47,12 @@ final class TelemetryManager {
         let jitter = Double.random(in: -300...300)
         let interval = 3600.0 + jitter
 
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+        let t = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
             self?.sendHeartbeat()
             self?.scheduleRecurring()
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     private func sendHeartbeat() {
