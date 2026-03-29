@@ -24,13 +24,15 @@ final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
         forUpdate update: SUAppcastItem,
         state: SPUUserUpdateState
     ) {
+        // When handleShowingUpdate is false the dialog is already visible
+        // from a previous reminder — nothing to do.
+        guard handleShowingUpdate else { return }
+
         availableUpdateVersion = update.displayVersionString
 
-        // Only post a notification for scheduled checks where Sparkle is
-        // about to show the dialog. Skip for user-initiated checks (Sparkle
-        // handles those in focus) and when handleShowingUpdate is false
-        // (dialog already visible from a previous reminder).
-        guard !state.userInitiated, handleShowingUpdate else { return }
+        // Only post a notification for scheduled checks. User-initiated
+        // checks (menu item) are shown in focus by Sparkle directly.
+        guard !state.userInitiated else { return }
 
         let content = UNMutableNotificationContent()
         content.title = "ClipRelay Update Available"
@@ -98,12 +100,17 @@ extension UpdaterDriverDelegate: UNUserNotificationCenterDelegate {
         completionHandler()
     }
 
-    // Show notifications even when the app is in the foreground.
+    // Show update notifications as banners even when the app is in the foreground.
+    // Other notifications (e.g. clipboard-received) keep their default behavior.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound])
+        if notification.request.identifier == updateNotificationID {
+            completionHandler([.banner, .sound])
+        } else {
+            completionHandler([])
+        }
     }
 }
