@@ -6,6 +6,7 @@ import CryptoKit
 import os
 import ServiceManagement
 import Sparkle
+import UserNotifications
 
 private let appLogger = Logger(subsystem: "org.cliprelay", category: "App")
 
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updaterController.updater.checkForUpdatesInBackground()
         }
 
+        UNUserNotificationCenter.current().delegate = updaterDriverDelegate
         notificationManager.requestAuthorization()
         pairingManager.removePendingDevices()
         enableLaunchAtLoginIfFirstRun()

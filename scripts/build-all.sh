@@ -3,8 +3,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MAC_VERSION=$(cat "$ROOT_DIR/macos/VERSION" 2>/dev/null || echo "0.0.0")
-MAC_BUILD_NUMBER=$(git -C "$ROOT_DIR" rev-list --count HEAD)
+MAC_VERSION=${MAC_VERSION:-$(cat "$ROOT_DIR/macos/VERSION" 2>/dev/null || echo "0.0.0")}
+MAC_BUILD_NUMBER=${MAC_BUILD_NUMBER:-$(git -C "$ROOT_DIR" rev-list --count HEAD)}
 GIT_HASH=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DIST_DIR="$ROOT_DIR/dist"
 MAC_PROJECT_DIR="$ROOT_DIR/macos/ClipRelayMac"
