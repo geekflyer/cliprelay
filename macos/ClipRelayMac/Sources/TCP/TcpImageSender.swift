@@ -19,6 +19,9 @@ enum TcpImageSender {
 
         defer { close(fd) }
 
+        var noSigPipe: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+
         // Bind to LAN interface to bypass VPN routing
         if let srcIp = sourceIp {
             var srcAddr = sockaddr_in()

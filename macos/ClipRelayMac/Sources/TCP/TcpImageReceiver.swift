@@ -41,6 +41,7 @@ final class TcpImageReceiver {
 
         var yes: Int32 = 1
         setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(serverFd, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
 
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -120,6 +121,9 @@ final class TcpImageReceiver {
                 if wasCancelled { throw TcpTransferError.transferCancelled }
                 throw TcpTransferError.receiveFailed("accept() failed: \(errno)")
             }
+
+            var noSigPipe: Int32 = 1
+            setsockopt(clientFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
 
             // Validate connection
             if let nonce = tcpNonce {
