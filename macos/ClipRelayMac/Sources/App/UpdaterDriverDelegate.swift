@@ -65,16 +65,14 @@ final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
         )
     }
 
-    /// Temporarily switches to a regular activation policy and brings all
-    /// visible windows to the front. `ignoringOtherApps` is required because
+    /// Temporarily switches to a regular activation policy and brings the
+    /// key window to the front. `ignoringOtherApps` is required because
     /// `NSApp.activate()` (macOS 14+) does not reliably bring windows forward
     /// for apps that were LSUIElement/accessory moments earlier.
     static func bringSparkleDialogToFront() {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        for window in NSApp.windows where window.isVisible {
-            window.makeKeyAndOrderFront(nil)
-        }
+        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
     }
 
     func standardUserDriverWillFinishUpdateSession() {
@@ -94,7 +92,8 @@ extension UpdaterDriverDelegate: UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if response.notification.request.identifier == updateNotificationID {
+        if response.notification.request.identifier == updateNotificationID,
+           availableUpdateVersion != nil {
             Self.bringSparkleDialogToFront()
         }
         completionHandler()

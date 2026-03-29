@@ -13,7 +13,8 @@ final class StatusBarController {
     var onToggleImageSync: (() -> Void)?
     var isImageSyncEnabled: (() -> Bool)?
     var isDeviceConnected: (() -> Bool)?
-    var availableUpdateVersion: (() -> String?)?
+
+    private var availableUpdateVersion: String?
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()
@@ -112,7 +113,10 @@ final class StatusBarController {
 
     // MARK: - Menu rendering
 
-    func refreshMenu() { renderMenu() }
+    func setAvailableUpdateVersion(_ version: String?) {
+        availableUpdateVersion = version
+        renderMenu()
+    }
 
     private func renderMenu() {
         menu.removeAllItems()
@@ -179,7 +183,7 @@ final class StatusBarController {
         menu.addItem(websiteItem)
 
         let updateTitle: String
-        if let version = availableUpdateVersion?() {
+        if let version = availableUpdateVersion {
             updateTitle = "Update Available (\(version))"
         } else {
             updateTitle = "Check for Updates\u{2026}"
