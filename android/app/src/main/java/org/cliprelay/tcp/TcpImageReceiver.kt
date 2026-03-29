@@ -12,6 +12,7 @@ data class ServerInfo(val host: String, val port: Int)
 class TcpImageReceiver(
     private val expectedSize: Int,
     private val allowedSenderIp: String?,
+    private val tcpNonce: ByteArray? = null,
     private val noConnectionTimeoutMs: Int = 30_000,
     private val transferTimeoutMs: Int = 120_000,
     private val maxConnections: Int = 2,
@@ -51,12 +52,33 @@ class TcpImageReceiver(
                 }
 
                 try {
-                    val remoteIp = (client.remoteSocketAddress as? InetSocketAddress)
-                        ?.address?.hostAddress
+                    if (tcpNonce != null) {
+                        // Nonce-based validation: read first 16 bytes and constant-time compare
+                        client.soTimeout = transferTimeoutMs
+                        val receivedNonce = try {
+                            readExactly(client.getInputStream(), 16)
+                        } catch (e: Exception) {
+                            client.close()
+                            continue
+                        }
+                        // Constant-time comparison
+                        var mismatch: Int = 0
+                        for (i in 0 until 16) {
+                            mismatch = mismatch or (receivedNonce[i].toInt() xor tcpNonce[i].toInt())
+                        }
+                        if (mismatch != 0) {
+                            client.close()
+                            continue
+                        }
+                    } else {
+                        // TODO(2026-05-01): Remove IP validation fallback — all clients should support tcpNonce by now
+                        val remoteIp = (client.remoteSocketAddress as? InetSocketAddress)
+                            ?.address?.hostAddress
 
-                    if (allowedSenderIp != null && remoteIp != allowedSenderIp) {
-                        client.close()
-                        continue
+                        if (allowedSenderIp != null && remoteIp != allowedSenderIp) {
+                            client.close()
+                            continue
+                        }
                     }
 
                     client.soTimeout = transferTimeoutMs
