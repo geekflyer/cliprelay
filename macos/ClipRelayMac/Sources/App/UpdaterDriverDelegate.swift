@@ -10,6 +10,13 @@ import UserNotifications
 private let updateNotificationID = "sparkle-update-available"
 
 final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    /// Set when a background check finds an update; cleared when the session ends.
+    private(set) var availableUpdateVersion: String? {
+        didSet { onUpdateAvailabilityChanged?() }
+    }
+    /// Called when availableUpdateVersion changes so the menu can refresh.
+    var onUpdateAvailabilityChanged: (() -> Void)?
+
     var supportsGentleScheduledUpdateReminders: Bool { true }
 
     func standardUserDriverWillHandleShowingUpdate(
@@ -17,6 +24,8 @@ final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
         forUpdate update: SUAppcastItem,
         state: SPUUserUpdateState
     ) {
+        availableUpdateVersion = update.displayVersionString
+
         // For user-initiated checks (menu item), Sparkle brings the dialog
         // forward itself. Only post a notification for scheduled checks.
         guard !state.userInitiated else { return }
@@ -42,6 +51,7 @@ final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
     }
 
     func standardUserDriverWillFinishUpdateSession() {
+        availableUpdateVersion = nil
         NSApp.setActivationPolicy(.accessory)
         UNUserNotificationCenter.current().removeDeliveredNotifications(
             withIdentifiers: [updateNotificationID]

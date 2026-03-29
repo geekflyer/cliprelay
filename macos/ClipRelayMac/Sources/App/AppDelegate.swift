@@ -59,6 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pairingManager.removePendingDevices()
         enableLaunchAtLoginIfFirstRun()
 
+        statusBarController.availableUpdateVersion = { [weak self] in
+            self?.updaterDriverDelegate.availableUpdateVersion
+        }
+        updaterDriverDelegate.onUpdateAvailabilityChanged = { [weak self] in
+            DispatchQueue.main.async { self?.statusBarController.refreshMenu() }
+        }
         statusBarController.onPairNewDeviceRequested = { [weak self] in
             self?.startPairing()
         }
