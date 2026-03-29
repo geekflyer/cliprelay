@@ -16,7 +16,7 @@ final class TelemetryManager {
     private let installId: String
     private var timer: Timer?
 
-    private static let heartbeatURL = URL(string: "https://updates.cliprelay.org/v1/heartbeat")!
+    private static let checkinURL = URL(string: "https://updates.cliprelay.org/v1/checkin")!
     private static let keychainAccount = "telemetry_install_id"
 
     init(stateProvider: @escaping () -> HeartbeatState) {
@@ -26,7 +26,7 @@ final class TelemetryManager {
 
     func start() {
         let startupDelay = Double.random(in: 30...90)
-        logger.notice("[Telemetry] Scheduling first heartbeat in \(Int(startupDelay))s")
+        logger.notice("[Telemetry] Scheduling first check-in in \(Int(startupDelay))s")
 
         let t = Timer(timeInterval: startupDelay, repeats: false) { [weak self] _ in
             self?.sendHeartbeat()
@@ -74,18 +74,18 @@ final class TelemetryManager {
 
         guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
 
-        var request = URLRequest(url: Self.heartbeatURL)
+        var request = URLRequest(url: Self.checkinURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
 
         URLSession.shared.dataTask(with: request) { _, response, error in
             if let error {
-                logger.debug("[Telemetry] Heartbeat failed: \(error.localizedDescription)")
+                logger.debug("[Telemetry] Check-in failed: \(error.localizedDescription)")
             } else if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                logger.debug("[Telemetry] Heartbeat sent (state: \(state.rawValue))")
+                logger.debug("[Telemetry] Check-in sent (state: \(state.rawValue))")
             } else {
-                logger.debug("[Telemetry] Heartbeat returned unexpected status")
+                logger.debug("[Telemetry] Check-in returned unexpected status")
             }
         }.resume()
     }
