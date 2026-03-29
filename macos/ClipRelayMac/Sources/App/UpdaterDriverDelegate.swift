@@ -26,9 +26,11 @@ final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
     ) {
         availableUpdateVersion = update.displayVersionString
 
-        // For user-initiated checks (menu item), Sparkle brings the dialog
-        // forward itself. Only post a notification for scheduled checks.
-        guard !state.userInitiated else { return }
+        // Only post a notification for scheduled checks where Sparkle is
+        // about to show the dialog. Skip for user-initiated checks (Sparkle
+        // handles those in focus) and when handleShowingUpdate is false
+        // (dialog already visible from a previous reminder).
+        guard !state.userInitiated, handleShowingUpdate else { return }
 
         let content = UNMutableNotificationContent()
         content.title = "ClipRelay Update Available"
@@ -40,7 +42,18 @@ final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request)
+
+        // If notifications aren't authorized, fall back to bringing the
+        // Sparkle dialog forward directly.
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                UNUserNotificationCenter.current().add(request)
+            } else {
+                DispatchQueue.main.async {
+                    Self.bringSparkleDialogToFront()
+                }
+            }
+        }
     }
 
     func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
@@ -48,6 +61,18 @@ final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
         UNUserNotificationCenter.current().removeDeliveredNotifications(
             withIdentifiers: [updateNotificationID]
         )
+    }
+
+    /// Temporarily switches to a regular activation policy and brings all
+    /// visible windows to the front. `ignoringOtherApps` is required because
+    /// `NSApp.activate()` (macOS 14+) does not reliably bring windows forward
+    /// for apps that were LSUIElement/accessory moments earlier.
+    static func bringSparkleDialogToFront() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows where window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 
     func standardUserDriverWillFinishUpdateSession() {
@@ -68,12 +93,7 @@ extension UpdaterDriverDelegate: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         if response.notification.request.identifier == updateNotificationID {
-            // Bring the existing Sparkle update dialog to the foreground.
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps: true)
-            for window in NSApp.windows where window.isVisible {
-                window.makeKeyAndOrderFront(nil)
-            }
+            Self.bringSparkleDialogToFront()
         }
         completionHandler()
     }
