@@ -35,3 +35,25 @@
 - Use `adb exec-out screencap -p > /tmp/cliprelay-screenshot.png` to capture, then read the image to visually inspect the layout.
 - Use this as a feedback loop: if something looks off, fix it before committing.
 - This applies to any change affecting UI layout, colors, spacing, icons, animations, or theming.
+
+## Cursor Cloud specific instructions
+
+### Environment overview
+
+This is a Linux (Ubuntu 24.04) cloud VM. The following components are buildable and testable here:
+
+| Component | Build | Test | Lint | Notes |
+|-----------|-------|------|------|-------|
+| Android app (`android/`) | `./scripts/build-all.sh --android-only` | `cd android && ./gradlew testDebugUnitTest` | `cd android && ./gradlew lintDebug` | Pre-existing lint errors exist in the repo (3 errors, 52 warnings). Lint exits non-zero. |
+| macOS app (`macos/`) | Not available | Not available | Not available | Requires macOS + Xcode; cannot build or test on Linux. |
+| Website (`website/`) | N/A (static) | `python3 -m http.server 8080 --directory website` | N/A | Static HTML/CSS/JS; no build step. |
+
+### Key environment details
+
+- **JAVA_HOME**: `/usr/lib/jvm/java-21-openjdk-amd64` (JDK 21, satisfies ≥17 requirement)
+- **ANDROID_HOME**: `/opt/android-sdk` (installed with platform 36 and build-tools 36.0.0)
+- Both are set in `~/.bashrc`; new shells pick them up automatically.
+- Gradle 9.4.0 is auto-downloaded by the wrapper on first build.
+- `scripts/build-all.sh` and `scripts/test-all.sh` both require `swift` and will fail on Linux. Use `--android-only` flag for `build-all.sh`, and run `cd android && ./gradlew testDebugUnitTest` directly for tests.
+- No Android physical device is available, so hardware smoke tests (`scripts/hardware-smoke-test.sh`) are always skipped.
+- App restart steps (Mac launch and ADB install) do not apply in this environment.
