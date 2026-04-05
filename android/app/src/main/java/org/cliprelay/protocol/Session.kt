@@ -404,6 +404,7 @@ class Session(
             put("size", imageData.size)
             put("type", contentType)
             put("senderIp", senderIp)
+            put("supportsNonce", true)
         }
         val offer = Message(MessageType.OFFER, offerJson.toString().toByteArray())
         MessageCodec.write(output, offer)
@@ -532,8 +533,12 @@ class Session(
 
         // GCM overhead is 28 bytes (12 nonce + 16 tag)
         val expectedSize = size + 28
-        // Generate per-transfer nonce for TCP authentication
-        val tcpNonce = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        // Only use nonce validation when the sender advertises support;
+        // old senders without supportsNonce fall back to IP validation.
+        val supportsNonce = json.optBoolean("supportsNonce", false)
+        val tcpNonce = if (supportsNonce) {
+            ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        } else null
 
         val receiver = TcpImageReceiver(
             expectedSize = expectedSize,
@@ -545,11 +550,13 @@ class Session(
         try {
             val serverInfo = receiver.start()
 
-            // Send ACCEPT with TCP server info
+            // Send ACCEPT with TCP server info (and nonce when sender supports it)
             val acceptJson = JSONObject().apply {
                 put("tcpHost", serverInfo.host)
                 put("tcpPort", serverInfo.port)
-                put("tcpNonce", tcpNonce.joinToString("") { "%02x".format(it) })
+                if (tcpNonce != null) {
+                    put("tcpNonce", tcpNonce.joinToString("") { "%02x".format(it) })
+                }
             }
             MessageCodec.write(output, Message(MessageType.ACCEPT, acceptJson.toString().toByteArray()))
 

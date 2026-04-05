@@ -1111,7 +1111,8 @@ final class SessionTests: XCTestCase {
             "hash": "abc123",
             "size": 100,
             "type": "image/png",
-            "senderIp": "127.0.0.1"
+            "senderIp": "127.0.0.1",
+            "supportsNonce": true
         ]
         let offerData = try! JSONSerialization.data(withJSONObject: offerJSON)
         writeMessage(Message(type: .offer, payload: offerData), to: env.writeToSession)

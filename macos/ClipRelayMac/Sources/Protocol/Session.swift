@@ -481,7 +481,8 @@ final class Session {
             "hash": hash,
             "size": imageData.count,
             "type": contentType,
-            "senderIp": senderIp
+            "senderIp": senderIp,
+            "supportsNonce": true
         ]
         let offerData = try JSONSerialization.data(withJSONObject: offerJSON)
         let offer = Message(type: .offer, payload: offerData)
@@ -597,10 +598,15 @@ final class Session {
         // Cancel any in-flight transfer
         activeReceiver?.cancel()
 
-        // Generate per-transfer nonce for TCP authentication
-        var nonceBytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, 16, &nonceBytes)
-        let tcpNonce = Data(nonceBytes)
+        // Only use nonce validation when the sender advertises support;
+        // old senders without supportsNonce fall back to IP validation.
+        let supportsNonce = json["supportsNonce"] as? Bool ?? false
+        var tcpNonce: Data?
+        if supportsNonce {
+            var nonceBytes = [UInt8](repeating: 0, count: 16)
+            _ = SecRandomCopyBytes(kSecRandomDefault, 16, &nonceBytes)
+            tcpNonce = Data(nonceBytes)
+        }
 
         // GCM overhead is 28 bytes (12 nonce + 16 tag)
         let expectedSize = size + 28
@@ -619,13 +625,14 @@ final class Session {
         do {
             let serverInfo = try receiver.start()
 
-            // Send ACCEPT with TCP server info and nonce
-            let nonceHex = tcpNonce.map { String(format: "%02x", $0) }.joined()
-            let acceptJSON: [String: Any] = [
+            // Send ACCEPT with TCP server info (and nonce when sender supports it)
+            var acceptJSON: [String: Any] = [
                 "tcpHost": serverInfo.host,
-                "tcpPort": Int(serverInfo.port),
-                "tcpNonce": nonceHex
+                "tcpPort": Int(serverInfo.port)
             ]
+            if let nonce = tcpNonce {
+                acceptJSON["tcpNonce"] = nonce.map { String(format: "%02x", $0) }.joined()
+            }
             let acceptData = try JSONSerialization.data(withJSONObject: acceptJSON)
             try writeMessage(Message(type: .accept, payload: acceptData))
 
