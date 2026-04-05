@@ -11,6 +11,10 @@ on:
         description: 'Beta channel release (appcast entry with sparkle:channel=beta)'
         type: boolean
         default: false
+      ref:
+        description: 'Git ref to build from (default: main)'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -22,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
           fetch-tags: true
 

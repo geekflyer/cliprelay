@@ -54,11 +54,17 @@ if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 1
 fi
 
-# Confirm on main branch
+# Confirm on main or beta branch
 BRANCH=$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)
-if [[ "$BRANCH" != "main" ]]; then
-    echo "Error: Must be on main branch (currently on '$BRANCH')" >&2
+if [[ "$BRANCH" != "main" && "$BRANCH" != "beta" ]]; then
+    echo "Error: Must be on main or beta branch (currently on '$BRANCH')" >&2
     exit 1
+fi
+
+IS_BETA=false
+if [[ "$BRANCH" == "beta" ]]; then
+    IS_BETA=true
+    echo "==> Releasing from beta branch (prerelease mode)"
 fi
 
 # Confirm working tree is clean
@@ -112,8 +118,12 @@ for platform in "${PLATFORMS[@]}"; do
         mac) WORKFLOW="release-mac.yml" ;;
         android) WORKFLOW="release-android.yml" ;;
     esac
-    echo "==> Dispatching $WORKFLOW with version=$VERSION..."
-    gh workflow run "$WORKFLOW" --repo "$REPO" -f version="$VERSION"
+    EXTRA_FIELDS=""
+    if [[ "$IS_BETA" == "true" ]]; then
+        EXTRA_FIELDS="-f prerelease=true -f ref=$BRANCH"
+    fi
+    echo "==> Dispatching $WORKFLOW with version=$VERSION (beta=$IS_BETA)..."
+    gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$BRANCH" -f version="$VERSION" $EXTRA_FIELDS
 
     echo "    Polling for workflow run..."
     RUN_URL=""
