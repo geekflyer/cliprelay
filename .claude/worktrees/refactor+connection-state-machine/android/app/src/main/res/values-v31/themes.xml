@@ -1,0 +1,13 @@
+<resources>
+    <style name="Theme.ClipRelay" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:windowBackground">@color/bg_top_unpaired</item>
+        <item name="android:statusBarColor">@color/bg_top_unpaired</item>
+        <item name="android:navigationBarColor">@color/bg_bottom_unpaired</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <!-- Splash screen (API 31+) -->
+        <item name="android:windowSplashScreenBackground">@color/bg_top_unpaired</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+    </style>
+</resources>

@@ -1,0 +1,34 @@
+{
+  "fixture_id": "v2-session-keys",
+  "description": "Golden fixture for v2 per-session ephemeral key exchange. Uses RFC 7748 §6.1 key pairs and the root_secret from ecdh_fixture.json as the shared secret.",
+  "notes": [
+    "mac_ephemeral = Alice from RFC 7748 §6.1",
+    "android_ephemeral = Bob from RFC 7748 §6.1",
+    "shared_secret is the root_secret from ecdh_fixture.json (used as pre-existing pairing secret)",
+    "raw_ecdh is the raw X25519 output from RFC 7748 §6.1 (no HKDF)",
+    "auth_key = HKDF-SHA256(ikm=shared_secret, salt=zeros(32), info='cliprelay-auth-v2', length=32)",
+    "auth_mac = HMAC-SHA256(key=auth_key, msg=mac_ephemeral_public_bytes)",
+    "auth_android = HMAC-SHA256(key=auth_key, msg=android_ephemeral_public_bytes)",
+    "session_key = HKDF-SHA256(ikm=shared_secret || raw_ecdh, salt=zeros(32), info='cliprelay-session-v2', length=32)"
+  ],
+  "key_pairs": {
+    "mac_ephemeral": {
+      "role": "Alice (RFC 7748 §6.1)",
+      "private_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+      "public_hex": "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
+    },
+    "android_ephemeral": {
+      "role": "Bob (RFC 7748 §6.1)",
+      "private_hex": "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+      "public_hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"
+    }
+  },
+  "shared_secret": "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1",
+  "derivation": {
+    "raw_ecdh": "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
+    "auth_key": "36dce450fa9e1fdd5c165d0559b1ad31af009c013d86e5da302a931728a6b0e6",
+    "auth_mac": "9e6658ca310b4b58dfa207ce1c142b72413810171fe6645e5da1d8988864acac",
+    "auth_android": "f3680a68fb357939b8bc51a18199e5d13d17cefa9c3081fccca346eda91b6d31",
+    "session_key": "43be2016a0af75fa1ebf036a385f21cb0ea4eae72086e0d84c7b1408e953aa6a"
+  }
+}

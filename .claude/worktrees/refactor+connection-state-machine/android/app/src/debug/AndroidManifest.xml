@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".debug.DebugSmokeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.cliprelay.debug.IMPORT_PAIRING" />
+                <action android:name="org.cliprelay.debug.CLEAR_PAIRING" />
+                <action android:name="org.cliprelay.debug.RESET_PROBE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

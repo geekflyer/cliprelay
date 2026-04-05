@@ -1,0 +1,56 @@
+{
+  "fixture_id": "ecdh-pairing-v1",
+  "description": "Golden fixture for ECDH key exchange cross-platform interop testing. Uses RFC 7748 Section 6.1 X25519 test vectors.",
+  "notes": [
+    "mac_ephemeral = Alice from RFC 7748 §6.1",
+    "android_ephemeral = Bob from RFC 7748 §6.1",
+    "raw_ecdh_secret is the raw X25519 output from RFC 7748 §6.1",
+    "root_secret = HKDF-SHA256(ikm=raw_ecdh_secret, salt=empty, info='cliprelay-ecdh-v1', length=32)",
+    "encryption_key = HKDF-SHA256(ikm=root_secret, salt=zeros(32), info='cliprelay-enc-v1', length=32)",
+    "device_tag = HKDF-SHA256(ikm=root_secret, salt=zeros(32), info='cliprelay-tag-v1', length=8)",
+    "pairing_tag = SHA256(mac_public_key)[0:8]",
+    "derived values computed from the raw ECDH secret using HKDF-SHA256 (verified on both platforms)"
+  ],
+  "key_pairs": {
+    "mac_ephemeral": {
+      "role": "Alice (RFC 7748 §6.1)",
+      "private_hex": "77076d0c9b7f0c04e35c1d5b79d5e76a8f3c2b0a1d4e6f8a9b0c1d2e3f4a5b6c",
+      "public_hex": "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
+    },
+    "android_ephemeral": {
+      "role": "Bob (RFC 7748 §6.1)",
+      "private_hex": "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+      "public_hex": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"
+    }
+  },
+  "derivation": {
+    "raw_ecdh_secret": "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
+    "root_secret": "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1",
+    "encryption_key": "5b4fd11a1ad6d9e9efa059d2baebf904a9f4f9b7104f9e547f1a68127443ccba",
+    "device_tag": "a33273934e2b9e80",
+    "pairing_tag": "300c9c9603b92a4b"
+  },
+  "wire_format": {
+    "header_size": 4,
+    "length_encoding": "uint32_big_endian",
+    "length_covers": "type + payload"
+  },
+  "messages": [
+    {
+      "name": "KEY_EXCHANGE",
+      "type_byte": "03",
+      "description": "Android sends its ephemeral public key to Mac",
+      "payload_utf8": "{\"pubkey\":\"de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f\"}",
+      "payload_hex": "7b227075626b6579223a2264653965646237643762376463316234643335623631633265636534333533373366383334336338356237383637346461646663376531343666383832623466227d",
+      "encoded_hex": "0000004e037b227075626b6579223a2264653965646237643762376463316234643335623631633265636534333533373366383334336338356237383637346461646663376531343666383832623466227d"
+    },
+    {
+      "name": "KEY_CONFIRM",
+      "type_byte": "04",
+      "description": "Mac confirms pairing with device_tag",
+      "payload_utf8": "{\"tag\":\"a33273934e2b9e80\"}",
+      "payload_hex": "7b22746167223a2261333332373339333465326239653830227d",
+      "encoded_hex": "0000001b047b22746167223a2261333332373339333465326239653830227d"
+    }
+  ]
+}

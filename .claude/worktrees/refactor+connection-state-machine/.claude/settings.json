@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(cd * && ./gradlew *)",
+      "Bash(cd * && swift *)",
+      "Bash(swift build*)",
+      "Bash(swift test*)",
+      "Bash(adb *)",
+      "Bash(scripts/*)",
+      "Bash(pkill *)",
+      "Bash(open *)",
+      "Bash(mkdir *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(xcodebuild *)"
+    ]
+  },
+  "enabledPlugins": {
+    "rwx@rwx": false
+  }
+}

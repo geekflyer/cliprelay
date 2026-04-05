@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1400, initial-scale=1.0">
+<title>Material Flow — All States</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Product+Sans:wght@400;500;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Roboto', 'Google Sans', sans-serif;
+    background: #1a1a1a;
+    display: flex;
+    justify-content: center;
+    gap: 36px;
+    padding: 40px;
+    min-height: 100vh;
+    align-items: flex-start;
+  }
+  .col { text-align: center; }
+  .col .label {
+    color: rgba(255,255,255,0.5); font-size: 13px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px;
+  }
+
+  .phone {
+    width: 393px; height: 852px;
+    border-radius: 44px; border: 3px solid #333;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0,0,0,0.5);
+    position: relative;
+  }
+
+  /* Light background — default green tint */
+  .phone-bg {
+    position: absolute; inset: 0; border-radius: 41px;
+    background:
+      radial-gradient(circle, rgba(0,0,0,0.055) 1px, transparent 1px),
+      linear-gradient(180deg, #E8F5E9 0%, #F1F8E9 20%, #F5F5F5 60%, #F0F0F0 100%);
+    background-size: 22px 22px, 100% 100%;
+  }
+  .phone-bg.bg-connected {
+    background:
+      radial-gradient(circle, rgba(0,100,0,0.06) 1px, transparent 1px),
+      linear-gradient(180deg, #D6F5D6 0%, #E8FBE8 20%, #F5FAF5 60%, #F0F7F0 100%);
+    background-size: 22px 22px, 100% 100%;
+  }
+
+  /* Aurora glow blob behind the card */
+  .phone-bg::after {
+    content: '';
+    position: absolute;
+    top: 42%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 280px; height: 220px;
+    background: radial-gradient(ellipse, rgba(57,255,20,0.10) 0%, rgba(57,255,20,0.04) 40%, transparent 70%);
+    filter: blur(28px);
+    border-radius: 50%;
+  }
+  .phone-bg.bg-connected::after {
+    background: radial-gradient(ellipse, rgba(57,255,20,0.18) 0%, rgba(57,255,20,0.07) 40%, transparent 70%);
+    width: 320px; height: 260px;
+  }
+
+  .content {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; height: 100%;
+  }
+
+  .status-bar {
+    height: 54px; padding: 16px 28px 0;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; font-weight: 500; color: rgba(0,0,0,0.35);
+  }
+
+  /* Status chip */
+  .status-chip {
+    align-self: center;
+    margin-top: 8px;
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-size: 14px; font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+
+  .state-unpaired .status-chip {
+    background: rgba(0,0,0,0.04);
+    color: rgba(0,0,0,0.45);
+  }
+  .state-unpaired .status-dot { background: rgba(0,0,0,0.2); }
+
+  .state-waiting .status-chip {
+    background: rgba(57,255,20,0.08);
+    color: #1B8A1B;
+  }
+  .state-waiting .status-dot {
+    background: #BDBDBD;
+    animation: dot-blink 2s ease-in-out infinite;
+  }
+  @keyframes dot-blink {
+    0%,100% { opacity: 1; } 50% { opacity: 0.3; }
+  }
+
+  .state-connected .status-chip {
+    background: rgba(57,255,20,0.1);
+    color: #1B8A1B;
+  }
+  .state-connected .status-dot {
+    background: #39FF14;
+    box-shadow: 0 0 8px rgba(57,255,20,0.5);
+  }
+
+  /* App title — now inside the card */
+  .app-title {
+    text-align: center;
+  }
+  .app-title h1 {
+    font-size: 34px; font-weight: 700; color: #1B5E20;
+    letter-spacing: -0.5px;
+  }
+  .app-title p {
+    font-size: 15px; color: rgba(0,0,0,0.4); margin-top: 4px;
+  }
+
+  /* Main card — vertically centered */
+  .main-card {
+    margin: auto 20px;
+    background: #fff;
+    border-radius: 28px;
+    padding: 36px 24px 28px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.03);
+  }
+
+  .divider {
+    height: 1px;
+    background: rgba(0,0,0,0.06);
+    margin: 24px -4px;
+  }
+
+  /* Device row */
+  .device-row {
+    display: flex; align-items: center; justify-content: center; gap: 0;
+  }
+
+  .device-node {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+
+  .device-icon-wrap {
+    width: 80px; height: 80px; border-radius: 24px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.4s ease;
+  }
+  .device-icon-wrap svg { width: 36px; height: 36px; transition: all 0.4s; }
+
+  .state-unpaired .device-icon-wrap {
+    background: #F5F5F5;
+  }
+  .state-unpaired .device-icon-wrap svg { color: rgba(0,0,0,0.25); }
+
+  /* Phone icon stays green, Mac icon grayed out */
+  .state-waiting .device-icon-wrap {
+    background: rgba(57,255,20,0.08);
+    border: 1px solid rgba(57,255,20,0.12);
+  }
+  .state-waiting .device-icon-wrap svg { color: #1B9E1B; }
+  .state-waiting .device-node.device-mac .device-icon-wrap {
+    background: rgba(0,0,0,0.03);
+    border: 1px solid rgba(0,0,0,0.06);
+  }
+  .state-waiting .device-node.device-mac .device-icon-wrap svg { color: rgba(0,0,0,0.18); }
+  .state-waiting .device-node.device-mac .name { color: rgba(0,0,0,0.3) !important; }
+  .state-waiting .device-node.device-mac .mac-subtitle { color: rgba(0,0,0,0.2) !important; }
+
+  .state-connected .device-icon-wrap {
+    background: rgba(57,255,20,0.08);
+    border: 1px solid rgba(57,255,20,0.12);
+  }
+  .state-connected .device-icon-wrap svg { color: #1B9E1B; }
+
+  .device-node .name {
+    font-size: 13px; font-weight: 500;
+  }
+  .state-unpaired .device-node .name { color: rgba(0,0,0,0.35); }
+  .state-waiting .device-node .name { color: rgba(0,0,0,0.7); }
+  .state-connected .device-node .name { color: rgba(0,0,0,0.7); }
+
+  /* Beam area between devices */
+  .beam-area {
+    width: 120px; height: 40px;
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 8px;
+  }
+  .beam-canvas {
+    position: absolute; width: 100%; height: 100%;
+  }
+
+  /* Unpair button in card */
+  .card-actions {
+    margin-top: 28px;
+    display: flex; flex-direction: column; gap: 0;
+    align-items: center;
+  }
+
+  .btn-m3 {
+    width: 100%; padding: 16px 24px;
+    border-radius: 28px; border: none;
+    font-size: 15px; font-weight: 500; font-family: 'Roboto', sans-serif;
+    letter-spacing: 0.3px; cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-filled-green {
+    background: #2E7D32; color: #fff;
+    box-shadow: 0 2px 8px rgba(46,125,50,0.3);
+  }
+  .btn-filled-green:hover {
+    box-shadow: 0 4px 16px rgba(46,125,50,0.4);
+  }
+
+  .btn-tonal-green {
+    background: #E8F5E9; color: #2E7D32;
+  }
+  .state-waiting .btn-tonal-green {
+    background: rgba(57,255,20,0.06); color: #1B8A1B;
+    border: 1px solid rgba(57,255,20,0.1);
+  }
+  .state-connected .btn-tonal-green {
+    background: rgba(57,255,20,0.08); color: #1B8A1B;
+    border: 1px solid rgba(57,255,20,0.15);
+  }
+
+  .btn-text {
+    background: none; color: rgba(0,0,0,0.45);
+    padding: 12px 24px;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 20px;
+    text-align: center;
+    padding: 0 28px 44px;
+  }
+  .footer p {
+    font-size: 13px; color: rgba(0,0,0,0.3);
+    line-height: 1.5;
+  }
+
+  .nav-hint {
+    width: 134px; height: 5px; background: rgba(0,0,0,0.12);
+    border-radius: 3px; margin: 0 auto 8px;
+  }
+
+  /* Toast notification */
+  .toast {
+    position: absolute;
+    bottom: 80px; left: 20px; right: 20px;
+    background: #323232;
+    color: #fff;
+    padding: 14px 20px;
+    border-radius: 12px;
+    font-size: 14px; font-weight: 400;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    z-index: 10;
+    animation: toast-in 0.3s ease-out, toast-out 0.3s ease-in 2.7s forwards;
+  }
+  .toast svg { width: 20px; height: 20px; color: #39FF14; flex-shrink: 0; }
+
+  @keyframes toast-in {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes toast-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+
+  /* Waiting state: green but with inactive feel */
+  .state-waiting .main-card {
+    background: linear-gradient(180deg, #F5FFF5 0%, #FFFFFF 100%);
+    box-shadow: 0 0 0 1px rgba(57,255,20,0.12), 0 2px 16px rgba(57,255,20,0.06);
+  }
+  .state-waiting .divider { background: rgba(57,255,20,0.08); }
+  .state-waiting .app-title h1 { color: #0D7D0D; }
+  .state-waiting .app-title p { color: rgba(13,125,13,0.45); }
+
+  /* Connected state: vibrant green card */
+  .state-connected .main-card {
+    background: linear-gradient(180deg, #F0FFF0 0%, #FFFFFF 100%);
+    box-shadow: 0 0 0 1.5px rgba(57,255,20,0.2), 0 4px 24px rgba(57,255,20,0.1);
+  }
+  .state-connected .divider { background: rgba(57,255,20,0.12); }
+  .state-connected .app-title h1 { color: #0D7D0D; }
+  .state-connected .app-title p { color: rgba(13,125,13,0.5); }
+
+  /* Per-state phone backgrounds */
+  .state-waiting ~ .phone-bg-override,
+  .state-waiting .phone-bg-override { display: block; }
+
+  /* Mac name subtitle */
+  .mac-subtitle {
+    font-size: 11px; color: rgba(0,0,0,0.3);
+    margin-top: -4px;
+  }
+  .state-waiting .mac-subtitle { color: rgba(0,0,0,0.2); }
+
+  /* Beam label below the line */
+  .beam-area-wrap {
+    display: flex; flex-direction: column; align-items: center;
+    margin: 0 8px;
+  }
+  .beam-area-wrap .beam-area { margin: 0; }
+  .beam-label {
+    font-size: 10px; font-weight: 500; color: rgba(0,0,0,0.3);
+    margin-top: 2px; letter-spacing: 0.3px;
+    animation: label-pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes label-pulse {
+    0%,100% { opacity: 0.4; } 50% { opacity: 1; }
+  }
+
+  /* Taller beam area for bidirectional flow */
+  .state-connected .beam-area { height: 48px; margin: 0 4px; width: 140px; }
+
+  /* ---- Pairing burst (one-time transition) ---- */
+  .pair-burst-overlay {
+    position: absolute; inset: 0;
+    z-index: 20;
+    border-radius: 41px;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  /* Full-screen white-green flash */
+  .pburst-flash {
+    position: absolute; inset: 0;
+    border-radius: 41px;
+    opacity: 0;
+  }
+  .pburst-flash.fire {
+    animation: pburst-flash-anim 0.75s ease-out forwards;
+  }
+  @keyframes pburst-flash-anim {
+    0%   { background: rgba(220,255,220,0);    opacity: 0; }
+    12%  { background: rgba(220,255,220,0.85); opacity: 1; }
+    100% { background: rgba(220,255,220,0);    opacity: 0; }
+  }
+
+  /* Expanding rings */
+  .pburst-ring {
+    position: absolute;
+    border-radius: 50%;
+    width: 0; height: 0;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+  }
+  .pburst-ring.r1 { border: 5px solid rgba(57,255,20,0.95); }
+  .pburst-ring.r2 { border: 4px solid rgba(57,255,20,0.7); }
+  .pburst-ring.r3 { border: 3px solid rgba(57,255,20,0.45); }
+  .pburst-ring.r4 { border: 2px solid rgba(57,255,20,0.25); }
+
+  .pburst-ring.fire {
+    animation: pburst-ring-anim 2.2s cubic-bezier(0.1, 0.6, 0.3, 1) forwards;
+  }
+  .pburst-ring.r2.fire { animation-delay: 0.18s; }
+  .pburst-ring.r3.fire { animation-delay: 0.36s; }
+  .pburst-ring.r4.fire { animation-delay: 0.54s; }
+
+  @keyframes pburst-ring-anim {
+    0%   { width: 0;      height: 0;      opacity: 1; }
+    65%  { opacity: 0.6; }
+    100% { width: 1100px; height: 1100px; opacity: 0; }
+  }
+
+  /* Checkmark icon that pops in at center */
+  .pburst-check {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+    width: 80px; height: 80px;
+    background: rgba(57,255,20,0.12);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid rgba(57,255,20,0.5);
+    box-shadow: 0 0 40px rgba(57,255,20,0.3), 0 0 80px rgba(57,255,20,0.15);
+  }
+  .pburst-check.fire {
+    animation: pburst-check-anim 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) 0.12s forwards;
+  }
+  .pburst-check svg { width: 34px; height: 34px; }
+  @keyframes pburst-check-anim {
+    0%   { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ====== UNPAIRED ====== -->
+<div class="col">
+  <div class="label">Unpaired</div>
+  <div class="phone" id="phone-unpaired">
+    <div class="phone-bg" id="phone-unpaired-bg"></div>
+    <div class="pair-burst-overlay" id="pair-burst">
+      <div class="pburst-flash"></div>
+      <div class="pburst-ring r1"></div>
+      <div class="pburst-ring r2"></div>
+      <div class="pburst-ring r3"></div>
+      <div class="pburst-ring r4"></div>
+      <div class="pburst-check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#39FF14" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+    </div>
+    <div class="content state-unpaired" id="content-unpaired">
+      <div class="status-bar"><span>9:41</span><span>85%</span></div>
+
+      <div class="status-chip" id="unpaired-chip">
+        <div class="status-dot" id="unpaired-dot"></div>
+        <span id="unpaired-chip-text">Not Connected</span>
+      </div>
+
+      <div class="main-card" id="unpaired-card">
+        <div class="app-title">
+          <h1>ClipRelay</h1>
+          <p>Your clipboard, everywhere</p>
+        </div>
+
+        <div class="divider"></div>
+        <div class="device-row">
+          <div class="device-node">
+            <div class="device-icon-wrap" id="unpaired-phone-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="3"/>
+                <line x1="12" y1="18" x2="12" y2="18.01" stroke-width="2.5"/>
+              </svg>
+            </div>
+            <div class="name">This device</div>
+          </div>
+
+          <div class="beam-area">
+            <canvas class="beam-canvas" id="beam-unpaired"></canvas>
+          </div>
+
+          <div class="device-node" id="unpaired-mac-node">
+            <div class="device-icon-wrap" id="unpaired-mac-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            </div>
+            <div class="name">Mac</div>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button class="btn-m3 btn-filled-green" id="pair-btn">Pair with Mac</button>
+        </div>
+      </div>
+
+      <div class="footer" id="unpaired-footer">
+        <p>Scan the QR code shown on your Mac to pair</p>
+      </div>
+      <div class="nav-hint"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== WAITING ====== -->
+<div class="col">
+  <div class="label">Paired — Waiting</div>
+  <div class="phone">
+    <div class="phone-bg bg-connected"></div>
+    <div class="content state-waiting">
+      <div class="status-bar"><span>9:41</span><span>85%</span></div>
+
+      <div class="status-chip">
+        <div class="status-dot"></div>
+        Searching...
+      </div>
+
+      <div class="main-card">
+        <div class="app-title">
+          <h1>ClipRelay</h1>
+          <p>Your clipboard, everywhere</p>
+        </div>
+
+        <div class="divider"></div>
+        <div class="device-row">
+          <div class="device-node">
+            <div class="device-icon-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="3"/>
+                <line x1="12" y1="18" x2="12" y2="18.01" stroke-width="2.5"/>
+              </svg>
+            </div>
+            <div class="name">This device</div>
+          </div>
+
+          <div class="beam-area-wrap">
+            <div class="beam-area">
+              <canvas class="beam-canvas" id="beam-waiting"></canvas>
+            </div>
+            <div class="beam-label">Searching...</div>
+          </div>
+
+          <div class="device-node device-mac">
+            <div class="device-icon-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            </div>
+            <div class="name">Mac</div>
+            <div class="mac-subtitle">Christian's MacBook Pro</div>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button class="btn-m3 btn-tonal-green">Unpair</button>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>Waiting for your Mac to come in range.<br>Keep Bluetooth on and the Mac app running.</p>
+      </div>
+      <div class="nav-hint"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== CONNECTED ====== -->
+<div class="col">
+  <div class="label">Connected</div>
+  <div class="phone">
+    <div class="phone-bg bg-connected"></div>
+    <div class="content state-connected">
+      <div class="status-bar"><span>9:41</span><span>85%</span></div>
+
+      <div class="status-chip">
+        <div class="status-dot"></div>
+        Connected
+      </div>
+
+      <div class="main-card">
+        <div class="app-title">
+          <h1>ClipRelay</h1>
+          <p>Your clipboard, everywhere</p>
+        </div>
+
+        <div class="divider"></div>
+        <div class="device-row">
+          <div class="device-node">
+            <div class="device-icon-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="3"/>
+                <line x1="12" y1="18" x2="12" y2="18.01" stroke-width="2.5"/>
+              </svg>
+            </div>
+            <div class="name">This device</div>
+          </div>
+
+          <div class="beam-area">
+            <canvas class="beam-canvas" id="beam-connected"></canvas>
+          </div>
+
+          <div class="device-node">
+            <div class="device-icon-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            </div>
+            <div class="name">Mac</div>
+            <div class="mac-subtitle">Christian's MacBook Pro</div>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button class="btn-m3 btn-tonal-green">Unpair</button>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>Clipboard syncs automatically in the background.<br>Use Share to send text to your Mac.</p>
+      </div>
+      <div class="nav-hint"></div>
+
+      <!-- Toast -->
+      <div class="toast" style="animation: toast-in 0.3s ease-out, toast-out 0.3s ease-in 4.7s forwards; animation-iteration-count: 1, 1;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 12l2 2 4-4"/>
+          <circle cx="12" cy="12" r="10"/>
+        </svg>
+        Clipboard received from Mac
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DPR = window.devicePixelRatio || 1;
+const GREEN = '#4CAF50';
+const DARK_GREEN = '#2E7D32';
+
+function setupCanvas(id) {
+  const canvas = document.getElementById(id);
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * DPR;
+  canvas.height = rect.height * DPR;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(DPR, DPR);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+// ---- UNPAIRED: static gray dashed line with center dot ----
+(function() {
+  const { ctx, w, h } = setupCanvas('beam-unpaired');
+  const cy = h / 2;
+  const pad = 4;
+
+  ctx.setLineDash([8, 6]);
+  ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pad, cy);
+  ctx.lineTo(w - pad, cy);
+  ctx.stroke();
+
+  // Center dot
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(w/2, cy, 4, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  ctx.fill();
+})();
+
+// ---- WAITING: fading dashed line with traveling dot ----
+(function() {
+  const { ctx, w, h } = setupCanvas('beam-waiting');
+  const cy = h / 2;
+  const pad = 4;
+  let offset = 0;
+  const packets = [];
+  for (let i = 0; i < 3; i++) {
+    packets.push({ x: pad + Math.random() * w * 0.4, delay: i * 30 });
+  }
+
+  function drawFadingDash(y, off) {
+    const dashLen = 8, gapLen = 6, period = dashLen + gapLen;
+    let x = pad - ((-off % period + period) % period);
+    while (x < w - pad) {
+      const x1 = Math.max(x, pad);
+      const x2 = Math.min(x + dashLen, w - pad);
+      if (x2 > x1) {
+        const mid = (x1 + x2) / 2;
+        const progress = (mid - pad) / (w - pad * 2);
+        // Full opacity left side, fade to 0 at ~55%
+        const alpha = Math.max(0, 1 - progress / 0.55) * 0.2;
+        ctx.beginPath();
+        ctx.moveTo(x1, y);
+        ctx.lineTo(x2, y);
+        ctx.strokeStyle = `rgba(46,125,50,${alpha})`;
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+      x += period;
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    offset -= 0.3;
+    drawFadingDash(cy, offset);
+
+    // Packets that travel right but fade out ~60% of the way (can't reach Mac)
+    for (const pkt of packets) {
+      pkt.x += 0.6;
+      if (pkt.x > w * 0.75) {
+        pkt.x = pad;
+        pkt.delay = Math.random() * 60;
+      }
+      if (pkt.delay > 0) { pkt.delay--; continue; }
+
+      const progress = (pkt.x - pad) / (w - pad * 2);
+      const fadeIn2 = Math.min(1, progress * 8);
+      const fadeOut2 = Math.max(0, 1 - Math.pow(progress / 0.65, 3));
+      const a = fadeIn2 * fadeOut2 * 0.7;
+
+      if (a > 0.01) {
+        const g = ctx.createRadialGradient(pkt.x, cy, 0, pkt.x, cy, 6);
+        g.addColorStop(0, `rgba(46,125,50,${0.15 * a})`);
+        g.addColorStop(1, 'rgba(46,125,50,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(pkt.x - 6, cy - 6, 12, 12);
+
+        ctx.beginPath();
+        ctx.arc(pkt.x, cy, 2.5 * a, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(46,125,50,${0.5 * a})`;
+        ctx.fill();
+      }
+    }
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ---- CONNECTED: two bidirectional lines + clipboard transfer events ----
+(function() {
+  const { ctx, w, h } = setupCanvas('beam-connected');
+  const cy = h / 2;
+  const pad = 4;
+  const gap = 8;
+
+  const yA = cy - gap; // top track →
+  const yB = cy + gap; // bottom track ←
+
+  let offsetA = 0, offsetB = 0;
+
+  const pktsA = [
+    { x: pad + Math.random() * w * 0.4, delay: 0 },
+    { x: pad + w * 0.5 + Math.random() * w * 0.3, delay: 0 },
+  ];
+  const pktsB = [
+    { x: w - pad - Math.random() * w * 0.3, delay: 20 },
+    { x: w * 0.45 - Math.random() * w * 0.3, delay: 10 },
+  ];
+
+  // Clipboard transfer events
+  const transfers = [];
+  let transferCountdown = 180;
+  let nextRTL = false;
+
+  function spawnTransfer() {
+    const rtl = nextRTL;
+    nextRTL = !nextRTL;
+    transfers.push({ x: rtl ? w + 28 : -28, rtl, opacity: 0 });
+    transferCountdown = 260 + Math.random() * 200;
+  }
+
+  function drawTrack(y, offset) {
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = offset;
+    ctx.strokeStyle = 'rgba(46,125,50,0.18)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(pad, y); ctx.lineTo(w - pad, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawPacket(x, y, rtl = false) {
+    const progress = rtl ? (w - pad - x) / (w - pad * 2) : (x - pad) / (w - pad * 2);
+    const a = Math.min(1, progress * 8) * Math.min(1, (1 - progress) * 8) * 0.85;
+    if (a < 0.01) return;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 6);
+    g.addColorStop(0, `rgba(46,125,50,${0.18 * a})`);
+    g.addColorStop(1, 'rgba(46,125,50,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 6, y - 6, 12, 12);
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5 * a, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(46,125,50,${0.65 * a})`;
+    ctx.fill();
+  }
+
+  function drawClipboardTransfer(x, a) {
+    if (a < 0.02) return;
+    const bw = 15, bh = 18, cr = 2;
+    const bx = x - bw / 2, by = cy - bh / 2;
+
+    // Outer glow
+    const g = ctx.createRadialGradient(x, cy, 0, x, cy, 22);
+    g.addColorStop(0, `rgba(57,255,20,${0.35 * a})`);
+    g.addColorStop(1, 'rgba(57,255,20,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, cy, 22, 0, Math.PI * 2); ctx.fill();
+
+    // Clipboard body
+    ctx.beginPath();
+    ctx.roundRect(bx, by + 4, bw, bh - 4, cr);
+    ctx.fillStyle = `rgba(46,125,50,${0.8 * a})`;
+    ctx.fill();
+
+    // Clip notch at top
+    ctx.beginPath();
+    ctx.roundRect(x - 4, by, 8, 6, 1);
+    ctx.fillStyle = `rgba(46,125,50,${0.9 * a})`;
+    ctx.fill();
+
+    // Content lines
+    ctx.fillStyle = `rgba(255,255,255,${0.55 * a})`;
+    for (let i = 0; i < 3; i++) {
+      ctx.fillRect(bx + 2.5, by + 8 + i * 3.5, bw - 5, 1.2);
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+
+    offsetA -= 0.35;
+    offsetB += 0.35;
+    drawTrack(yA, offsetA);
+    drawTrack(yB, offsetB);
+
+    for (const p of pktsA) {
+      if (p.delay > 0) { p.delay--; continue; }
+      p.x += 0.4;
+      if (p.x > w - pad) { p.x = pad; p.delay = Math.random() * 40; }
+      drawPacket(p.x, yA);
+    }
+    for (const p of pktsB) {
+      if (p.delay > 0) { p.delay--; continue; }
+      p.x -= 0.4;
+      if (p.x < pad) { p.x = w - pad; p.delay = Math.random() * 40; }
+      drawPacket(p.x, yB, true);
+    }
+
+    // Clipboard transfers
+    if (--transferCountdown <= 0) spawnTransfer();
+    for (let i = transfers.length - 1; i >= 0; i--) {
+      const t = transfers[i];
+      t.x += t.rtl ? -0.9 : 0.9;
+      const progress = t.rtl ? (w - t.x) / (w + 56) : (t.x + 28) / (w + 56);
+      t.opacity = Math.min(1, progress * 4) * Math.min(1, (1 - progress) * 4);
+      drawClipboardTransfer(t.x, t.opacity);
+      if (t.x > w + 30 || t.x < -30) transfers.splice(i, 1);
+    }
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+// ---- Pairing transition ----
+document.getElementById('pair-btn').addEventListener('click', function() {
+  const overlay = document.getElementById('pair-burst');
+
+  // Fire burst
+  overlay.querySelectorAll('.pburst-flash, .pburst-ring, .pburst-check').forEach(el => {
+    el.classList.add('fire');
+  });
+
+  // After burst peak: transition to connected state
+  setTimeout(() => {
+    const content = document.getElementById('content-unpaired');
+    content.classList.replace('state-unpaired', 'state-connected');
+    document.getElementById('phone-unpaired-bg').classList.add('bg-connected');
+
+    document.getElementById('unpaired-chip-text').textContent = 'Connected';
+    document.getElementById('unpaired-dot').style.background = '#39FF14';
+    document.getElementById('unpaired-dot').style.boxShadow = '0 0 8px rgba(57,255,20,0.5)';
+
+    const btn = document.getElementById('pair-btn');
+    btn.textContent = 'Unpair';
+    btn.className = 'btn-m3 btn-tonal-green';
+
+    document.getElementById('unpaired-footer').querySelector('p').textContent =
+      'Clipboard syncs automatically in the background.';
+
+    // Add mac subtitle
+    const macNode = document.getElementById('unpaired-mac-node');
+    if (!macNode.querySelector('.mac-subtitle')) {
+      const sub = document.createElement('div');
+      sub.className = 'mac-subtitle';
+      sub.textContent = "Christian's MacBook Pro";
+      macNode.appendChild(sub);
+    }
+  }, 800);
+}, { once: true });
+</script>
+
+</body>
+</html>

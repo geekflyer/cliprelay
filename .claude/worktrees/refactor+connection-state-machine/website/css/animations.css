@@ -1,0 +1,108 @@
+/* Keyframe animations for the beam-pulse hero visual on the landing page. */
+
+/* ── Beam Pulse (from BRAND.md) ── */
+@keyframes beamPulse1 {
+  0%, 100% { opacity: 0.9; transform: translateX(0); }
+  50%      { opacity: 1;   transform: translateX(2px); }
+}
+@keyframes beamPulse2 {
+  0%, 100% { opacity: 0.55; transform: translateX(0); }
+  50%      { opacity: 0.75; transform: translateX(3px); }
+}
+@keyframes beamPulse3 {
+  0%, 100% { opacity: 0.3; transform: translateX(0); }
+  50%      { opacity: 0.5; transform: translateX(4px); }
+}
+
+.beam-arc-1 { animation: beamPulse1 2s ease-in-out infinite; }
+.beam-arc-2 { animation: beamPulse2 2s ease-in-out 0.25s infinite; }
+.beam-arc-3 { animation: beamPulse3 2s ease-in-out 0.5s infinite; }
+
+/* ── Text Shimmer (from BRAND.md) ── */
+@keyframes beamTextShimmer {
+  0%, 100% { opacity: 0.4; }
+  40%      { opacity: 0.6; }
+}
+
+.beam-text-line { animation: beamTextShimmer 3s ease-in-out infinite; }
+.beam-text-line:nth-child(2) { animation-delay: 0.4s; }
+.beam-text-line:nth-child(3) { animation-delay: 0.8s; }
+.beam-text-line:nth-child(4) { animation-delay: 1.2s; }
+
+/* ── Hero Glow Drift ── */
+@keyframes glowDrift {
+  0%, 100% { opacity: 0.8; transform: translate(-50%, -55%) scale(1); }
+  50%      { opacity: 1;   transform: translate(-50%, -55%) scale(1.05); }
+}
+
+.hero-glow {
+  animation: glowDrift 8s ease-in-out infinite;
+}
+
+/* ── Scroll Reveal Stagger ── */
+.reveal[data-delay="1"] { transition-delay: 0.1s; }
+.reveal[data-delay="2"] { transition-delay: 0.2s; }
+.reveal[data-delay="3"] { transition-delay: 0.3s; }
+
+
+/* ── Device Showcase Animations ── */
+@keyframes packetRight {
+  0%   { transform: translateX(0);  opacity: 0; }
+  10%  { opacity: 0.8; }
+  90%  { opacity: 0.8; }
+  100% { transform: translateX(70px); opacity: 0; }
+}
+
+@keyframes packetLeft {
+  0%   { transform: translateX(0);  opacity: 0; }
+  10%  { opacity: 0.6; }
+  90%  { opacity: 0.6; }
+  100% { transform: translateX(-70px); opacity: 0; }
+}
+
+@keyframes beamDotRight {
+  0%   { cx: 0;   opacity: 0; }
+  10%  { opacity: 0.8; }
+  90%  { opacity: 0.8; }
+  100% { cx: 120; opacity: 0; }
+}
+
+@keyframes beamDotLeft {
+  0%   { cx: 120; opacity: 0; }
+  10%  { opacity: 0.6; }
+  90%  { opacity: 0.6; }
+  100% { cx: 0;   opacity: 0; }
+}
+
+@keyframes chipDotPulse {
+  0%, 100% { box-shadow: 0 0 4px var(--aqua); }
+  50%      { box-shadow: 0 0 8px var(--aqua), 0 0 16px rgba(0, 255, 213, 0.3); }
+}
+
+.packet-r { animation: packetRight 2.8s ease-in-out infinite; }
+.packet-l { animation: packetLeft 2.8s ease-in-out 1.4s infinite; }
+
+.beam-dot-1 { animation: beamDotRight 3s ease-in-out infinite; }
+.beam-dot-2 { animation: beamDotLeft 3s ease-in-out 1.5s infinite; }
+
+.app-chip-dot { animation: chipDotPulse 2s ease-in-out infinite; }
+
+.pop-dot { animation: chipDotPulse 2s ease-in-out infinite; }
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+
+  .hero-glow {
+    animation: none;
+  }
+}

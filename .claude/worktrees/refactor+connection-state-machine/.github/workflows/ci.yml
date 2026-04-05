@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-build-mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Test (macOS)
+        run: swift test --package-path macos/ClipRelayMac
+      - name: Build macOS
+        run: ./scripts/build-all.sh --mac-only
+
+  test-build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Test (Android)
+        run: cd android && ./gradlew testDebugUnitTest
+      - name: Build Android
+        run: ./scripts/build-all.sh --android-only

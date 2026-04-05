@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <!-- Clipboard body (wider, more square) -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M3,4.5C3,3.67 3.67,3 4.5,3h9C14.33,3 15,3.67 15,4.5V20c0,0.83 -0.67,1.5 -1.5,1.5h-9C3.67,21.5 3,20.83 3,20V4.5zM5.5,7h7v1.2H5.5V7zM5.5,9.8h7V11H5.5V9.8zM5.5,12.6h5v1.2H5.5V12.6z" />
+    <!-- Clipboard clip at top (wider) -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M6.5,1.5C6.22,1.5 6,1.72 6,2v1.5h6.5V2c0,-0.28 -0.22,-0.5 -0.5,-0.5H6.5z" />
+    <!-- Wireless arc 1 (small) -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M17.5,9.5C18.5,10.5 18.5,13.5 17.5,14.5" />
+    <!-- Wireless arc 2 (large) -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M20,7.5C21.8,9.3 21.8,14.7 20,16.5" />
+</vector>
