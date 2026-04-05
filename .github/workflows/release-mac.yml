@@ -7,6 +7,10 @@ on:
         description: 'Version to release (e.g., 0.1.2)'
         type: string
         required: true
+      prerelease:
+        description: 'Prerelease build (skip Sparkle appcast update)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -99,11 +103,13 @@ jobs:
           tag_name: "mac/v${{ steps.version.outputs.version }}"
           name: "macOS v${{ steps.version.outputs.version }}"
           body: ${{ steps.changelog.outputs.body }}
+          prerelease: ${{ inputs.prerelease }}
           files: dist/ClipRelay-${{ steps.version.outputs.version }}.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Sparkle tools
+        if: ${{ !inputs.prerelease }}
         run: |
           SPARKLE_VERSION="2.9.0"
           curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o /tmp/sparkle.tar.xz
@@ -111,6 +117,7 @@ jobs:
           tar xf /tmp/sparkle.tar.xz -C /tmp/sparkle-tools
 
       - name: Generate Sparkle EdDSA signature
+        if: ${{ !inputs.prerelease }}
         id: sparkle-sign
         run: |
           DMG_SIZE=$(stat -f%z dist/ClipRelay-${{ steps.version.outputs.version }}.dmg)
@@ -124,12 +131,14 @@ jobs:
           echo "size=$DMG_SIZE" >> "$GITHUB_OUTPUT"
 
       - name: Compute build metadata
+        if: ${{ !inputs.prerelease }}
         id: build-meta
         run: |
           echo "build_number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
           echo "git_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Update appcast.xml on sparkle branch
+        if: ${{ !inputs.prerelease }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
