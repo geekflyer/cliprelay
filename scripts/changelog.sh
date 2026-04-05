@@ -29,16 +29,25 @@ if [[ "$RANGE" != *..* ]]; then
 fi
 
 # Extract tags from range
-FROM_TAG="${RANGE%..*}"
-TO_TAG="${RANGE#*..}"
+FROM_PART="${RANGE%..*}"
+TO_PART="${RANGE#*..}"
 
-# Resolve refs: HEAD is used directly, otherwise prefix with platform
-FROM_REF="${PLATFORM}/${FROM_TAG}"
-if [[ "$TO_TAG" == "HEAD" ]]; then
-    TO_REF="HEAD"
-else
-    TO_REF="${PLATFORM}/${TO_TAG}"
-fi
+# Resolve git refs: accept legacy v0.3.1..HEAD, full platform tags (android/beta/v...), or beta/v1.0.0-beta.1..HEAD
+resolve_ref() {
+    local part="$1"
+    if [[ "$part" == "HEAD" ]]; then
+        echo "HEAD"
+    elif [[ "$part" == ${PLATFORM}/* ]]; then
+        echo "$part"
+    elif [[ "$part" == beta/* ]]; then
+        echo "${PLATFORM}/${part}"
+    else
+        echo "${PLATFORM}/${part}"
+    fi
+}
+
+FROM_REF="$(resolve_ref "$FROM_PART")"
+TO_REF="$(resolve_ref "$TO_PART")"
 
 # Platform-specific paths
 case "$PLATFORM" in

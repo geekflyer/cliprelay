@@ -9,6 +9,62 @@ Mac App Store is deferred to a later phase. Pricing is free for now; Android may
 
 ---
 
+## Branching: `main` vs `beta`
+
+| Branch | Role | Version format | Android (CI) | macOS (CI) |
+|--------|------|----------------|--------------|------------|
+| **`main`** | Production releases only | `X.Y.Z` (semver) | Publish to **production** track; tag `android/vX.Y.Z`; GitHub Release | Stable Sparkle feed `appcast.xml` on branch `sparkle`; tag `mac/vX.Y.Z` |
+| **`beta`** | Early testers / integration | `X.Y.Z-beta.N` (e.g. `1.2.0-beta.3`) | Publish to **internal** (default) or **beta** (open testing); tag `android/beta/v…`; GitHub prerelease | Beta Sparkle feed `appcast-beta.xml` on `sparkle`; tag `mac/beta/v…`; builds use `--beta-mac` (SUFeedURL → `appcast-beta.xml`) |
+
+**Development flow**
+
+- Open feature branches from **`beta`**, merge into **`beta`** first.
+- After tester signoff, promote with a PR **`beta` → `main`** for the release window you want to ship to production.
+- **Production hotfixes:** land on **`main`** first, then merge or cherry-pick back into **`beta`** so the branches do not diverge on fixes.
+
+**CI:** [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on pushes and PRs to **`main`** and **`beta`**.
+
+**Automated releases**
+
+- From repo root, on the correct branch, run [scripts/release.sh](../scripts/release.sh) (bumps `macos/VERSION` / `android/VERSION`, runs tests, pushes, dispatches workflows on the **current** branch):
+  - **Stable:** `./scripts/release.sh --mac 0.3.2` (on `main`)
+  - **Beta:** `./scripts/release.sh --android 1.2.0-beta.1` (on `beta`)
+- **Android beta Play track:** optional env `CLIPRELAY_PLAY_TRACK=beta` (default `internal`) when dispatching from `beta`.
+
+**GitHub Actions:** run **Release Android** / **Release macOS** via *Run workflow* and select branch **`main`** or **`beta`** in the UI (or use `gh workflow run … --ref beta`). Tag patterns and store tracks are derived from that branch.
+
+**macOS hosting:** serve both feeds over HTTPS on the update host (e.g. `https://updates.cliprelay.org/appcast.xml` and `https://updates.cliprelay.org/appcast-beta.xml`). The release workflow appends entries to `appcast.xml` or `appcast-beta.xml` on the **`sparkle`** branch; deploy that branch (or those files) so betas resolve the beta feed.
+
+---
+
+## Rollback (git and stores)
+
+**Principle:** Do **not** force-push or rewrite **`beta`** once testers have consumed builds. Use forward-fixes and `git revert`.
+
+### Bad change only on `beta`
+
+1. On **`beta`:** `git revert <sha>` (for a bad merge, revert the **merge commit**).
+2. Push **`beta`**, cut a **new** beta version (`X.Y.Z-beta.N+1`) with `scripts/release.sh` if you need a fixed build for testers.
+3. When the fix is ready, merge the corrected work normally (or revert the revert).
+
+### Bad change on `main` (production)
+
+1. On **`main`:** `git revert <sha>` (or hotfix branch → PR → `main`).
+2. Ship a new **stable** patch version from **`main`** via `scripts/release.sh`.
+3. Merge **`main` → `beta`** (or cherry-pick the revert/hotfix) so **`beta`** includes the same fix.
+
+### Android (Play Console)
+
+- **Production:** roll back or halt rollout in Play Console; fix forward with a new version if needed.
+- **Internal / beta:** replace with a newer upload or deactivate the broken release per Play policies.
+
+### macOS (Sparkle)
+
+- **Stable:** edit the **`sparkle`** branch `appcast.xml` only with care (users upgrade from the feed). Prefer shipping a **new** version that fixes the issue; for emergencies, remove or repoint items per Sparkle ops guidance.
+- **Beta:** same for `appcast-beta.xml`; beta testers can reinstall from the GitHub Release DMG if needed.
+
+---
+
 ## Phase 1: Android — Google Play Store
 
 ### 1.1 Developer Account Setup
@@ -151,10 +207,11 @@ op run --env-file .env.play -- ./scripts/publish-android.sh --track production
 - [ ] Consider adding a simple Terms of Service
 
 ### 3.3 Version & Release Management
-- [ ] Align version numbers across platforms (both currently 0.1.0)
-- [ ] Decide on a 1.0.0 release version or keep as 0.x for early access
-- [ ] Set up a CHANGELOG or release notes workflow
-- [ ] Consider GitHub Releases for tracking versions and attaching macOS binaries
+- [x] GitHub Actions release workflows: **Release macOS**, **Release Android** (manual `workflow_dispatch` from `main` or `beta`)
+- [x] GitHub Releases with attached Android APK / macOS DMG
+- [x] Long-lived **`beta`** branch for phased tester builds; **`main`** for production
+- [ ] Align version numbers across platforms per release window
+- [ ] Optional: root `CHANGELOG.md` (today: [scripts/changelog.sh](../scripts/changelog.sh) generates notes per release)
 
 ---
 
@@ -162,7 +219,6 @@ op run --env-file .env.play -- ./scripts/publish-android.sh --track production
 
 - [ ] Mac App Store submission (requires sandbox entitlements and App Store review)
 - [ ] Android in-app purchase for Pro features (rich content transfer)
-- [ ] CI/CD pipeline (GitHub Actions) for automated signing, notarization, and release
 - [ ] Crash reporting / analytics (privacy-respecting, e.g., Sentry with minimal data)
 
 ---

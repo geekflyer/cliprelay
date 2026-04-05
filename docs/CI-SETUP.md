@@ -27,21 +27,12 @@ Vault: `cliprelay`
 | `Android Keystore` | `keystore-base64`, `password`, `key-alias`, `key-password` | `release-android.yml` |
 | `Android Play Store` | `service-account-json` | `release-android.yml` |
 | `Sparkle Update Signing` | `private-key`, `public-key` | `release-mac.yml` |
-| `Cloudflare Pages` | `api-token` | `release-mac.yml` |
 
 ## Initial Setup
 
-Run the setup script to populate both GitHub and 1Password:
-
-```bash
-./scripts/setup-github-secrets.sh
-```
-
-This will:
-1. Set `OP_SERVICE_ACCOUNT_TOKEN` as a GitHub Actions secret
-2. Create all items in the 1Password `cliprelay` vault
-3. Pull credentials from existing local files and 1Password items where possible
-4. Prompt for anything that can't be automated (Apple app-specific password, Sparkle public key)
+1. In GitHub: add repository secret **`OP_SERVICE_ACCOUNT_TOKEN`** (1Password service account with read access to the `cliprelay` vault).
+2. In 1Password: ensure the vault items listed above exist and match the field names expected by the workflows.
+3. Optional: document any local-only paths (e.g. `android/play-service-account.json`) in [PUBLISHING.md](./PUBLISHING.md).
 
 ## Rotating Secrets
 
@@ -53,10 +44,10 @@ To rotate the service account token, generate a new one in 1Password admin conso
 
 | Workflow | Trigger | What it does |
 |----------|---------|-------------|
-| `ci.yml` | Push to main, PRs | Lint, test, build for both platforms |
-| `release-mac.yml` | Tag `mac/v*` | Build, sign, notarize, create GitHub Release, update Sparkle appcast |
-| `release-android.yml` | Tag `android/v*` | Build, sign, publish to Play Store internal track, create GitHub Release |
-| `release-android.yml` | Manual dispatch (promote) | Promote from internal to production track |
+| `ci.yml` | Push / PR to **`main`** or **`beta`** | Test and build (macOS on `macos-14`, Android on Ubuntu) |
+| `release-mac.yml` | Manual `workflow_dispatch` on **`main`** or **`beta`** | Build, sign, notarize, tag `mac/v…` or `mac/beta/v…`, GitHub Release, update `appcast.xml` or `appcast-beta.xml` on **`sparkle`** |
+| `release-android.yml` | Manual `workflow_dispatch` on **`main`** or **`beta`** | Release build, publish to Play **production** (from `main`) or **internal** / **beta** (from `beta`), tag `android/v…` or `android/beta/v…`, GitHub Release |
+| `release-android.yml` | Manual dispatch **promote** (branch **`main`** only) | Promote Play artifact from **internal** → **production** |
 
 ## Release Process
 
@@ -70,6 +61,8 @@ To rotate the service account token, generate a new one in 1Password admin conso
 # Release both
 ./scripts/release.sh --all 0.2.0
 
-# Promote Android to production (after testing internal build)
-# Go to GitHub Actions → Release Android → Run workflow → Check "Promote"
+# Promote Android to production (optional if the last stable release used internal first)
+# Actions → Release Android → Run workflow → Branch main → Check "Promote"
 ```
+
+Branch rules and rollback: see [PUBLISHING.md](./PUBLISHING.md) (**Branching: main vs beta**, **Rollback**).

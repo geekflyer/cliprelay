@@ -86,6 +86,9 @@ By default, Android clipboard sharing requires manually using Share → ClipRela
 
 # Release build (requires signing configuration)
 ./scripts/build-all.sh --release
+
+# macOS beta channel (Sparkle appcast-beta URL; or set CLIPRELAY_SPARKLE_FEED_URL)
+./scripts/build-all.sh --mac-only --beta-mac
 ```
 
 **Output artifacts:**

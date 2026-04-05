@@ -4,6 +4,9 @@
 - When the worktree has unrelated changes, commit only files relevant to the task.
 - Never commit directly on the main branch, unless explicitly given permission by the user.
 
+## Release branches
+- Integration and early-access work targets the **`beta`** branch; production releases ship from **`main`**. See [docs/PUBLISHING.md](docs/PUBLISHING.md) (branching, channels, rollback).
+
 ## Build Verification
 - After completing any set of code changes, ALWAYS run `scripts/build-all.sh` before reporting completion.
 - If a full rebuild is not possible, run the closest relevant target build and clearly report what was run and what could not be run.

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Creates a release by bumping VERSION, committing, pushing, and dispatching the CI workflow.
+# Creates a release by bumping VERSION, committing, pushing, and dispatching release workflows.
 # The workflow creates the git tag only after a successful build+publish.
+# Run from branch main (stable X.Y.Z) or beta (prerelease X.Y.Z-beta.N).
+#
 # Usage: ./scripts/release.sh --mac 0.3.2
 #        ./scripts/release.sh --android 0.3.1
 #        ./scripts/release.sh --all 0.4.0
+#        CLIPRELAY_PLAY_TRACK=beta ./scripts/release.sh --android 1.0.0-beta.1   # beta branch only
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,6 +23,13 @@ Options:
   --android   Release Android only
   --all       Release both platforms
   -h, --help  Show this help
+
+Branch:
+  main — stable version X.Y.Z (published to Play production from CI; macOS stable appcast).
+  beta — prerelease X.Y.Z-beta.N (Play track internal or beta via CLIPRELAY_PLAY_TRACK; macOS beta appcast).
+
+Environment (beta branch + Android only):
+  CLIPRELAY_PLAY_TRACK   Play track: internal (default) or beta
 
 Example:
   ./scripts/release.sh --mac 0.3.2
@@ -48,18 +58,26 @@ done
 
 [[ ${#PLATFORMS[@]} -eq 0 || -z "$VERSION" ]] && usage
 
-# Validate semver format
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-    echo "Error: Version must be semver (e.g., 0.3.2)" >&2
-    exit 1
-fi
-
-# Confirm on main branch
+# Confirm branch and validate version
 BRANCH=$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)
-if [[ "$BRANCH" != "main" ]]; then
-    echo "Error: Must be on main branch (currently on '$BRANCH')" >&2
-    exit 1
-fi
+case "$BRANCH" in
+    main)
+        if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Error: On main, version must be stable semver X.Y.Z (e.g. 0.3.2)" >&2
+            exit 1
+        fi
+        ;;
+    beta)
+        if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'; then
+            echo "Error: On beta, version must be X.Y.Z-beta.N (e.g. 1.2.0-beta.3)" >&2
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Error: Must be on main or beta for release (currently on '$BRANCH')" >&2
+        exit 1
+        ;;
+esac
 
 # Confirm working tree is clean
 if ! git -C "$ROOT_DIR" diff --quiet || ! git -C "$ROOT_DIR" diff --cached --quiet; then
@@ -106,18 +124,37 @@ git -C "$ROOT_DIR" push
 # Detect GitHub repo from remote
 REPO=$(git -C "$ROOT_DIR" remote get-url origin | sed -E 's#.+github\.com[:/](.+)\.git$#\1#')
 
-# Dispatch workflows and poll for run URLs
+PLAY_TRACK="${CLIPRELAY_PLAY_TRACK:-internal}"
+
+# Dispatch workflows on current branch (main or beta)
 for platform in "${PLATFORMS[@]}"; do
     case "$platform" in
-        mac) WORKFLOW="release-mac.yml" ;;
-        android) WORKFLOW="release-android.yml" ;;
+        mac)
+            WORKFLOW="release-mac.yml"
+            echo "==> Dispatching $WORKFLOW with version=$VERSION (ref=$BRANCH)..."
+            gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$BRANCH" -f "version=$VERSION"
+            ;;
+        android)
+            WORKFLOW="release-android.yml"
+            if [[ "$BRANCH" == "beta" ]]; then
+                if [[ "$PLAY_TRACK" != internal && "$PLAY_TRACK" != beta ]]; then
+                    echo "Error: CLIPRELAY_PLAY_TRACK must be 'internal' or 'beta' (got '$PLAY_TRACK')" >&2
+                    exit 1
+                fi
+                echo "==> Dispatching $WORKFLOW with version=$VERSION play_track=$PLAY_TRACK (ref=$BRANCH)..."
+                gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$BRANCH" \
+                    -f "version=$VERSION" \
+                    -f "play_track=$PLAY_TRACK"
+            else
+                echo "==> Dispatching $WORKFLOW with version=$VERSION (ref=$BRANCH)..."
+                gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$BRANCH" -f "version=$VERSION"
+            fi
+            ;;
     esac
-    echo "==> Dispatching $WORKFLOW with version=$VERSION..."
-    gh workflow run "$WORKFLOW" --repo "$REPO" -f version="$VERSION"
 
     echo "    Polling for workflow run..."
     RUN_URL=""
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 30); do
         sleep 2
         RUN_URL=$(gh run list --repo "$REPO" --workflow="$WORKFLOW" --limit 1 \
             --json url,status,createdAt --jq '.[0].url' 2>/dev/null)

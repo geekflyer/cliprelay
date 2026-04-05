@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.1.2)'
+        description: 'Version to release (stable X.Y.Z on main, or X.Y.Z-beta.N on beta)'
         type: string
         required: true
 
@@ -21,14 +21,50 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Resolve channel from branch
+        id: channel
+        run: |
+          BR="${{ github.ref_name }}"
+          case "$BR" in
+            main)
+              echo "channel=stable" >> "$GITHUB_OUTPUT"
+              echo "tag_prefix=mac/v" >> "$GITHUB_OUTPUT"
+              ;;
+            beta)
+              echo "channel=beta" >> "$GITHUB_OUTPUT"
+              echo "tag_prefix=mac/beta/v" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Error: Release macOS is only supported from branches main or beta (currently '$BR')." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Validate version for channel
+        run: |
+          V="${{ inputs.version }}"
+          CH='${{ steps.channel.outputs.channel }}'
+          if [[ "$CH" == stable ]]; then
+            if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Error: Stable version must be semver X.Y.Z (no pre-release suffix)." >&2
+              exit 1
+            fi
+          else
+            if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'; then
+              echo "Error: Beta version must be X.Y.Z-beta.N (e.g. 1.2.0-beta.3)." >&2
+              exit 1
+            fi
+          fi
+
       - name: Set version
         id: version
         run: echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Verify tag does not exist
         run: |
-          if git rev-parse "mac/v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
-            echo "Error: Tag mac/v${{ steps.version.outputs.version }} already exists" >&2
+          TAG="${{ steps.channel.outputs.tag_prefix }}${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Error: Tag $TAG already exists" >&2
             exit 1
           fi
 
@@ -67,7 +103,13 @@ jobs:
         run: brew install create-dmg
 
       - name: Build
-        run: ./scripts/build-all.sh --mac-only
+        run: |
+          CH='${{ steps.channel.outputs.channel }}'
+          if [[ "$CH" == beta ]]; then
+            ./scripts/build-all.sh --mac-only --beta-mac
+          else
+            ./scripts/build-all.sh --mac-only
+          fi
 
       - name: Sign, notarize, and create DMG
         run: ./scripts/publish-mac.sh --wait
@@ -75,9 +117,14 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          PREV_TAG=$(git tag -l 'mac/v*' --sort=-v:refname | head -1 | sed 's|^mac/||')
-          if [[ -n "$PREV_TAG" ]]; then
-            BODY=$(./scripts/changelog.sh --mac "${PREV_TAG}..HEAD")
+          CH='${{ steps.channel.outputs.channel }}'
+          if [[ "$CH" == stable ]]; then
+            PREV=$(git tag -l 'mac/v*' --sort=-v:refname | head -1 || true)
+          else
+            PREV=$(git tag -l 'mac/beta/v*' --sort=-v:refname | head -1 || true)
+          fi
+          if [[ -n "$PREV" ]]; then
+            BODY=$(./scripts/changelog.sh --mac "${PREV}..HEAD")
           else
             BODY="- Initial release"
           fi
@@ -87,18 +134,19 @@ jobs:
 
       - name: Create and push tag
         run: |
+          TAG="${{ steps.channel.outputs.tag_prefix }}${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "mac/v${{ steps.version.outputs.version }}" \
-            -m "macOS release ${{ steps.version.outputs.version }}"
-          git push origin "mac/v${{ steps.version.outputs.version }}"
+          git tag -a "$TAG" -m "macOS release ${{ steps.channel.outputs.channel }} ${{ steps.version.outputs.version }}"
+          git push origin "$TAG"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "mac/v${{ steps.version.outputs.version }}"
-          name: "macOS v${{ steps.version.outputs.version }}"
+          tag_name: ${{ steps.channel.outputs.tag_prefix }}${{ steps.version.outputs.version }}
+          name: ${{ steps.channel.outputs.channel == 'beta' && format('macOS beta v{0}', steps.version.outputs.version) || format('macOS v{0}', steps.version.outputs.version) }}
           body: ${{ steps.changelog.outputs.body }}
+          prerelease: ${{ steps.channel.outputs.channel == 'beta' }}
           files: dist/ClipRelay-${{ steps.version.outputs.version }}.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -113,12 +161,12 @@ jobs:
       - name: Generate Sparkle EdDSA signature
         id: sparkle-sign
         run: |
-          DMG_SIZE=$(stat -f%z dist/ClipRelay-${{ steps.version.outputs.version }}.dmg)
+          DMG="dist/ClipRelay-${{ steps.version.outputs.version }}.dmg"
+          DMG_SIZE=$(stat -f%z "$DMG")
           KEY_FILE=$(mktemp)
           echo "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
-          RAW=$(/tmp/sparkle-tools/bin/sign_update dist/ClipRelay-${{ steps.version.outputs.version }}.dmg -f "$KEY_FILE")
+          RAW=$(/tmp/sparkle-tools/bin/sign_update "$DMG" -f "$KEY_FILE")
           rm -f "$KEY_FILE"
-          # sign_update outputs: sparkle:edSignature=<base64> length=<n>
           SIGNATURE=$(echo "$RAW" | sed -E 's/^sparkle:edSignature=//; s/ length=.*//')
           echo "signature=$SIGNATURE" >> "$GITHUB_OUTPUT"
           echo "size=$DMG_SIZE" >> "$GITHUB_OUTPUT"
@@ -129,22 +177,52 @@ jobs:
           echo "build_number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
           echo "git_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Update appcast.xml on sparkle branch
+      - name: Update Sparkle appcast on sparkle branch
         run: |
+          set -euo pipefail
+          VER="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.channel.outputs.tag_prefix }}${VER}"
+          URL="https://github.com/geekflyer/cliprelay/releases/download/${TAG}/ClipRelay-${VER}.dmg"
+          CH='${{ steps.channel.outputs.channel }}'
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin sparkle
           git worktree add /tmp/sparkle-branch origin/sparkle
+
+          if [[ "$CH" == beta ]]; then
+            APPCAST="/tmp/sparkle-branch/appcast-beta.xml"
+            if [[ ! -f "$APPCAST" ]]; then
+              if [[ -f /tmp/sparkle-branch/appcast.xml ]]; then
+                cp /tmp/sparkle-branch/appcast.xml "$APPCAST"
+              else
+                cat > "$APPCAST" << 'XMLEOF'
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>ClipRelay Beta</title>
+        <description>Beta updates for ClipRelay (Sparkle).</description>
+        <language>en</language>
+    </channel>
+</rss>
+XMLEOF
+              fi
+            fi
+          else
+            APPCAST="/tmp/sparkle-branch/appcast.xml"
+          fi
+
           ./scripts/update-appcast.sh \
-            --appcast /tmp/sparkle-branch/appcast.xml \
-            --version "${{ steps.version.outputs.version }} (${{ steps.build-meta.outputs.git_hash }})" \
+            --appcast "$APPCAST" \
+            --version "${VER} (${{ steps.build-meta.outputs.git_hash }})" \
             --build-number "${{ steps.build-meta.outputs.build_number }}" \
             --signature "${{ steps.sparkle-sign.outputs.signature }}" \
             --size "${{ steps.sparkle-sign.outputs.size }}" \
-            --url "https://github.com/geekflyer/cliprelay/releases/download/mac/v${{ steps.version.outputs.version }}/ClipRelay-${{ steps.version.outputs.version }}.dmg"
+            --url "$URL"
+
           cd /tmp/sparkle-branch
-          git add appcast.xml
-          git commit -m "update appcast for v${{ steps.version.outputs.version }}"
+          git add "$(basename "$APPCAST")"
+          git commit -m "update $(basename "$APPCAST") for ${{ steps.channel.outputs.channel }} v${VER}"
           git push origin HEAD:sparkle
           cd -
           git worktree remove /tmp/sparkle-branch

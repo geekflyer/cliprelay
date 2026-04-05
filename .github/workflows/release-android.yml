@@ -4,13 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.1.2)'
+        description: 'Version to release (stable X.Y.Z on main, or X.Y.Z-beta.N on beta)'
         type: string
         required: false
       promote:
         description: 'Promote from internal to production'
         type: boolean
         default: false
+      play_track:
+        description: 'Play track when releasing from beta (internal or beta / open testing)'
+        type: choice
+        options:
+          - internal
+          - beta
+        default: internal
 
 permissions:
   contents: write
@@ -26,14 +33,60 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Resolve channel from branch
+        id: channel
+        run: |
+          BR="${{ github.ref_name }}"
+          case "$BR" in
+            main)
+              echo "channel=stable" >> "$GITHUB_OUTPUT"
+              echo "tag_prefix=android/v" >> "$GITHUB_OUTPUT"
+              ;;
+            beta)
+              echo "channel=beta" >> "$GITHUB_OUTPUT"
+              echo "tag_prefix=android/beta/v" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Error: Release Android is only supported from branches main or beta (currently '$BR')." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Validate version for channel
+        run: |
+          V="${{ inputs.version }}"
+          CH='${{ steps.channel.outputs.channel }}'
+          if [[ "$CH" == stable ]]; then
+            if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Error: Stable version must be semver X.Y.Z (no pre-release suffix)." >&2
+              exit 1
+            fi
+          else
+            if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$'; then
+              echo "Error: Beta version must be X.Y.Z-beta.N (e.g. 1.2.0-beta.3)." >&2
+              exit 1
+            fi
+          fi
+
+      - name: Set Play track
+        id: play
+        run: |
+          CH='${{ steps.channel.outputs.channel }}'
+          if [[ "$CH" == stable ]]; then
+            echo "track=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "track=${{ inputs.play_track }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set version
         id: version
         run: echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Verify tag does not exist
         run: |
-          if git rev-parse "android/v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
-            echo "Error: Tag android/v${{ steps.version.outputs.version }} already exists" >&2
+          TAG="${{ steps.channel.outputs.tag_prefix }}${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Error: Tag $TAG already exists" >&2
             exit 1
           fi
 
@@ -73,17 +126,22 @@ jobs:
           echo "serviceAccountCredentials=play-service-account.json" > android/play.properties
 
       - name: Build release
-        run: ./scripts/build-all.sh --android-only
+        run: ./scripts/build-all.sh --android-only --release
 
-      - name: Publish to internal track
-        run: ./scripts/publish-android.sh --track internal
+      - name: Publish to Play track
+        run: ./scripts/publish-android.sh --track "${{ steps.play.outputs.track }}"
 
       - name: Generate changelog
         id: changelog
         run: |
-          PREV_TAG=$(git tag -l 'android/v*' --sort=-v:refname | head -1 | sed 's|^android/||')
-          if [[ -n "$PREV_TAG" ]]; then
-            BODY=$(./scripts/changelog.sh --android "${PREV_TAG}..HEAD")
+          CH='${{ steps.channel.outputs.channel }}'
+          if [[ "$CH" == stable ]]; then
+            PREV=$(git tag -l 'android/v*' --sort=-v:refname | grep -v '^android/beta/' | head -1 || true)
+          else
+            PREV=$(git tag -l 'android/beta/v*' --sort=-v:refname | head -1 || true)
+          fi
+          if [[ -n "$PREV" ]]; then
+            BODY=$(./scripts/changelog.sh --android "${PREV}..HEAD")
           else
             BODY="- Initial release"
           fi
@@ -93,24 +151,25 @@ jobs:
 
       - name: Create and push tag
         run: |
+          TAG="${{ steps.channel.outputs.tag_prefix }}${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "android/v${{ steps.version.outputs.version }}" \
-            -m "Android release ${{ steps.version.outputs.version }}"
-          git push origin "android/v${{ steps.version.outputs.version }}"
+          git tag -a "$TAG" -m "Android release ${{ steps.channel.outputs.channel }} ${{ steps.version.outputs.version }}"
+          git push origin "$TAG"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "android/v${{ steps.version.outputs.version }}"
-          name: "Android v${{ steps.version.outputs.version }}"
+          tag_name: ${{ steps.channel.outputs.tag_prefix }}${{ steps.version.outputs.version }}
+          name: ${{ steps.channel.outputs.channel == 'beta' && format('Android beta v{0}', steps.version.outputs.version) || format('Android v{0}', steps.version.outputs.version) }}
           body: ${{ steps.changelog.outputs.body }}
+          prerelease: ${{ steps.channel.outputs.channel == 'beta' }}
           files: dist/cliprelay-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   promote:
-    if: github.event_name == 'workflow_dispatch' && inputs.promote
+    if: github.event_name == 'workflow_dispatch' && inputs.promote && github.ref_name == 'main'
     runs-on: ubuntu-latest
     environment: prod
     steps:
