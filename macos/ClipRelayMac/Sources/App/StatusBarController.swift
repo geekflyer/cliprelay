@@ -203,6 +203,17 @@ final class StatusBarController {
         }
         menu.addItem(autoUpdateItem)
 
+        let betaItem = NSMenuItem(
+            title: "Beta Updates",
+            action: #selector(handleToggleBetaUpdates),
+            keyEquivalent: ""
+        )
+        betaItem.target = self
+        if isBetaChannelEnabled {
+            betaItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+        }
+        menu.addItem(betaItem)
+
         menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem(
@@ -298,6 +309,21 @@ final class StatusBarController {
     @objc
     private func handleToggleAutoUpdates() {
         updaterController.updater.automaticallyChecksForUpdates.toggle()
+        renderMenu()
+    }
+
+    private var isBetaChannelEnabled: Bool {
+        let channels = UserDefaults.standard.stringArray(forKey: "SUDefaultChannels") ?? []
+        return channels.contains("beta")
+    }
+
+    @objc
+    private func handleToggleBetaUpdates() {
+        if isBetaChannelEnabled {
+            UserDefaults.standard.removeObject(forKey: "SUDefaultChannels")
+        } else {
+            UserDefaults.standard.set(["beta"], forKey: "SUDefaultChannels")
+        }
         renderMenu()
     }
 

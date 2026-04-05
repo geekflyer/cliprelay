@@ -8,7 +8,7 @@ on:
         type: string
         required: true
       prerelease:
-        description: 'Prerelease build (skip Sparkle appcast update)'
+        description: 'Beta channel release (appcast entry with sparkle:channel=beta)'
         type: boolean
         default: false
 
@@ -109,7 +109,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Sparkle tools
-        if: ${{ !inputs.prerelease }}
         run: |
           SPARKLE_VERSION="2.9.0"
           curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o /tmp/sparkle.tar.xz
@@ -117,7 +116,6 @@ jobs:
           tar xf /tmp/sparkle.tar.xz -C /tmp/sparkle-tools
 
       - name: Generate Sparkle EdDSA signature
-        if: ${{ !inputs.prerelease }}
         id: sparkle-sign
         run: |
           DMG_SIZE=$(stat -f%z dist/ClipRelay-${{ steps.version.outputs.version }}.dmg)
@@ -131,26 +129,31 @@ jobs:
           echo "size=$DMG_SIZE" >> "$GITHUB_OUTPUT"
 
       - name: Compute build metadata
-        if: ${{ !inputs.prerelease }}
         id: build-meta
         run: |
           echo "build_number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
           echo "git_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Update appcast.xml on sparkle branch
-        if: ${{ !inputs.prerelease }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin sparkle
           git worktree add /tmp/sparkle-branch origin/sparkle
+
+          CHANNEL_FLAG=""
+          if [[ "${{ inputs.prerelease }}" == "true" ]]; then
+            CHANNEL_FLAG="--channel beta"
+          fi
+
           ./scripts/update-appcast.sh \
             --appcast /tmp/sparkle-branch/appcast.xml \
             --version "${{ steps.version.outputs.version }} (${{ steps.build-meta.outputs.git_hash }})" \
             --build-number "${{ steps.build-meta.outputs.build_number }}" \
             --signature "${{ steps.sparkle-sign.outputs.signature }}" \
             --size "${{ steps.sparkle-sign.outputs.size }}" \
-            --url "https://github.com/geekflyer/cliprelay/releases/download/mac/v${{ steps.version.outputs.version }}/ClipRelay-${{ steps.version.outputs.version }}.dmg"
+            --url "https://github.com/geekflyer/cliprelay/releases/download/mac/v${{ steps.version.outputs.version }}/ClipRelay-${{ steps.version.outputs.version }}.dmg" \
+            $CHANNEL_FLAG
           cd /tmp/sparkle-branch
           git add appcast.xml
           git commit -m "update appcast for v${{ steps.version.outputs.version }}"
