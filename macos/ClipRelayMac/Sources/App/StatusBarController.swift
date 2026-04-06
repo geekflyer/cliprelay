@@ -319,10 +319,16 @@ final class StatusBarController {
 
     @objc
     private func handleToggleBetaUpdates() {
+        var channels = UserDefaults.standard.stringArray(forKey: "SUDefaultChannels") ?? []
         if isBetaChannelEnabled {
+            channels.removeAll { $0 == "beta" }
+        } else {
+            channels.append("beta")
+        }
+        if channels.isEmpty {
             UserDefaults.standard.removeObject(forKey: "SUDefaultChannels")
         } else {
-            UserDefaults.standard.set(["beta"], forKey: "SUDefaultChannels")
+            UserDefaults.standard.set(channels, forKey: "SUDefaultChannels")
         }
         renderMenu()
     }
