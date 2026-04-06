@@ -7,6 +7,17 @@ on:
         description: 'Version to release (e.g., 0.1.2)'
         type: string
         required: true
+      git_ref:
+        description: 'Git branch or ref to build (main = production, beta = integration branch)'
+        type: string
+        default: main
+      sparkle_channel:
+        description: 'Which Sparkle feed to update on the sparkle branch'
+        type: choice
+        options:
+          - stable
+          - beta
+        default: stable
       prerelease:
         description: 'Prerelease build (skip Sparkle appcast update)'
         type: boolean
@@ -22,6 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.git_ref }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -103,7 +115,7 @@ jobs:
           tag_name: "mac/v${{ steps.version.outputs.version }}"
           name: "macOS v${{ steps.version.outputs.version }}"
           body: ${{ steps.changelog.outputs.body }}
-          prerelease: ${{ inputs.prerelease }}
+          prerelease: ${{ inputs.prerelease == true || inputs.sparkle_channel == 'beta' }}
           files: dist/ClipRelay-${{ steps.version.outputs.version }}.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -137,23 +149,32 @@ jobs:
           echo "build_number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
           echo "git_hash=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Update appcast.xml on sparkle branch
+      - name: Update Sparkle appcast on sparkle branch
         if: ${{ !inputs.prerelease }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin sparkle
           git worktree add /tmp/sparkle-branch origin/sparkle
+          CHANNEL="${{ inputs.sparkle_channel }}"
+          if [[ "$CHANNEL" == "beta" ]]; then
+            APPCAST_FILE="/tmp/sparkle-branch/appcast-beta.xml"
+            if [[ ! -f "$APPCAST_FILE" ]]; then
+              cp "${GITHUB_WORKSPACE}/scripts/sparkle-appcast-beta-skeleton.xml" "$APPCAST_FILE"
+            fi
+          else
+            APPCAST_FILE="/tmp/sparkle-branch/appcast.xml"
+          fi
           ./scripts/update-appcast.sh \
-            --appcast /tmp/sparkle-branch/appcast.xml \
+            --appcast "$APPCAST_FILE" \
             --version "${{ steps.version.outputs.version }} (${{ steps.build-meta.outputs.git_hash }})" \
             --build-number "${{ steps.build-meta.outputs.build_number }}" \
             --signature "${{ steps.sparkle-sign.outputs.signature }}" \
             --size "${{ steps.sparkle-sign.outputs.size }}" \
             --url "https://github.com/geekflyer/cliprelay/releases/download/mac/v${{ steps.version.outputs.version }}/ClipRelay-${{ steps.version.outputs.version }}.dmg"
           cd /tmp/sparkle-branch
-          git add appcast.xml
-          git commit -m "update appcast for v${{ steps.version.outputs.version }}"
+          git add "$(basename "$APPCAST_FILE")"
+          git commit -m "update ${CHANNEL} appcast for v${{ steps.version.outputs.version }}"
           git push origin HEAD:sparkle
           cd -
           git worktree remove /tmp/sparkle-branch

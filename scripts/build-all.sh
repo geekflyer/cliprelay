@@ -13,6 +13,10 @@ ANDROID_PROJECT_DIR="$ROOT_DIR/android"
 # EdDSA public key for Sparkle update signature verification.
 # This is the verification (public) key — safe to commit. Override via SPARKLE_PUBLIC_KEY env var if needed.
 SPARKLE_PUBLIC_KEY="${SPARKLE_PUBLIC_KEY:-MvvTVBZwmJX4xjRViW6SBISRMDdzdVkVdO5KVB/7z8I=}"
+SPARKLE_FEED_STABLE="${CLIPRELAY_SPARKLE_FEED_URL:-https://updates.cliprelay.org/appcast.xml}"
+SPARKLE_FEED_BETA="${CLIPRELAY_SPARKLE_FEED_URL_BETA:-https://updates.cliprelay.org/appcast-beta.xml}"
+# Default SUFeedURL in Info.plist (Sparkle fallback). Runtime channel uses both stable + beta keys.
+SPARKLE_INFO_DEFAULT_FEED="$SPARKLE_FEED_STABLE"
 SPARKLE_PLIST_KEYS="<key>SUPublicEDKey</key>
     <string>${SPARKLE_PUBLIC_KEY}</string>"
 
@@ -27,10 +31,12 @@ Usage: ./scripts/build-all.sh [options]
 Builds the macOS app bundle and Android app artifacts.
 
 Options:
-  --mac-only       Build only macOS app
-  --android-only   Build only Android artifacts
-  --release        Build Android release AAB/APK instead of debug APK
-  -h, --help       Show this help message
+  --mac-only           Build only macOS app
+  --android-only       Build only Android artifacts
+  --release            Build Android release AAB/APK instead of debug APK
+  --sparkle-feed-url   macOS: set stable + default SUFeedURL (overrides CLIPRELAY_SPARKLE_FEED_URL)
+  --beta-mac           macOS: point SUFeedURL at the beta appcast (testing only; use menu toggle at runtime)
+  -h, --help           Show this help message
 EOF
 }
 
@@ -46,6 +52,19 @@ while [[ $# -gt 0 ]]; do
       ;;
     --release)
       ANDROID_RELEASE=true
+      shift
+      ;;
+    --sparkle-feed-url)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing URL for --sparkle-feed-url" >&2
+        exit 1
+      fi
+      SPARKLE_FEED_STABLE="$2"
+      SPARKLE_INFO_DEFAULT_FEED="$SPARKLE_FEED_STABLE"
+      shift 2
+      ;;
+    --beta-mac)
+      SPARKLE_INFO_DEFAULT_FEED="$SPARKLE_FEED_BETA"
       shift
       ;;
     -h|--help)
@@ -146,7 +165,11 @@ build_mac() {
   <key>LSUIElement</key>
   <true/>
   <key>SUFeedURL</key>
-  <string>https://updates.cliprelay.org/appcast.xml</string>
+  <string>${SPARKLE_INFO_DEFAULT_FEED}</string>
+  <key>ClipRelaySparkleFeedStable</key>
+  <string>${SPARKLE_FEED_STABLE}</string>
+  <key>ClipRelaySparkleFeedBeta</key>
+  <string>${SPARKLE_FEED_BETA}</string>
   <key>SUScheduledCheckInterval</key>
   <integer>7200</integer>
   ${SPARKLE_PLIST_KEYS}

@@ -54,22 +54,27 @@ To rotate the service account token, generate a new one in 1Password admin conso
 | Workflow | Trigger | What it does |
 |----------|---------|-------------|
 | `ci.yml` | Push to main, PRs | Lint, test, build for both platforms |
-| `release-mac.yml` | Tag `mac/v*` | Build, sign, notarize, create GitHub Release, update Sparkle appcast |
+| `release-mac.yml` | Manual dispatch (`version`, optional `git_ref`, `sparkle_channel`) | Build from `main` or `beta`, sign, notarize, GitHub Release; update `appcast.xml` or `appcast-beta.xml` on branch `sparkle` |
 | `release-android.yml` | Tag `android/v*` | Build, sign, publish to Play Store internal track, create GitHub Release |
 | `release-android.yml` | Manual dispatch (promote) | Promote from internal to production track |
 
 ## Release Process
 
 ```bash
-# Release macOS only
+# Release macOS only (production feed: appcast.xml, branch main)
 ./scripts/release.sh --mac 0.2.0
+
+# macOS beta integration build: check out branch `beta`, then:
+./scripts/release.sh --mac 0.3.0 --beta
 
 # Release Android only
 ./scripts/release.sh --android 0.2.0
 
-# Release both
+# Release both (must be on main; production mac feed only)
 ./scripts/release.sh --all 0.2.0
 
 # Promote Android to production (after testing internal build)
 # Go to GitHub Actions → Release Android → Run workflow → Check "Promote"
 ```
+
+Host `appcast-beta.xml` next to `appcast.xml` on your updates origin (for example `https://updates.cliprelay.org/appcast-beta.xml`).

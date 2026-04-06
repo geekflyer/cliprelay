@@ -12,6 +12,7 @@ private let appLogger = Logger(subsystem: "org.cliprelay", category: "App")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updaterController: SPUStandardUpdaterController
+    private let sparkleUpdaterDelegate = ClipRelaySparkleUpdaterDelegate()
     private let updaterDriverDelegate = UpdaterDriverDelegate()
     private let pairingManager = PairingManager()
     private let statusBarController: StatusBarController
@@ -21,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: false, updaterDelegate: nil, userDriverDelegate: updaterDriverDelegate)
+            startingUpdater: false, updaterDelegate: sparkleUpdaterDelegate, userDriverDelegate: updaterDriverDelegate)
         statusBarController = StatusBarController(updaterController: updaterController)
         super.init()
     }
@@ -49,6 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Creating the controller with startingUpdater:false in init() and
         // deferring start to here avoids a race where the updater's scheduled
         // cycle fires before the runloop is running.
+        // Ignore any feed URL stored via deprecated setFeedURL — channel is driven by
+        // ClipRelaySparkleUpdaterDelegate + UserDefaults.
+        _ = updaterController.updater.clearFeedURLFromUserDefaults()
+
         updaterController.startUpdater()
         if updaterController.updater.automaticallyChecksForUpdates {
             updaterController.updater.checkForUpdatesInBackground()
@@ -96,6 +101,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusBarController.isDeviceConnected = { [weak self] in
             self?.connectedSecret != nil
+        }
+        statusBarController.isBetaUpdateChannelEnabled = {
+            SparkleUpdateChannel.prefersBeta
+        }
+        statusBarController.onToggleBetaUpdateChannel = { [weak self] in
+            guard let self else { return }
+            SparkleUpdateChannel.prefersBeta.toggle()
+            self.updaterDriverDelegate.clearAvailableUpdateBadge()
+            self.updaterController.updater.resetUpdateCycleAfterShortDelay()
+            if self.updaterController.updater.automaticallyChecksForUpdates {
+                self.updaterController.updater.checkForUpdatesInBackground()
+            }
         }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()

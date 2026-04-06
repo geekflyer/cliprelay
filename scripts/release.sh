@@ -10,29 +10,51 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PLATFORMS=()
 VERSION=""
+# macOS workflow_dispatch: git ref to build and Sparkle feed to update
+MAC_GIT_REF=""
+MAC_SPARKLE_CHANNEL="stable"
 
 usage() {
-    cat <<'EOF'
+  cat <<'EOF'
 Usage: ./scripts/release.sh --mac|--android|--all <version>
 
 Options:
-  --mac       Release macOS only
-  --android   Release Android only
-  --all       Release both platforms
-  -h, --help  Show this help
+  --mac                Release macOS only
+  --android            Release Android only
+  --all                Release both platforms
+  --beta               macOS: release from branch beta (integration); updates beta Sparkle feed
+  --git-ref <ref>      macOS: branch or ref for CI checkout (default: main, or beta with --beta)
+  --sparkle-channel <stable|beta>  macOS: which appcast to update (default: stable)
+  -h, --help           Show this help
 
 Example:
   ./scripts/release.sh --mac 0.3.2
+  ./scripts/release.sh --mac 0.4.0 --beta
   ./scripts/release.sh --all 0.4.0
 EOF
-    exit 1
+  exit 1
 }
 
 while [[ $# -gt 0 ]]; do
-    case "$1" in
+  case "$1" in
         --mac) PLATFORMS+=("mac"); shift ;;
         --android) PLATFORMS+=("android"); shift ;;
         --all) PLATFORMS+=("mac" "android"); shift ;;
+        --beta)
+            MAC_GIT_REF="beta"
+            MAC_SPARKLE_CHANNEL="beta"
+            shift
+            ;;
+        --git-ref)
+            [[ $# -lt 2 ]] && usage
+            MAC_GIT_REF="$2"
+            shift 2
+            ;;
+        --sparkle-channel)
+            [[ $# -lt 2 ]] && usage
+            MAC_SPARKLE_CHANNEL="$2"
+            shift 2
+            ;;
         -h|--help) usage ;;
         *)
             if [[ -z "$VERSION" ]]; then
@@ -48,17 +70,49 @@ done
 
 [[ ${#PLATFORMS[@]} -eq 0 || -z "$VERSION" ]] && usage
 
+if [[ "$MAC_SPARKLE_CHANNEL" != "stable" && "$MAC_SPARKLE_CHANNEL" != "beta" ]]; then
+    echo "Error: --sparkle-channel must be stable or beta" >&2
+    exit 1
+fi
+
 # Validate semver format
 if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     echo "Error: Version must be semver (e.g., 0.3.2)" >&2
     exit 1
 fi
 
-# Confirm on main branch
 BRANCH=$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)
-if [[ "$BRANCH" != "main" ]]; then
-    echo "Error: Must be on main branch (currently on '$BRANCH')" >&2
-    exit 1
+if [[ -z "$MAC_GIT_REF" ]]; then
+    MAC_GIT_REF="main"
+fi
+
+# Android releases stay on main; macOS can track a long-lived beta branch.
+if printf '%s\n' "${PLATFORMS[@]}" | grep -q '^android$'; then
+    if [[ "$BRANCH" != "main" ]]; then
+        echo "Error: Android releases must be run from main (currently on '$BRANCH')" >&2
+        exit 1
+    fi
+fi
+
+if printf '%s\n' "${PLATFORMS[@]}" | grep -q '^mac$'; then
+    if [[ "$BRANCH" != "$MAC_GIT_REF" ]]; then
+        echo "Error: macOS release uses git ref '$MAC_GIT_REF' but workspace is on '$BRANCH'. Check out the matching branch." >&2
+        exit 1
+    fi
+    if [[ "$MAC_GIT_REF" == "main" && "$MAC_SPARKLE_CHANNEL" == "beta" ]]; then
+        echo "Warning: Updating beta Sparkle feed while on main is unusual — confirm this is intentional." >&2
+    fi
+fi
+
+if printf '%s\n' "${PLATFORMS[@]}" | grep -q '^android$' && printf '%s\n' "${PLATFORMS[@]}" | grep -q '^mac$'; then
+    if [[ "$BRANCH" != "main" ]]; then
+        echo "Error: Combined --all releases must be run from main" >&2
+        exit 1
+    fi
+    if [[ "$MAC_GIT_REF" != "main" || "$MAC_SPARKLE_CHANNEL" != "stable" ]]; then
+        echo "Error: Use separate ./scripts/release.sh --android and --mac ... --beta for mixed channels" >&2
+        exit 1
+    fi
 fi
 
 # Confirm working tree is clean
@@ -113,7 +167,14 @@ for platform in "${PLATFORMS[@]}"; do
         android) WORKFLOW="release-android.yml" ;;
     esac
     echo "==> Dispatching $WORKFLOW with version=$VERSION..."
-    gh workflow run "$WORKFLOW" --repo "$REPO" -f version="$VERSION"
+    if [[ "$platform" == "mac" ]]; then
+        gh workflow run "$WORKFLOW" --repo "$REPO" \
+            -f version="$VERSION" \
+            -f git_ref="$MAC_GIT_REF" \
+            -f sparkle_channel="$MAC_SPARKLE_CHANNEL"
+    else
+        gh workflow run "$WORKFLOW" --repo "$REPO" -f version="$VERSION"
+    fi
 
     echo "    Polling for workflow run..."
     RUN_URL=""

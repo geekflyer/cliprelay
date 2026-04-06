@@ -17,6 +17,10 @@ final class UpdaterDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
     /// Called when availableUpdateVersion changes so the menu can refresh.
     var onUpdateAvailabilityChanged: (() -> Void)?
 
+    func clearAvailableUpdateBadge() {
+        availableUpdateVersion = nil
+    }
+
     var supportsGentleScheduledUpdateReminders: Bool { true }
 
     func standardUserDriverWillHandleShowingUpdate(

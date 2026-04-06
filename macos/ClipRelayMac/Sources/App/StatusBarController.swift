@@ -13,6 +13,8 @@ final class StatusBarController {
     var onToggleImageSync: (() -> Void)?
     var isImageSyncEnabled: (() -> Bool)?
     var isDeviceConnected: (() -> Bool)?
+    var onToggleBetaUpdateChannel: (() -> Void)?
+    var isBetaUpdateChannelEnabled: (() -> Bool)?
 
     private var availableUpdateVersion: String?
 
@@ -203,6 +205,17 @@ final class StatusBarController {
         }
         menu.addItem(autoUpdateItem)
 
+        let betaChannelItem = NSMenuItem(
+            title: "Beta Update Channel",
+            action: #selector(handleToggleBetaUpdateChannel),
+            keyEquivalent: ""
+        )
+        betaChannelItem.target = self
+        if isBetaUpdateChannelEnabled?() == true {
+            betaChannelItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+        }
+        menu.addItem(betaChannelItem)
+
         menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem(
@@ -298,6 +311,12 @@ final class StatusBarController {
     @objc
     private func handleToggleAutoUpdates() {
         updaterController.updater.automaticallyChecksForUpdates.toggle()
+        renderMenu()
+    }
+
+    @objc
+    private func handleToggleBetaUpdateChannel() {
+        onToggleBetaUpdateChannel?()
         renderMenu()
     }
 
