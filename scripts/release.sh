@@ -24,6 +24,7 @@ Options:
 Example:
   ./scripts/release.sh --mac 0.3.2
   ./scripts/release.sh --all 0.4.0
+  ./scripts/release.sh --all 0.4.7-rc.1   # beta (auto-detected from pre-release suffix)
 EOF
     exit 1
 }
@@ -48,23 +49,24 @@ done
 
 [[ ${#PLATFORMS[@]} -eq 0 || -z "$VERSION" ]] && usage
 
-# Validate semver format
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-    echo "Error: Version must be semver (e.g., 0.3.2)" >&2
+# Validate semver format (with optional pre-release suffix, e.g., 0.4.7-rc.1)
+if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+    echo "Error: Version must be semver (e.g., 0.3.2 or 0.4.7-rc.1)" >&2
     exit 1
 fi
 
-# Confirm on main or beta branch
 BRANCH=$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)
-if [[ "$BRANCH" != "main" && "$BRANCH" != "beta" ]]; then
-    echo "Error: Must be on main or beta branch (currently on '$BRANCH')" >&2
-    exit 1
-fi
 
 IS_BETA=false
 if [[ "$BRANCH" == "beta" ]]; then
     IS_BETA=true
     echo "==> Releasing from beta branch"
+fi
+
+# Auto-detect beta from pre-release version suffix (e.g., 0.4.7-rc.1)
+if echo "$VERSION" | grep -qE -- '-'; then
+    IS_BETA=true
+    echo "==> Pre-release version detected, treating as beta"
 fi
 
 # Confirm working tree is clean
