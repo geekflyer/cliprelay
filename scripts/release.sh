@@ -64,7 +64,7 @@ if [[ "$BRANCH" == "beta" ]]; then
 fi
 
 # Auto-detect beta from pre-release version suffix (e.g., 0.4.7-rc.1)
-if echo "$VERSION" | grep -qE -- '-'; then
+if [[ "$VERSION" == *-* ]]; then
     IS_BETA=true
     echo "==> Pre-release version detected, treating as beta"
 fi
