@@ -12,6 +12,7 @@ private let appLogger = Logger(subsystem: "org.cliprelay", category: "App")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updaterController: SPUStandardUpdaterController
+    private let updaterDelegate = UpdaterDelegate()
     private let updaterDriverDelegate = UpdaterDriverDelegate()
     private let pairingManager = PairingManager()
     private let statusBarController: StatusBarController
@@ -21,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: false, updaterDelegate: nil, userDriverDelegate: updaterDriverDelegate)
+            startingUpdater: false, updaterDelegate: updaterDelegate, userDriverDelegate: updaterDriverDelegate)
         statusBarController = StatusBarController(updaterController: updaterController)
         super.init()
     }
