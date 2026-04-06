@@ -69,6 +69,13 @@ if [[ "$VERSION" == *-* ]]; then
     echo "==> Pre-release version detected, treating as beta"
 fi
 
+# Stable releases must be on main or beta branch; pre-release allowed from any branch
+if [[ "$IS_BETA" == "false" && "$BRANCH" != "main" && "$BRANCH" != "beta" ]]; then
+    echo "Error: Stable releases must be on main or beta branch (currently on '$BRANCH')" >&2
+    echo "       Use a pre-release suffix (e.g., ${VERSION}-rc.1) to release from this branch." >&2
+    exit 1
+fi
+
 # Confirm working tree is clean
 if ! git -C "$ROOT_DIR" diff --quiet || ! git -C "$ROOT_DIR" diff --cached --quiet; then
     echo "Error: Working tree is not clean. Commit or stash changes first." >&2
