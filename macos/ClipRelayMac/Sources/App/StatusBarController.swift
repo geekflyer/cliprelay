@@ -149,7 +149,7 @@ final class StatusBarController {
         )
         launchItem.target = self
         if isLaunchAtLoginEnabled?() == true {
-            launchItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+            launchItem.state = .on
         }
         menu.addItem(launchItem)
 
@@ -163,7 +163,7 @@ final class StatusBarController {
         if !deviceConnected {
             imageSyncItem.isEnabled = false
         } else if isImageSyncEnabled?() == true {
-            imageSyncItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+            imageSyncItem.state = .on
         }
         menu.addItem(imageSyncItem)
 
@@ -199,18 +199,18 @@ final class StatusBarController {
         )
         autoUpdateItem.target = self
         if updaterController.updater.automaticallyChecksForUpdates {
-            autoUpdateItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+            autoUpdateItem.state = .on
         }
         menu.addItem(autoUpdateItem)
 
         let betaItem = NSMenuItem(
-            title: "Beta Updates",
+            title: "Beta Channel",
             action: #selector(handleToggleBetaUpdates),
             keyEquivalent: ""
         )
         betaItem.target = self
         if isBetaChannelEnabled {
-            betaItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+            betaItem.state = .on
         }
         menu.addItem(betaItem)
 
