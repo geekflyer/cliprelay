@@ -1081,6 +1081,62 @@ final class SessionTests: XCTestCase {
         cleanupManual(env)
     }
 
+    func testHandleInboundImageOfferIncludesTcpNonceInAccept() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: true, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.transferTimeoutSeconds = 5.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        // Send a small image OFFER
+        let offerJSON: [String: Any] = [
+            "hash": "abc123",
+            "size": 100,
+            "type": "image/png",
+            "senderIp": "127.0.0.1",
+            "supportsNonce": true
+        ]
+        let offerData = try! JSONSerialization.data(withJSONObject: offerJSON)
+        writeMessage(Message(type: .offer, payload: offerData), to: env.writeToSession)
+
+        // Read ACCEPT
+        let accept = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(accept?.type, .accept)
+
+        if let acceptPayload = accept?.payload,
+           let acceptJson = try? JSONSerialization.jsonObject(with: acceptPayload) as? [String: Any] {
+            XCTAssertNotNil(acceptJson["tcpHost"])
+            XCTAssertNotNil(acceptJson["tcpPort"])
+            // tcpNonce must be present and be 32 hex chars (16 bytes)
+            let nonceHex = acceptJson["tcpNonce"] as? String
+            XCTAssertNotNil(nonceHex, "ACCEPT should include tcpNonce")
+            XCTAssertEqual(nonceHex?.count, 32, "tcpNonce should be 32 hex chars (16 bytes)")
+        } else {
+            XCTFail("Failed to parse ACCEPT payload")
+        }
+
+        session.close()
+        cleanupManual(env)
+    }
+
     // MARK: - Edge case tests
 
     func testReceiverRejectsOversizedImageWithSizeExceeded() {

@@ -1441,6 +1441,7 @@ class SessionTest {
             put("size", 100)
             put("type", "image/png")
             put("senderIp", "127.0.0.1")
+            put("supportsNonce", true)
         }
         MessageCodec.write(toMac, Message(MessageType.OFFER, offerJson.toString().toByteArray()))
 
@@ -1588,6 +1589,7 @@ class SessionTest {
             put("size", 100)
             put("type", "image/png")
             put("senderIp", "127.0.0.1")
+            put("supportsNonce", true)
         }
         MessageCodec.write(toMac, Message(MessageType.OFFER, offerA.toString().toByteArray()))
 

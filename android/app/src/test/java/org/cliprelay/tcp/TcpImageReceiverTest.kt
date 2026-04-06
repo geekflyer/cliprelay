@@ -93,4 +93,75 @@ class TcpImageReceiverTest {
             receiver.close()
         }
     }
+
+    @Test
+    fun acceptsConnectionWithCorrectNonce() {
+        val nonce = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        val payload = ByteArray(1024) { it.toByte() }
+        val receiver = TcpImageReceiver(
+            expectedSize = payload.size,
+            allowedSenderIp = null,
+            tcpNonce = nonce,
+        )
+
+        val info = receiver.start()
+        try {
+            val thread = Thread {
+                Thread.sleep(50)
+                val socket = Socket()
+                socket.connect(InetSocketAddress("127.0.0.1", info.port), 1000)
+                socket.getOutputStream().write(nonce)
+                socket.getOutputStream().write(payload)
+                socket.getOutputStream().flush()
+                socket.close()
+            }
+            thread.start()
+
+            val received = receiver.receive()
+            assertArrayEquals(payload, received)
+            thread.join(2000)
+        } finally {
+            receiver.close()
+        }
+    }
+
+    @Test
+    fun rejectsConnectionWithWrongNonce() {
+        val nonce = ByteArray(16) { 0xAA.toByte() }
+        val wrongNonce = ByteArray(16) { 0xBB.toByte() }
+        val payload = ByteArray(64) { 0x42 }
+        val receiver = TcpImageReceiver(
+            expectedSize = payload.size,
+            allowedSenderIp = null,
+            tcpNonce = nonce,
+            maxConnections = 1,
+            noConnectionTimeoutMs = 2000,
+        )
+
+        val info = receiver.start()
+        try {
+            val thread = Thread {
+                Thread.sleep(50)
+                try {
+                    val socket = Socket()
+                    socket.connect(InetSocketAddress("127.0.0.1", info.port), 1000)
+                    socket.getOutputStream().write(wrongNonce)
+                    socket.getOutputStream().write(payload)
+                    socket.getOutputStream().flush()
+                    socket.close()
+                } catch (_: Exception) {}
+            }
+            thread.start()
+
+            try {
+                receiver.receive()
+                fail("Expected TcpTransferException")
+            } catch (e: TcpTransferException) {
+                // expected
+            }
+            thread.join(2000)
+        } finally {
+            receiver.close()
+        }
+    }
 }
