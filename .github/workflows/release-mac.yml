@@ -7,7 +7,7 @@ on:
         description: 'Version to release (e.g., 0.1.2)'
         type: string
         required: true
-      prerelease:
+      beta:
         description: 'Beta channel release (appcast entry with sparkle:channel=beta)'
         type: boolean
         default: false
@@ -108,7 +108,7 @@ jobs:
           tag_name: "mac/v${{ steps.version.outputs.version }}"
           name: "macOS v${{ steps.version.outputs.version }}"
           body: ${{ steps.changelog.outputs.body }}
-          prerelease: ${{ inputs.prerelease }}
+          prerelease: ${{ inputs.beta }}
           files: dist/ClipRelay-${{ steps.version.outputs.version }}.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -147,7 +147,7 @@ jobs:
           git worktree add /tmp/sparkle-branch origin/sparkle
 
           CHANNEL_FLAG=""
-          if [[ "${{ inputs.prerelease }}" == "true" ]]; then
+          if [[ "${{ inputs.beta }}" == "true" ]]; then
             CHANNEL_FLAG="--channel beta"
           fi
 

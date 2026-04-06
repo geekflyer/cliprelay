@@ -7,8 +7,8 @@ on:
         description: 'Version to release (e.g., 0.1.2)'
         type: string
         required: false
-      prerelease:
-        description: 'Prerelease build (internal track only, no promotion)'
+      beta:
+        description: 'Beta release (internal track only, no promotion)'
         type: boolean
         default: false
       promote:
@@ -114,7 +114,7 @@ jobs:
           tag_name: "android/v${{ steps.version.outputs.version }}"
           name: "Android v${{ steps.version.outputs.version }}"
           body: ${{ steps.changelog.outputs.body }}
-          prerelease: ${{ inputs.prerelease }}
+          prerelease: ${{ inputs.beta }}
           files: dist/cliprelay-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

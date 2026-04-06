@@ -64,7 +64,7 @@ fi
 IS_BETA=false
 if [[ "$BRANCH" == "beta" ]]; then
     IS_BETA=true
-    echo "==> Releasing from beta branch (prerelease mode)"
+    echo "==> Releasing from beta branch"
 fi
 
 # Confirm working tree is clean
@@ -120,7 +120,7 @@ for platform in "${PLATFORMS[@]}"; do
     esac
     EXTRA_FIELDS=""
     if [[ "$IS_BETA" == "true" ]]; then
-        EXTRA_FIELDS="-f prerelease=true -f ref=$BRANCH"
+        EXTRA_FIELDS="-f beta=true -f ref=$BRANCH"
     fi
     echo "==> Dispatching $WORKFLOW with version=$VERSION (beta=$IS_BETA)..."
     gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$BRANCH" -f version="$VERSION" $EXTRA_FIELDS
