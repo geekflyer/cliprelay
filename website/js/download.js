@@ -6,7 +6,7 @@
         try {
             const response = await fetch(API_URL + '?per_page=10');
             const releases = await response.json();
-            const macRelease = releases.find(r =>
+            const response = await fetch(API_URL + '?per_page=50');
                 r.tag_name.startsWith('mac/') &&
                 !r.prerelease &&
                 !r.draft
