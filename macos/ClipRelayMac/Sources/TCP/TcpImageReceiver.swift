@@ -8,6 +8,7 @@ struct TcpServerInfo {
 final class TcpImageReceiver {
     private let expectedSize: Int
     private let allowedSenderIp: String?
+    private let tcpNonce: Data?
     private let noConnectionTimeoutMs: Int
     private let transferTimeoutMs: Int
     private let maxConnections: Int
@@ -19,12 +20,14 @@ final class TcpImageReceiver {
     init(
         expectedSize: Int,
         allowedSenderIp: String?,
+        tcpNonce: Data? = nil,
         noConnectionTimeoutMs: Int = 30_000,
         transferTimeoutMs: Int = 120_000,
         maxConnections: Int = 2
     ) {
         self.expectedSize = expectedSize
         self.allowedSenderIp = allowedSenderIp
+        self.tcpNonce = tcpNonce
         self.noConnectionTimeoutMs = noConnectionTimeoutMs
         self.transferTimeoutMs = transferTimeoutMs
         self.maxConnections = maxConnections
@@ -38,6 +41,7 @@ final class TcpImageReceiver {
 
         var yes: Int32 = 1
         setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(serverFd, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
 
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -118,19 +122,43 @@ final class TcpImageReceiver {
                 throw TcpTransferError.receiveFailed("accept() failed: \(errno)")
             }
 
-            // Validate sender IP
-            if let allowed = allowedSenderIp {
-                var remoteHostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                withUnsafePointer(to: &clientAddr) { ptr in
-                    ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                        _ = getnameinfo(sa, clientAddrLen, &remoteHostname,
-                                        socklen_t(remoteHostname.count), nil, 0, NI_NUMERICHOST)
+            var noSigPipe: Int32 = 1
+            setsockopt(clientFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+
+            // Validate connection
+            if let nonce = tcpNonce {
+                // Nonce-based validation: read first 16 bytes and constant-time compare
+                setReceiveTimeout(fd: clientFd, ms: transferTimeoutMs)
+                do {
+                    let receivedNonce = try readExactly(fd: clientFd, size: 16)
+                    // Constant-time comparison to prevent timing attacks
+                    var mismatch: UInt8 = 0
+                    for i in 0..<16 {
+                        mismatch |= receivedNonce[i] ^ nonce[i]
                     }
-                }
-                let remoteIp = String(cString: remoteHostname)
-                if remoteIp != allowed {
+                    if mismatch != 0 {
+                        close(clientFd)
+                        continue
+                    }
+                } catch {
                     close(clientFd)
                     continue
+                }
+            } else {
+                // TODO(2026-05-01): Remove IP validation fallback — all clients should support tcpNonce by now
+                if let allowed = allowedSenderIp {
+                    var remoteHostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    withUnsafePointer(to: &clientAddr) { ptr in
+                        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                            _ = getnameinfo(sa, clientAddrLen, &remoteHostname,
+                                            socklen_t(remoteHostname.count), nil, 0, NI_NUMERICHOST)
+                        }
+                    }
+                    let remoteIp = String(cString: remoteHostname)
+                    if remoteIp != allowed {
+                        close(clientFd)
+                        continue
+                    }
                 }
             }
 

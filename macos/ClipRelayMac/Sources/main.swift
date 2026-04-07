@@ -3,6 +3,11 @@
 import AppKit
 import os
 
+// Ignore SIGPIPE globally so broken TCP sockets return EPIPE errors
+// instead of killing the process. Without this, a peer resetting a
+// connection during image transfer crashes the app.
+signal(SIGPIPE, SIG_IGN)
+
 private let bootstrapLogger = Logger(subsystem: "org.cliprelay", category: "Bootstrap")
 
 private func hasAnotherRunningInstance() -> Bool {

@@ -13,6 +13,7 @@ final class StatusBarController {
     var onToggleImageSync: (() -> Void)?
     var isImageSyncEnabled: (() -> Bool)?
     var isDeviceConnected: (() -> Bool)?
+    var bleStateProvider: (() -> String)?
 
     private var availableUpdateVersion: String?
 
@@ -149,7 +150,7 @@ final class StatusBarController {
         )
         launchItem.target = self
         if isLaunchAtLoginEnabled?() == true {
-            launchItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+            launchItem.state = .on
         }
         menu.addItem(launchItem)
 
@@ -163,7 +164,7 @@ final class StatusBarController {
         if !deviceConnected {
             imageSyncItem.isEnabled = false
         } else if isImageSyncEnabled?() == true {
-            imageSyncItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+            imageSyncItem.state = .on
         }
         menu.addItem(imageSyncItem)
 
@@ -182,6 +183,21 @@ final class StatusBarController {
         websiteItem.target = self
         menu.addItem(websiteItem)
 
+        let supportItem = NSMenuItem(title: "Feedback & Support", action: nil, keyEquivalent: "")
+        let supportMenu = NSMenu()
+        let issueItem = NSMenuItem(title: "Report Issue on GitHub\u{2026}", action: #selector(handleOpenGitHubIssue), keyEquivalent: "")
+        issueItem.target = self
+        supportMenu.addItem(issueItem)
+        let emailItem = NSMenuItem(title: "Email Support\u{2026}", action: #selector(handleOpenEmail), keyEquivalent: "")
+        emailItem.target = self
+        supportMenu.addItem(emailItem)
+        supportMenu.addItem(NSMenuItem.separator())
+        let discussionsItem = NSMenuItem(title: "Community Discussions\u{2026}", action: #selector(handleOpenDiscussions), keyEquivalent: "")
+        discussionsItem.target = self
+        supportMenu.addItem(discussionsItem)
+        supportItem.submenu = supportMenu
+        menu.addItem(supportItem)
+
         let updateTitle: String
         if let version = availableUpdateVersion {
             updateTitle = "Update Available (\(version))"
@@ -199,9 +215,20 @@ final class StatusBarController {
         )
         autoUpdateItem.target = self
         if updaterController.updater.automaticallyChecksForUpdates {
-            autoUpdateItem.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "enabled")
+            autoUpdateItem.state = .on
         }
         menu.addItem(autoUpdateItem)
+
+        let betaItem = NSMenuItem(
+            title: "Beta Channel",
+            action: #selector(handleToggleBetaUpdates),
+            keyEquivalent: ""
+        )
+        betaItem.target = self
+        if isBetaChannelEnabled {
+            betaItem.state = .on
+        }
+        menu.addItem(betaItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -296,8 +323,82 @@ final class StatusBarController {
     }
 
     @objc
+    private func handleOpenGitHubIssue() {
+        let context = deviceContext()
+        let body = "\n\n---\n" + context.map { "- **\($0.0):** \($0.1)" }.joined(separator: "\n")
+        var components = URLComponents(string: "https://github.com/geekflyer/cliprelay/issues/new")!
+        components.queryItems = [
+            URLQueryItem(name: "body", value: body),
+            URLQueryItem(name: "labels", value: "from-app"),
+        ]
+        if let url = components.url { NSWorkspace.shared.open(url) }
+    }
+
+    @objc
+    private func handleOpenEmail() {
+        let context = deviceContext()
+        let body = "\n\n---\n" + context.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
+        var components = URLComponents(string: "mailto:info@cliprelay.org")!
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: "ClipRelay Feedback"),
+            URLQueryItem(name: "body", value: body),
+        ]
+        if let url = components.url { NSWorkspace.shared.open(url) }
+    }
+
+    @objc
+    private func handleOpenDiscussions() {
+        if let url = URL(string: "https://github.com/geekflyer/cliprelay/discussions") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func deviceContext() -> [(String, String)] {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let gitHash = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let osString = "macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
+        var model = "Unknown Mac"
+        var size: Int = 0
+        if sysctlbyname("hw.model", nil, &size, nil, 0) == 0 {
+            var machine = [CChar](repeating: 0, count: size)
+            if sysctlbyname("hw.model", &machine, &size, nil, 0) == 0 {
+                model = String(cString: machine)
+            }
+        }
+        let bleState = bleStateProvider?() ?? "unknown"
+        return [
+            ("App Version", "\(version) (\(gitHash))"),
+            ("OS", osString),
+            ("Device", model),
+            ("BLE State", bleState),
+        ]
+    }
+
+    @objc
     private func handleToggleAutoUpdates() {
         updaterController.updater.automaticallyChecksForUpdates.toggle()
+        renderMenu()
+    }
+
+    private var isBetaChannelEnabled: Bool {
+        let channels = UserDefaults.standard.stringArray(forKey: "SUDefaultChannels") ?? []
+        return channels.contains("beta")
+    }
+
+    @objc
+    private func handleToggleBetaUpdates() {
+        var channels = UserDefaults.standard.stringArray(forKey: "SUDefaultChannels") ?? []
+        if isBetaChannelEnabled {
+            channels.removeAll { $0 == "beta" }
+        } else {
+            channels.append("beta")
+        }
+        if channels.isEmpty {
+            UserDefaults.standard.removeObject(forKey: "SUDefaultChannels")
+        } else {
+            UserDefaults.standard.set(channels, forKey: "SUDefaultChannels")
+        }
         renderMenu()
     }
 

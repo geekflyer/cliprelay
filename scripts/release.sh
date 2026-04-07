@@ -24,6 +24,7 @@ Options:
 Example:
   ./scripts/release.sh --mac 0.3.2
   ./scripts/release.sh --all 0.4.0
+  ./scripts/release.sh --all 0.4.7-rc.1   # beta (auto-detected from pre-release suffix)
 EOF
     exit 1
 }
@@ -48,16 +49,30 @@ done
 
 [[ ${#PLATFORMS[@]} -eq 0 || -z "$VERSION" ]] && usage
 
-# Validate semver format
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-    echo "Error: Version must be semver (e.g., 0.3.2)" >&2
+# Validate semver format (with optional pre-release suffix, e.g., 0.4.7-rc.1)
+if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+    echo "Error: Version must be semver (e.g., 0.3.2 or 0.4.7-rc.1)" >&2
     exit 1
 fi
 
-# Confirm on main branch
 BRANCH=$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)
-if [[ "$BRANCH" != "main" ]]; then
-    echo "Error: Must be on main branch (currently on '$BRANCH')" >&2
+
+IS_BETA=false
+if [[ "$BRANCH" == "beta" ]]; then
+    IS_BETA=true
+    echo "==> Releasing from beta branch"
+fi
+
+# Auto-detect beta from pre-release version suffix (e.g., 0.4.7-rc.1)
+if [[ "$VERSION" == *-* ]]; then
+    IS_BETA=true
+    echo "==> Pre-release version detected, treating as beta"
+fi
+
+# Stable releases must be on main or beta branch; pre-release allowed from any branch
+if [[ "$IS_BETA" == "false" && "$BRANCH" != "main" && "$BRANCH" != "beta" ]]; then
+    echo "Error: Stable releases must be on main or beta branch (currently on '$BRANCH')" >&2
+    echo "       Use a pre-release suffix (e.g., ${VERSION}-rc.1) to release from this branch." >&2
     exit 1
 fi
 
@@ -112,8 +127,12 @@ for platform in "${PLATFORMS[@]}"; do
         mac) WORKFLOW="release-mac.yml" ;;
         android) WORKFLOW="release-android.yml" ;;
     esac
-    echo "==> Dispatching $WORKFLOW with version=$VERSION..."
-    gh workflow run "$WORKFLOW" --repo "$REPO" -f version="$VERSION"
+    EXTRA_ARGS=()
+    if [[ "$IS_BETA" == "true" ]]; then
+        EXTRA_ARGS=(-f beta=true -f "ref=$BRANCH")
+    fi
+    echo "==> Dispatching $WORKFLOW with version=$VERSION (beta=$IS_BETA)..."
+    gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$BRANCH" -f version="$VERSION" "${EXTRA_ARGS[@]}"
 
     echo "    Polling for workflow run..."
     RUN_URL=""

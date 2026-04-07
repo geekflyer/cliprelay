@@ -12,6 +12,7 @@ private let appLogger = Logger(subsystem: "org.cliprelay", category: "App")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updaterController: SPUStandardUpdaterController
+    private let updaterDelegate = UpdaterDelegate()
     private let updaterDriverDelegate = UpdaterDriverDelegate()
     private let pairingManager = PairingManager()
     private let statusBarController: StatusBarController
@@ -21,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: false, updaterDelegate: nil, userDriverDelegate: updaterDriverDelegate)
+            startingUpdater: false, updaterDelegate: updaterDelegate, userDriverDelegate: updaterDriverDelegate)
         statusBarController = StatusBarController(updaterController: updaterController)
         super.init()
     }
@@ -86,6 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusBarController.isDeviceConnected = { [weak self] in
             self?.connectionController?.isConnected ?? false
+        }
+        statusBarController.bleStateProvider = { [weak self] in
+            if self?.connectedSecret != nil { return "connected" }
+            let isPaired = !(self?.pairingManager.loadDevices().isEmpty ?? true)
+            return isPaired ? "searching" : "unpaired"
         }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()

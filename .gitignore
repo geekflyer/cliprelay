@@ -4,6 +4,7 @@
 .gradle-local/
 .vscode/
 .cursor/
+.superset/
 .kotlin/
 build/
 **/build/
