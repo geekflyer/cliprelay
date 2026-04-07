@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.connectionController?.isConnected ?? false
         }
         statusBarController.bleStateProvider = { [weak self] in
-            if self?.connectedSecret != nil { return "connected" }
+            if self?.connectionController?.isConnected == true { return "connected" }
             let isPaired = !(self?.pairingManager.loadDevices().isEmpty ?? true)
             return isPaired ? "searching" : "unpaired"
         }
@@ -118,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Anonymous usage check-ins
         telemetryManager = TelemetryManager { [weak self] in
             guard let self else { return .noPeering }
-            if self.connectedSecret != nil { return .activePeering }
+            if self.connectionController?.isConnected == true { return .activePeering }
             if !self.pairingManager.loadDevices().isEmpty { return .idlePeering }
             return .noPeering
         }
