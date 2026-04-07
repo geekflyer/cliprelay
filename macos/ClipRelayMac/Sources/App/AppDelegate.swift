@@ -98,6 +98,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController.isDeviceConnected = { [weak self] in
             self?.connectedSecret != nil
         }
+        statusBarController.bleStateProvider = { [weak self] in
+            if self?.connectedSecret != nil { return "connected" }
+            let isPaired = !(self?.pairingManager.loadDevices().isEmpty ?? true)
+            return isPaired ? "searching" : "unpaired"
+        }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()
         }

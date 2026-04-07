@@ -179,7 +179,10 @@ class MainActivity : AppCompatActivity() {
                 },
                 onHelpClick = {
                     onboardingLauncher.launch(Intent(this, AutoCopyOnboardingActivity::class.java))
-                }
+                },
+                onSupportLinkClick = { url ->
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                },
             )
         }
     }

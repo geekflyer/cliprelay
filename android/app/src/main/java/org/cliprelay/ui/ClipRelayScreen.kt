@@ -45,7 +45,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,6 +96,7 @@ fun ClipRelayScreen(
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {},
     onHelpClick: () -> Unit = {},
+    onSupportLinkClick: (String) -> Unit = {},
 ) {
     val isConnected = state is AppState.Connected
     val isPaired = state !is AppState.Unpaired
@@ -177,7 +180,12 @@ fun ClipRelayScreen(
                 onAutoCopyFixClick = onAutoCopyFixClick
             )
             Spacer(modifier = Modifier.weight(1f))
-            FooterSection(isPaired = isPaired, onHelpClick = onHelpClick)
+            FooterSection(
+                isPaired = isPaired,
+                bleState = if (isConnected) "connected" else if (isPaired) "searching" else "unpaired",
+                onHelpClick = onHelpClick,
+                onSupportLinkClick = onSupportLinkClick,
+            )
         }
 
         // Pairing burst overlay
@@ -894,7 +902,9 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMacIcon(tint: C
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 @Composable
-private fun FooterSection(isPaired: Boolean, onHelpClick: () -> Unit) {
+private fun FooterSection(isPaired: Boolean, bleState: String = "unknown", onHelpClick: () -> Unit, onSupportLinkClick: (String) -> Unit) {
+    var showSupportDialog by remember { mutableStateOf(false) }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
@@ -919,12 +929,52 @@ private fun FooterSection(isPaired: Boolean, onHelpClick: () -> Unit) {
             }
             Spacer(modifier = Modifier.height(8.dp))
         }
+        TextButton(onClick = { showSupportDialog = true }) {
+            Text("Feedback & Support", fontSize = 13.sp)
+        }
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "ClipRelay v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
             style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
             color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+
+    if (showSupportDialog) {
+        SupportDialog(
+            bleState = bleState,
+            onDismiss = { showSupportDialog = false },
+            onLinkClick = { url ->
+                showSupportDialog = false
+                onSupportLinkClick(url)
+            },
+        )
+    }
+}
+
+@Composable
+private fun SupportDialog(bleState: String, onDismiss: () -> Unit, onLinkClick: (String) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Feedback & Support") },
+        text = {
+            Column {
+                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.gitHubIssueUrl(bleState)) }) {
+                    Text("Report Issue on GitHub", modifier = Modifier.fillMaxWidth())
+                }
+                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.emailUrl(bleState)) }) {
+                    Text("Email Support", modifier = Modifier.fillMaxWidth())
+                }
+                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.DISCUSSIONS_URL) }) {
+                    Text("Community Discussions", modifier = Modifier.fillMaxWidth())
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
 }
 
 // ─── Version Mismatch Dialog ──────────────────────────────────────────────────
