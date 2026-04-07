@@ -199,9 +199,9 @@ class ConnectionController: NSObject {
 
     // MARK: - Cleanup (single path)
 
-    private func transitionToIdle(reason: String, reconnect: Bool) {
+    private func transitionToIdle(reason: String, reconnect: Bool, preservePairingContext: Bool = false) {
         // Cancel peripheral connection if we have one
-        if let peripheral = trackedPeripheral(from: state) {
+        if let peripheral = trackedPeripheral(from: state) ?? lastAttemptedPeripheral {
             centralManager?.cancelPeripheralConnection(peripheral)
         }
 
@@ -219,8 +219,10 @@ class ConnectionController: NSObject {
         // across reconnection cycles so it can be sent after reconnecting)
         l2capChannel = nil
         connectingStartTime = nil
-        pairingTag = nil
-        pairingPrivateKey = nil
+        if !preservePairingContext {
+            pairingTag = nil
+            pairingPrivateKey = nil
+        }
         settingsProviderRef = nil
 
         // Increment generation so any in-flight callbacks from the old connection are ignored
@@ -258,6 +260,15 @@ class ConnectionController: NSObject {
         }
     }
 
+    private func shouldPreservePairingContext(for state: ConnectionState) -> Bool {
+        switch state {
+        case .pairingConnecting, .pairingL2CAP, .pairingHandshake:
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: - Timers
 
     private func startHealthCheck() {
@@ -289,6 +300,10 @@ class ConnectionController: NSObject {
 
     func startScanning() {
         dispatchPrecondition(condition: .onQueue(queue))
+        guard let centralManager else {
+            log("startScanning: no central manager")
+            return
+        }
         guard centralManager.state == .poweredOn else {
             log("startScanning: BT not poweredOn (\(centralManager.state.rawValue))")
             return
@@ -316,7 +331,11 @@ class ConnectionController: NSObject {
             if let start = connectingStartTime,
                Date().timeIntervalSince(start) > Self.connectingTimeout {
                 log("Health check: connecting timed out")
-                transitionToIdle(reason: "connectingTimeout", reconnect: true)
+                transitionToIdle(
+                    reason: "connectingTimeout",
+                    reconnect: true,
+                    preservePairingContext: shouldPreservePairingContext(for: state)
+                )
             }
         case .scanning:
             // Cycle the scan to pick up new advertisements
@@ -406,8 +425,11 @@ extension ConnectionController {
         queue.async { [self] in
             pairingPrivateKey = privateKey
             pairingTag = tag
-            if case .scanning = state { centralManager?.stopScan() }
-            transition(to: .idle, reason: "entering pairing mode")
+            transitionToIdle(
+                reason: "entering pairing mode",
+                reconnect: false,
+                preservePairingContext: true
+            )
             startScanning()
         }
         return PairingInfo(uri: uri)
@@ -448,8 +470,8 @@ extension ConnectionController {
         queue.async { [self] in
             let hash = Session.sha256Hex(data)
             guard hash != lastReceivedImageHash else { return }
-            guard case .ready(let session, _, _) = state else { return }
-            guard self.isImageSyncEnabled else { return }
+            guard case .ready(let session, let token, _) = state else { return }
+            guard imageSyncEnabled(for: token) else { return }
             session.sendImage(data, contentType: contentType)
         }
     }
@@ -507,6 +529,10 @@ extension ConnectionController {
     /// Safe to call from main thread — uses cached `connectedToken`.
     var isImageSyncEnabled: Bool {
         guard let secret = connectedToken else { return false }
+        return imageSyncEnabled(for: secret)
+    }
+
+    private func imageSyncEnabled(for secret: String) -> Bool {
         return pairingManager.loadDevices()
             .first(where: { $0.sharedSecret == secret })?.richMediaEnabled ?? false
     }
@@ -531,7 +557,11 @@ extension ConnectionController: CBCentralManagerDelegate {
             startHealthCheck()
             startScanning()
         } else {
-            transitionToIdle(reason: "BT state \(central.state.rawValue)", reconnect: false)
+            transitionToIdle(
+                reason: "BT state \(central.state.rawValue)",
+                reconnect: false,
+                preservePairingContext: pairingTag != nil
+            )
         }
         let btState = central.state
         DispatchQueue.main.async { [weak self] in
@@ -618,7 +648,11 @@ extension ConnectionController: CBCentralManagerDelegate {
     ) {
         log("didFailToConnect: \(error?.localizedDescription ?? "unknown")")
         central.cancelPeripheralConnection(peripheral)
-        transitionToIdle(reason: "didFailToConnect", reconnect: true)
+        transitionToIdle(
+            reason: "didFailToConnect",
+            reconnect: true,
+            preservePairingContext: shouldPreservePairingContext(for: state)
+        )
     }
 
     func centralManager(
@@ -634,9 +668,15 @@ extension ConnectionController: CBCentralManagerDelegate {
         }
 
         switch state {
-        case .bleConnecting, .l2capOpening, .pairingConnecting, .pairingL2CAP:
+        case .bleConnecting, .l2capOpening:
             transitionToIdle(reason: "didDisconnect(connecting)", reconnect: true)
-        case .handshaking, .ready, .pairingHandshake:
+        case .pairingConnecting, .pairingL2CAP, .pairingHandshake:
+            transitionToIdle(
+                reason: "didDisconnect(pairing)",
+                reconnect: true,
+                preservePairingContext: true
+            )
+        case .handshaking, .ready:
             transitionToIdle(reason: "didDisconnect(session)", reconnect: true)
         case .idle, .scanning:
             log("didDisconnect while \(state), ignoring")
@@ -653,13 +693,21 @@ extension ConnectionController: CBPeripheralDelegate {
 
         if let error {
             log("L2CAP open error: \(error.localizedDescription)")
-            transitionToIdle(reason: "L2CAP open error", reconnect: true)
+            transitionToIdle(
+                reason: "L2CAP open error",
+                reconnect: true,
+                preservePairingContext: shouldPreservePairingContext(for: state)
+            )
             return
         }
 
         guard let channel else {
             log("L2CAP open returned nil channel")
-            transitionToIdle(reason: "L2CAP nil channel", reconnect: true)
+            transitionToIdle(
+                reason: "L2CAP nil channel",
+                reconnect: true,
+                preservePairingContext: shouldPreservePairingContext(for: state)
+            )
             return
         }
 
@@ -686,7 +734,11 @@ extension ConnectionController {
     fileprivate func startSession(channel: CBL2CAPChannel, token: String?, gen: UInt, isPairing: Bool) {
         guard let inputStream = channel.inputStream, let outputStream = channel.outputStream else {
             log("L2CAP channel missing streams")
-            transitionToIdle(reason: "missing streams", reconnect: true)
+            transitionToIdle(
+                reason: "missing streams",
+                reconnect: true,
+                preservePairingContext: isPairing
+            )
             return
         }
 
@@ -738,7 +790,10 @@ extension ConnectionController {
             session.performHandshake()
             session.listenForMessages()
             // Session ended — clean up adapter reference
-            self?.queue.async { self?.currentAdapter = nil }
+            self?.queue.async {
+                guard self?.currentAdapter === adapter else { return }
+                self?.currentAdapter = nil
+            }
         }
         thread.name = isPairing ? "L2CAP-Pairing" : "L2CAP-Session"
         thread.start()
@@ -785,7 +840,11 @@ extension ConnectionController {
             }
             return
         }
-        transitionToIdle(reason: "session error", reconnect: true)
+        transitionToIdle(
+            reason: "session error",
+            reconnect: true,
+            preservePairingContext: shouldPreservePairingContext(for: state)
+        )
     }
 
     fileprivate func handleClipboardReceived(plaintext: Data, hash: String) {
