@@ -73,3 +73,42 @@ To rotate the service account token, generate a new one in 1Password admin conso
 # Promote Android to production (after testing internal build)
 # Go to GitHub Actions → Release Android → Run workflow → Check "Promote"
 ```
+
+### Pre-release versions
+
+`scripts/release.sh` also supports semver pre-release versions for beta/release-candidate builds.
+
+- Preferred format: `0.4.7-rc.1`, `0.4.7-beta.1`, `0.4.7-alpha.1`
+- Currently accepted but less clear: `0.4.7-rc1`
+- Any version containing `-` is treated as a beta release automatically
+
+Examples:
+
+```bash
+# Release both platforms as a release candidate
+./scripts/release.sh --all 0.4.7-rc.1
+
+# Release Android only as a beta
+./scripts/release.sh --android 0.4.7-beta.1
+```
+
+Behavior:
+
+- Stable releases such as `0.4.7` must be run from `main` or `beta`
+- Pre-release versions such as `0.4.7-rc.1` may be run from any branch
+- If the current branch is `beta`, the release is also treated as beta even without a suffix
+
+Platform-specific beta handling:
+
+- macOS: creates a GitHub prerelease and writes the update to the Sparkle `beta` channel in `appcast.xml`
+- Android: creates a GitHub prerelease and publishes to the Play Store `internal` track only
+
+Tag naming is platform-specific and is created by the GitHub Actions workflow after a successful build:
+
+- macOS: `mac/v<version>`
+- Android: `android/v<version>`
+
+Examples:
+
+- `mac/v0.4.7-rc.1`
+- `android/v0.4.7-beta.1`
