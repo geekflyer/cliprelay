@@ -125,5 +125,16 @@
                        length="2195823"
                        type="application/octet-stream" />
         </item>
+            <item>
+            <title>Version 0.4.7-beta.2 (16967fd)</title>
+            <sparkle:channel>beta</sparkle:channel>
+            <pubDate>Tue, 07 Apr 2026 10:23:15 +0000</pubDate>
+            <sparkle:version>396</sparkle:version>
+            <sparkle:shortVersionString>0.4.7-beta.2 (16967fd)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.4.7-beta.2/ClipRelay-0.4.7-beta.2.dmg"
+                       sparkle:edSignature="hmz2XUyc6uznsSsomJYQ64DGEgkQ62bRAm3/2tN2q8OYRF6YEiUMqqebxZs8xhnZpkM0kbs3fCTK8w6mr9bAAA=="
+                       length="2209942"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
