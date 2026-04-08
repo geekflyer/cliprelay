@@ -20,6 +20,9 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import org.cliprelay.crypto.E2ECrypto
 import org.cliprelay.pairing.PairingStore
@@ -125,9 +128,26 @@ class MainActivity : AppCompatActivity() {
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
             val imageSyncEnabled by viewModel.imageSyncEnabled.collectAsState()
             val showVersionMismatch by viewModel.showVersionMismatch.collectAsState()
+            var showAccessibilityDisclosure by remember { mutableStateOf(false) }
 
             if (showVersionMismatch) {
                 VersionMismatchDialog(onDismiss = { viewModel.onVersionMismatchDismissed() })
+            }
+
+            if (showAccessibilityDisclosure) {
+                AccessibilityDisclosureDialog(
+                    onAllow = {
+                        showAccessibilityDisclosure = false
+                        viewModel.onAutoCopySettingChanged(true)
+                        clipboardSettingsStore.setAutoCopyEnabled(true)
+                        startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    },
+                    onDeny = {
+                        showAccessibilityDisclosure = false
+                        viewModel.onAutoCopySettingChanged(false)
+                        clipboardSettingsStore.setAutoCopyEnabled(false)
+                    }
+                )
             }
 
             ClipRelayScreen(
@@ -158,12 +178,11 @@ class MainActivity : AppCompatActivity() {
                 },
                 onAutoCopySettingChanged = { enabled ->
                     if (enabled && !isAccessibilityServiceEnabled()) {
-                        // Turning on but accessibility not enabled — open settings
-                        val accessibilityIntent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        startActivity(accessibilityIntent)
+                        showAccessibilityDisclosure = true
+                    } else {
+                        viewModel.onAutoCopySettingChanged(enabled)
+                        clipboardSettingsStore.setAutoCopyEnabled(enabled)
                     }
-                    viewModel.onAutoCopySettingChanged(enabled)
-                    clipboardSettingsStore.setAutoCopyEnabled(enabled)
                 },
                 onImageSyncSettingChanged = { enabled ->
                     viewModel.onImageSyncSettingChanged(enabled)
@@ -173,9 +192,7 @@ class MainActivity : AppCompatActivity() {
                     startServiceSafely(configIntent)
                 },
                 onAutoCopyFixClick = {
-                    // Broken state: row tapped — open accessibility settings to fix
-                    val accessibilityIntent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    startActivity(accessibilityIntent)
+                    showAccessibilityDisclosure = true
                 },
                 onHelpClick = {
                     onboardingLauncher.launch(Intent(this, AutoCopyOnboardingActivity::class.java))

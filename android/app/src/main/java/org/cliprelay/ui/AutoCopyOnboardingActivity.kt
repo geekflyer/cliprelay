@@ -39,6 +39,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,8 +73,22 @@ class AutoCopyOnboardingActivity : ComponentActivity() {
         settingsStore = ClipboardSettingsStore(this)
 
         setContent {
+            var showDisclosure by remember { mutableStateOf(false) }
+
+            if (showDisclosure) {
+                AccessibilityDisclosureDialog(
+                    onAllow = {
+                        showDisclosure = false
+                        enableAutoCopy()
+                    },
+                    onDeny = {
+                        showDisclosure = false
+                    }
+                )
+            }
+
             OnboardingScreen(
-                onEnableAutoCopy = { enableAutoCopy() },
+                onEnableAutoCopy = { showDisclosure = true },
                 onDismiss = { dismiss() }
             )
         }

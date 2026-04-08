@@ -977,6 +977,29 @@ private fun SupportDialog(bleState: String, onDismiss: () -> Unit, onLinkClick: 
     )
 }
 
+// ─── Accessibility Disclosure Dialog ─────────────────────────────────────────
+@Composable
+fun AccessibilityDisclosureDialog(
+    onAllow: () -> Unit,
+    onDeny: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { /* Do not dismiss on outside tap — require explicit button */ },
+        title = { Text(stringResource(R.string.accessibility_disclosure_title)) },
+        text = { Text(stringResource(R.string.accessibility_disclosure_body)) },
+        confirmButton = {
+            TextButton(onClick = onAllow) {
+                Text(stringResource(R.string.accessibility_disclosure_allow))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDeny) {
+                Text(stringResource(R.string.accessibility_disclosure_deny))
+            }
+        },
+    )
+}
+
 // ─── Version Mismatch Dialog ──────────────────────────────────────────────────
 @Composable
 fun VersionMismatchDialog(onDismiss: () -> Unit) {
