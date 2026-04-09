@@ -24,7 +24,7 @@ The website is hosted on **Cloudflare Pages**.
 ### Deploy command
 
 ```bash
-npx wrangler pages deploy website --project-name cliprelay --commit-dirty=true
+npx wrangler pages deploy website --project-name cliprelay --commit-dirty=true --branch main
 ```
 
 ### Authentication
