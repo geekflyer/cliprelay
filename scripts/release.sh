@@ -127,12 +127,12 @@ for platform in "${PLATFORMS[@]}"; do
         mac) WORKFLOW="release-mac.yml" ;;
         android) WORKFLOW="release-android.yml" ;;
     esac
-    EXTRA_ARGS=()
+    GH_WORKFLOW_ARGS=(--repo "$REPO" --ref "$BRANCH" -f version="$VERSION")
     if [[ "$IS_BETA" == "true" ]]; then
-        EXTRA_ARGS=(-f beta=true -f "ref=$BRANCH")
+        GH_WORKFLOW_ARGS+=(-f beta=true -f "ref=$BRANCH")
     fi
     echo "==> Dispatching $WORKFLOW with version=$VERSION (beta=$IS_BETA)..."
-    gh workflow run "$WORKFLOW" --repo "$REPO" --ref "$BRANCH" -f version="$VERSION" "${EXTRA_ARGS[@]}"
+    gh workflow run "$WORKFLOW" "${GH_WORKFLOW_ARGS[@]}"
 
     echo "    Polling for workflow run..."
     RUN_URL=""
