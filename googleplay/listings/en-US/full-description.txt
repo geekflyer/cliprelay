@@ -16,4 +16,4 @@ Copy on your Android, paste on your Mac — instantly. ClipRelay syncs your clip
 • Dead simple QR code setup
 
 🔗 ACCESSIBILITY SERVICE USAGE
-ClipRelay offers an optional "Auto-copy" feature that uses Android's Accessibility Service to detect when you copy text, so it can automatically send your clipboard to your paired Mac. This feature is off by default and requires your explicit consent before activation. The Accessibility Service is used solely to monitor tap actions for copy detection — it does not read, collect, or store any screen content or personal data.
+ClipRelay's optional "Auto-copy" feature uses the Accessibility Service to detect copy actions and automatically send clipboard text to your paired Mac. It only monitors tap actions — it does not read or store screen content.
