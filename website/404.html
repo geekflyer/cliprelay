@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Page not found — ClipRelay</title>
-  <meta name="description" content="This ClipRelay page does not exist. Return to the homepage or jump straight to the download section.">
+  <meta name="description" content="This ClipRelay page does not exist. Return to the homepage.">
   <meta name="theme-color" content="#111820">
   <meta name="robots" content="noindex">
 
@@ -62,15 +62,16 @@
     }
     .not-found h1 {
       font-family: var(--font-display);
-      font-size: clamp(2.8rem, 7vw, 5rem);
+      font-size: clamp(2.25rem, 5.5vw, 3.75rem);
       font-weight: 400;
       letter-spacing: -0.03em;
-      line-height: 0.95;
+      line-height: 1.12;
+      padding: 0.2em 0 0.35em;
       background: var(--gradient-title);
       -webkit-background-clip: text;
       background-clip: text;
       -webkit-text-fill-color: transparent;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
     .not-found p {
       max-width: 540px;
@@ -133,10 +134,9 @@
     <section class="not-found-panel">
       <div class="not-found-kicker">404 • Page not found</div>
       <h1>Wrong route.<br>Right product.</h1>
-      <p>The page at <span class="not-found-path" id="missing-path"></span> does not exist. Head back to the homepage or jump straight to the ClipRelay download section.</p>
+      <p>The page at <span class="not-found-path" id="missing-path"></span> does not exist. Head back to the homepage.</p>
       <div class="not-found-actions">
         <a href="/" class="btn btn-primary">Go to homepage</a>
-        <a href="/#download" class="btn btn-outline">Jump to download</a>
       </div>
     </section>
   </main>
