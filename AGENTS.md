@@ -47,8 +47,8 @@ This is a dual-platform project (Android + macOS). On Linux-based Cloud Agent VM
 
 ### Key commands (Android-only on Linux)
 - **Build**: `./scripts/build-all.sh --android-only` — produces `dist/cliprelay-debug.apk`
-- **Unit tests**: `cd android && ./gradlew testDebugUnitTest` (116 tests across 10 suites)
-- **Lint**: `cd android && ./gradlew lintDebug` — note: pre-existing lint errors exist (3 errors, 54 warnings); CI does not gate on lint.
+- **Unit tests**: `cd android && ./gradlew testDebugUnitTest`
+- **Lint**: `cd android && ./gradlew lintDebug` — note: pre-existing lint errors and warnings exist; CI does not gate on lint.
 - **Full test suite**: `scripts/test-all.sh` requires `swift` so will fail on Linux; run Android tests directly instead.
 - **Full build**: `scripts/build-all.sh` requires `swift` so will fail on Linux; use `--android-only` flag.
 
