@@ -52,7 +52,7 @@ This is a Linux (Ubuntu 24.04) cloud VM. The following components are buildable 
 | Website (`website/`) | N/A (static) | `python3 -m http.server 8080 --directory website` | N/A | Static HTML/CSS/JS; no build step. |
 
 ### Key environment details
-
+- Gradle wrapper version is auto-downloaded on first build (see `android/gradle/wrapper/gradle-wrapper.properties` for the exact version).
 - **JAVA_HOME**: `/usr/lib/jvm/java-21-openjdk-amd64` (JDK 21, satisfies ≥17 requirement)
 - **ANDROID_HOME**: `/opt/android-sdk` (installed with platform 36 and build-tools 36.0.0)
 - Both are set in `~/.bashrc`; new shells pick them up automatically.
