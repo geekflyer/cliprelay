@@ -35,3 +35,24 @@
 - Use `adb exec-out screencap -p > /tmp/cliprelay-screenshot.png` to capture, then read the image to visually inspect the layout.
 - Use this as a feedback loop: if something looks off, fix it before committing.
 - This applies to any change affecting UI layout, colors, spacing, icons, animations, or theming.
+
+## Cursor Cloud specific instructions
+
+This is a dual-platform project (Android + macOS). On Linux-based Cloud Agent VMs, only the **Android app** can be built and tested. The macOS app requires macOS with Xcode CLI tools (`swift` compiler + CoreBluetooth framework) and cannot be built on Linux.
+
+### Environment
+- **Android SDK** is installed at `/opt/android-sdk`. `ANDROID_HOME` is set in `~/.bashrc`.
+- **JDK 21** is pre-installed (JDK 17+ is required by the Gradle build).
+- Gradle wrapper (`android/gradlew`) auto-downloads Gradle 9.4.0 on first run.
+
+### Key commands (Android-only on Linux)
+- **Build**: `./scripts/build-all.sh --android-only` — produces `dist/cliprelay-debug.apk`
+- **Unit tests**: `cd android && ./gradlew testDebugUnitTest` (116 tests across 10 suites)
+- **Lint**: `cd android && ./gradlew lintDebug` — note: pre-existing lint errors exist (3 errors, 54 warnings); CI does not gate on lint.
+- **Full test suite**: `scripts/test-all.sh` requires `swift` so will fail on Linux; run Android tests directly instead.
+- **Full build**: `scripts/build-all.sh` requires `swift` so will fail on Linux; use `--android-only` flag.
+
+### Caveats
+- No Android device is available in Cloud Agent VMs, so hardware smoke tests (`scripts/hardware-smoke-test.sh`) and APK installation/restart steps from AGENTS.md cannot be performed. Skip those and report them as skipped.
+- The website (`website/`) is static HTML/CSS/JS with no build step. Deployment requires `wrangler` + Cloudflare auth.
+- Release signing (Android AAB/APK) requires keystore credentials not present in the VM. Debug builds work without them.
