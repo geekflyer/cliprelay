@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://cliprelay.org/beta.html">Join Android Beta</a> &bull;
+  <a href="https://play.google.com/store/apps/details?id=org.cliprelay">Google Play</a> &bull;
   <a href="https://cliprelay.org/#download">Download for Mac</a> &bull;
   <a href="https://cliprelay.org">Website</a>
 </p>
