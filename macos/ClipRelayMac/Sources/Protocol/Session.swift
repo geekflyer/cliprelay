@@ -442,7 +442,7 @@ final class Session {
         try writeMessage(offer)
 
         // Wait for ACCEPT or DONE
-        let response = try readWithTimeout(transferTimeoutSeconds)
+        let response = try readWithConfigUpdates(timeout: transferTimeoutSeconds)
         switch response.type {
         case .accept:
             // Send PAYLOAD
@@ -450,7 +450,7 @@ final class Session {
             try writeMessage(payload)
 
             // Wait for DONE
-            let done = try readWithTimeout(transferTimeoutSeconds)
+            let done = try readWithConfigUpdates(timeout: transferTimeoutSeconds)
             guard done.type == .done else {
                 throw SessionError.unexpectedMessage("Expected DONE, got \(done.type)")
             }
@@ -489,7 +489,7 @@ final class Session {
         try writeMessage(offer)
 
         // Read response: ACCEPT, REJECT, or ERROR
-        let response = try readWithTimeout(transferTimeoutSeconds)
+        let response = try readWithConfigUpdates(timeout: transferTimeoutSeconds)
         switch response.type {
         case .accept:
             guard let acceptJson = try? JSONSerialization.jsonObject(with: response.payload) as? [String: Any],
@@ -537,7 +537,7 @@ final class Session {
             }
 
             // Wait for DONE or ERROR
-            let done = try readWithTimeout(transferTimeoutSeconds)
+            let done = try readWithConfigUpdates(timeout: transferTimeoutSeconds)
             switch done.type {
             case .done:
                 delegate?.session(self, didCompleteTransfer: hash)
@@ -696,7 +696,7 @@ final class Session {
         try writeMessage(accept)
 
         // Wait for PAYLOAD
-        let payload = try readWithTimeout(transferTimeoutSeconds)
+        let payload = try readWithConfigUpdates(timeout: transferTimeoutSeconds)
         guard payload.type == .payload else {
             throw SessionError.unexpectedMessage("Expected PAYLOAD, got \(payload.type)")
         }
@@ -751,6 +751,27 @@ final class Session {
                 return try MessageCodec.decode(from: inputStream)
             }
             Thread.sleep(forTimeInterval: min(0.01, remaining))
+        }
+        throw SessionError.sessionClosed
+    }
+
+    /// Read the next transfer-related message while allowing CONFIG_UPDATE to
+    /// arrive out of band. Settings changes should not poison an active
+    /// transfer's request/response flow.
+    private func readWithConfigUpdates(timeout: TimeInterval) throws -> Message {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !closed {
+            let remaining = deadline.timeIntervalSinceNow
+            if remaining <= 0 {
+                throw SessionError.timeout("Timeout waiting for message (\(timeout)s)")
+            }
+
+            let msg = try readWithTimeout(remaining)
+            if msg.type == .configUpdate {
+                handleConfigUpdate(msg)
+                continue
+            }
+            return msg
         }
         throw SessionError.sessionClosed
     }

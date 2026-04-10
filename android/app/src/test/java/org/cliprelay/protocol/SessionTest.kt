@@ -1194,6 +1194,83 @@ class SessionTest {
         macInput.close(); toMac.close(); macOutput.close(); fromMac.close()
     }
 
+    @Test
+    fun `sendClipboard ignores interleaved CONFIG_UPDATE before ACCEPT`() {
+        val macInput = PipedInputStream()
+        val toMac = PipedOutputStream(macInput)
+        val macOutput = PipedOutputStream()
+        val fromMac = PipedInputStream(macOutput)
+
+        val sp = TestSettingsProvider(enabled = false, changedAt = 1000)
+        val readyLatch = CountDownLatch(1)
+        val transferLatch = CountDownLatch(1)
+        val settingChangedLatch = CountDownLatch(1)
+        val errorLatch = CountDownLatch(1)
+        var capturedError: Exception? = null
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+        callback.onTransfer = { transferLatch.countDown() }
+        callback.onRichMediaChanged = { enabled ->
+            assertTrue(enabled)
+            settingChangedLatch.countDown()
+        }
+        callback.onError = { error ->
+            capturedError = error
+            errorLatch.countDown()
+        }
+
+        val session = Session(
+            input = macInput,
+            output = macOutput,
+            isInitiator = true,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000,
+            transferTimeoutMs = 2000,
+            settingsProvider = sp
+        )
+
+        Thread {
+            session.performHandshake()
+            session.listenForMessages()
+        }.start()
+
+        val hello = MessageCodec.decode(fromMac)
+        sendValidWelcome(toMac, hello)
+        assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
+
+        session.sendClipboard("config-before-accept".toByteArray())
+
+        val offer = MessageCodec.decode(fromMac)
+        assertEquals(MessageType.OFFER, offer.type)
+
+        val configJson = JSONObject().apply {
+            put("richMediaEnabled", true)
+            put("richMediaEnabledChangedAt", 2000L)
+        }
+        MessageCodec.write(toMac, Message(MessageType.CONFIG_UPDATE, configJson.toString().toByteArray()))
+        MessageCodec.write(toMac, Message(MessageType.ACCEPT, ByteArray(0)))
+
+        val payload = MessageCodec.decode(fromMac)
+        assertEquals(MessageType.PAYLOAD, payload.type)
+
+        val doneJson = JSONObject().apply {
+            put("hash", "ignored")
+            put("ok", true)
+        }
+        MessageCodec.write(toMac, Message(MessageType.DONE, doneJson.toString().toByteArray()))
+
+        assertTrue("Setting change should be applied", settingChangedLatch.await(3, TimeUnit.SECONDS))
+        assertTrue("Transfer should complete", transferLatch.await(3, TimeUnit.SECONDS))
+        assertFalse("Session should not fail", errorLatch.await(500, TimeUnit.MILLISECONDS))
+        assertNull("Unexpected session error", capturedError)
+        assertTrue("Rich media should be enabled locally", sp.enabled)
+        assertEquals("ChangedAt should update from config", 2000L, sp.changedAt)
+
+        session.close()
+        macInput.close(); toMac.close(); macOutput.close(); fromMac.close()
+    }
+
     // ── Image transfer tests ───────────────────────────────────────
 
     @Test

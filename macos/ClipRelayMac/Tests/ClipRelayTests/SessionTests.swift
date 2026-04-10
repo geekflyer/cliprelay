@@ -1225,6 +1225,69 @@ final class SessionTests: XCTestCase {
         cleanup(env)
     }
 
+    func testSendClipboardIgnoresInterleavedConfigUpdateBeforeAccept() {
+        let env = createManualStreams()
+        let sp = TestSettingsProvider(richMediaEnabled: false, richMediaEnabledChangedAt: 1000)
+        let readyExpectation = expectation(description: "Session ready")
+        let transferExpectation = expectation(description: "Transfer complete")
+        let settingChangedExpectation = expectation(description: "Setting changed")
+
+        let delegate = TestSessionDelegate()
+        delegate.onReady = { _ in readyExpectation.fulfill() }
+        delegate.onTransferComplete = { _, _ in transferExpectation.fulfill() }
+        delegate.onRichMediaChanged = { _, enabled in
+            XCTAssertTrue(enabled)
+            settingChangedExpectation.fulfill()
+        }
+        delegate.onError = { _, error in
+            XCTFail("Session should not fail on interleaved CONFIG_UPDATE: \(error)")
+        }
+
+        let session = Session(inputStream: env.sessionInput, outputStream: env.sessionOutput,
+                              isInitiator: true, delegate: delegate,
+                              sharedSecretHex: testSharedSecret)
+        session.handshakeTimeoutSeconds = 3.0
+        session.transferTimeoutSeconds = 3.0
+        session.settingsProvider = sp
+
+        DispatchQueue.global().async {
+            session.performHandshake()
+            session.listenForMessages()
+        }
+
+        let hello = try? MessageCodec.decode(from: env.readFromSession)
+        sendValidWelcome(to: env.writeToSession, hello: hello!)
+        wait(for: [readyExpectation], timeout: 3.0)
+
+        session.sendClipboard(Data("config-before-accept".utf8))
+
+        let offer = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(offer?.type, .offer)
+
+        let configJSON: [String: Any] = [
+            "richMediaEnabled": true,
+            "richMediaEnabledChangedAt": 2000
+        ]
+        let configData = try! JSONSerialization.data(withJSONObject: configJSON)
+        writeMessage(Message(type: .configUpdate, payload: configData), to: env.writeToSession)
+
+        writeMessage(Message(type: .accept, payload: Data()), to: env.writeToSession)
+
+        let payload = try? MessageCodec.decode(from: env.readFromSession)
+        XCTAssertEqual(payload?.type, .payload)
+
+        let doneJSON: [String: Any] = ["hash": "ignored", "ok": true]
+        let doneData = try! JSONSerialization.data(withJSONObject: doneJSON)
+        writeMessage(Message(type: .done, payload: doneData), to: env.writeToSession)
+
+        wait(for: [settingChangedExpectation, transferExpectation], timeout: 3.0)
+        XCTAssertTrue(sp.richMediaEnabled)
+        XCTAssertEqual(sp.richMediaEnabledChangedAt, 2000)
+
+        session.close()
+        cleanupManual(env)
+    }
+
     func testConcurrentTransferCancellationNewOfferCancelsInFlight() {
         // Start receiving image A (TCP server started), then verify it can be cancelled
         let env = createManualStreams()

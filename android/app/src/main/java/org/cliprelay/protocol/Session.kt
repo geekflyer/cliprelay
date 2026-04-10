@@ -359,7 +359,7 @@ class Session(
         MessageCodec.write(output, offer)
 
         // Wait for ACCEPT or DONE
-        val response = readWithTimeout(transferTimeoutMs)
+        val response = readWithConfigUpdates(transferTimeoutMs)
         when (response.type) {
             MessageType.ACCEPT -> {
                 // Send PAYLOAD
@@ -367,7 +367,7 @@ class Session(
                 MessageCodec.write(output, payload)
 
                 // Wait for DONE
-                val done = readWithTimeout(transferTimeoutMs)
+                val done = readWithConfigUpdates(transferTimeoutMs)
                 if (done.type != MessageType.DONE) {
                     throw ProtocolException("Expected DONE, got ${done.type}")
                 }
@@ -410,7 +410,7 @@ class Session(
         MessageCodec.write(output, offer)
 
         // Read response: ACCEPT, REJECT, or ERROR
-        val response = readWithTimeout(transferTimeoutMs)
+        val response = readWithConfigUpdates(transferTimeoutMs)
         when (response.type) {
             MessageType.ACCEPT -> {
                 val acceptJson = JSONObject(String(response.payload))
@@ -457,7 +457,7 @@ class Session(
                 }
 
                 // Wait for DONE or ERROR
-                val done = readWithTimeout(transferTimeoutMs)
+                val done = readWithConfigUpdates(transferTimeoutMs)
                 when (done.type) {
                     MessageType.DONE -> {
                         callback.onTransferComplete(hash)
@@ -626,7 +626,7 @@ class Session(
         MessageCodec.write(output, accept)
 
         // Wait for PAYLOAD
-        val payload = readWithTimeout(transferTimeoutMs)
+        val payload = readWithConfigUpdates(transferTimeoutMs)
         if (payload.type != MessageType.PAYLOAD) {
             throw ProtocolException("Expected PAYLOAD, got ${payload.type}")
         }
@@ -682,6 +682,29 @@ class Session(
         }
         // Otherwise (during handshake), read directly from the stream
         return readDirectWithTimeout(timeoutMs)
+    }
+
+    /**
+     * Read the next transfer-related message while allowing CONFIG_UPDATE to
+     * arrive out of band. Settings changes should not poison an active
+     * transfer's request/response flow.
+     */
+    private fun readWithConfigUpdates(timeoutMs: Long): Message {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (!closed.get()) {
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) {
+                throw ProtocolException("Timeout waiting for message (${timeoutMs}ms)")
+            }
+
+            val msg = readWithTimeout(remaining)
+            if (msg.type == MessageType.CONFIG_UPDATE) {
+                handleConfigUpdate(msg)
+                continue
+            }
+            return msg
+        }
+        throw ProtocolException("Session closed while waiting for message")
     }
 
     private fun readDirectWithTimeout(timeoutMs: Long): Message {
