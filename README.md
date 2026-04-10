@@ -17,6 +17,8 @@
 
 Copy on one device, paste on the other. ClipRelay syncs your clipboard between Android and Mac over Bluetooth Low Energy — no cloud, no servers, no accounts.
 
+BLABLA
+
 - **End-to-end encrypted** — AES-256-GCM encryption. ECDH key exchange (X25519) during pairing.
 - **Bluetooth only** — direct BLE transfer, no WiFi or internet needed
 - **No cloud, no servers** — your clipboard data never leaves the connection between your devices
