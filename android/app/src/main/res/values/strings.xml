@@ -1,7 +1,11 @@
 <resources>
     <string name="app_name">ClipRelay</string>
     <string name="service_channel_name">Clipboard Sync</string>
-    <string name="service_notification_text">BLE clipboard sync is active</string>
+    <string name="service_notification_unpaired">Ready to pair with your Mac</string>
+    <string name="service_notification_pairing">Finishing setup with your Mac</string>
+    <string name="service_notification_searching">Looking for your Mac</string>
+    <string name="service_notification_connected">Connected to %1$s</string>
+    <string name="service_notification_connected_fallback">Connected to your Mac</string>
     <string name="main_title">ClipRelay</string>
     <string name="main_subtitle">Clipboard sync stays on while this app is installed and permissions are granted.</string>
     <string name="status_label">Service</string>
