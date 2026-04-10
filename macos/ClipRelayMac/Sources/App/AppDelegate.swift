@@ -178,8 +178,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Device Management
 
     private func forgetDevice(token: String) {
-        connectionController.forgetDevice(token: token)
-        refreshTrustedPeersMenu()
+        connectionController.forgetDevice(token: token) { [weak self] in
+            self?.refreshTrustedPeersMenu()
+        }
     }
 
     // MARK: - Bluetooth Alert

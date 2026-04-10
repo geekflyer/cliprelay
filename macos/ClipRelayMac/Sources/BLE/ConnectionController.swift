@@ -478,7 +478,7 @@ extension ConnectionController {
 
     // MARK: Device Management
 
-    func forgetDevice(token: String) {
+    func forgetDevice(token: String, completion: (() -> Void)? = nil) {
         queue.async { [self] in
             pairingManager.removeDevice(secret: token)
             switch state {
@@ -495,6 +495,9 @@ extension ConnectionController {
             }
             if case .idle = state, !pairingManager.loadDevices().isEmpty {
                 startScanning()
+            }
+            if let completion {
+                DispatchQueue.main.async(execute: completion)
             }
         }
     }
