@@ -24,11 +24,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import org.cliprelay.R
+import org.cliprelay.feedback.LogShareExporter
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.service.ClipboardAccessibilityService
 import org.cliprelay.service.ClipRelayService
 import org.cliprelay.settings.ClipboardSettingsStore
+import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
@@ -275,6 +278,9 @@ class MainActivity : AppCompatActivity() {
                 onSupportLinkClick = { url ->
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                 },
+                onShareLogsClick = { bleState ->
+                    shareLogs(bleState)
+                },
             )
         }
     }
@@ -371,6 +377,33 @@ class MainActivity : AppCompatActivity() {
         }
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    private fun shareLogs(bleState: String) {
+        thread(name = "share-logs") {
+            val result = runCatching {
+                LogShareExporter.createShareIntent(applicationContext, bleState)
+            }
+            runOnUiThread {
+                result.onSuccess { shareIntent ->
+                    val chooser = Intent.createChooser(
+                        shareIntent,
+                        getString(R.string.share_logs_chooser_title)
+                    ).apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        clipData = shareIntent.clipData
+                    }
+                    startActivity(chooser)
+                }.onFailure { error ->
+                    val reason = error.message ?: error.javaClass.simpleName
+                    Toast.makeText(
+                        this,
+                        getString(R.string.share_logs_failed, reason),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
     }
 }

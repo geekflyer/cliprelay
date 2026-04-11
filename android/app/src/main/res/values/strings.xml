@@ -53,4 +53,7 @@
     <string name="ble_permission_open_settings">Open Settings</string>
     <string name="ble_permission_cancel">Cancel</string>
     <string name="ble_permission_required_toast">Nearby devices permission is required to pair</string>
+    <string name="support_share_logs">Share Logs</string>
+    <string name="share_logs_chooser_title">Share ClipRelay logs</string>
+    <string name="share_logs_failed">Could not prepare logs to share: %1$s</string>
 </resources>
