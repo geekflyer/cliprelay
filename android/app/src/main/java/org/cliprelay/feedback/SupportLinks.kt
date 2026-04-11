@@ -13,8 +13,11 @@ object SupportLinks {
         "Device" to "${Build.MANUFACTURER} ${Build.MODEL}",
     )
 
+    fun diagnosticsContext(bleState: String): List<Pair<String, String>> =
+        deviceContext() + ("BLE State" to bleState)
+
     fun gitHubIssueUrl(bleState: String): String {
-        val lines = (deviceContext() + ("BLE State" to bleState))
+        val lines = diagnosticsContext(bleState)
             .joinToString("\n") { "- **${it.first}:** ${it.second}" }
         val body = "\n\n---\n$lines"
         return Uri.parse("https://github.com/geekflyer/cliprelay/issues/new").buildUpon()
@@ -25,7 +28,7 @@ object SupportLinks {
     }
 
     fun emailUrl(bleState: String): String {
-        val lines = (deviceContext() + ("BLE State" to bleState))
+        val lines = diagnosticsContext(bleState)
             .joinToString("\n") { "${it.first}: ${it.second}" }
         val body = "\n\n---\n$lines"
         return "mailto:info@cliprelay.org" +

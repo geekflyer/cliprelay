@@ -97,6 +97,7 @@ fun ClipRelayScreen(
     onAutoCopyFixClick: () -> Unit = {},
     onHelpClick: () -> Unit = {},
     onSupportLinkClick: (String) -> Unit = {},
+    onShareLogsClick: (String) -> Unit = {},
 ) {
     val isConnected = state is AppState.Connected
     val isPaired = state !is AppState.Unpaired
@@ -185,6 +186,7 @@ fun ClipRelayScreen(
                 bleState = if (isConnected) "connected" else if (isPaired) "searching" else "unpaired",
                 onHelpClick = onHelpClick,
                 onSupportLinkClick = onSupportLinkClick,
+                onShareLogsClick = onShareLogsClick,
             )
         }
 
@@ -902,7 +904,13 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMacIcon(tint: C
 
 // ─── Footer ──────────────────────────────────────────────────────────────────
 @Composable
-private fun FooterSection(isPaired: Boolean, bleState: String = "unknown", onHelpClick: () -> Unit, onSupportLinkClick: (String) -> Unit) {
+private fun FooterSection(
+    isPaired: Boolean,
+    bleState: String = "unknown",
+    onHelpClick: () -> Unit,
+    onSupportLinkClick: (String) -> Unit,
+    onShareLogsClick: (String) -> Unit
+) {
     var showSupportDialog by remember { mutableStateOf(false) }
 
     Column(
@@ -948,17 +956,29 @@ private fun FooterSection(isPaired: Boolean, bleState: String = "unknown", onHel
                 showSupportDialog = false
                 onSupportLinkClick(url)
             },
+            onShareLogsClick = {
+                showSupportDialog = false
+                onShareLogsClick(bleState)
+            },
         )
     }
 }
 
 @Composable
-private fun SupportDialog(bleState: String, onDismiss: () -> Unit, onLinkClick: (String) -> Unit) {
+private fun SupportDialog(
+    bleState: String,
+    onDismiss: () -> Unit,
+    onLinkClick: (String) -> Unit,
+    onShareLogsClick: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Feedback & Support") },
         text = {
             Column {
+                TextButton(onClick = onShareLogsClick) {
+                    Text(stringResource(R.string.support_share_logs), modifier = Modifier.fillMaxWidth())
+                }
                 TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.gitHubIssueUrl(bleState)) }) {
                     Text("Report Issue on GitHub", modifier = Modifier.fillMaxWidth())
                 }

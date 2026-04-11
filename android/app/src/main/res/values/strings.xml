@@ -47,4 +47,7 @@
     <string name="accessibility_disclosure_body">ClipRelay uses Android\'s Accessibility Service to detect when you copy text, so it can automatically send your clipboard to your paired Mac.\n\nThis permission allows ClipRelay to monitor tap actions only. It does not read, collect, or store any screen content or personal data.</string>
     <string name="accessibility_disclosure_allow">Allow</string>
     <string name="accessibility_disclosure_deny">Deny</string>
+    <string name="support_share_logs">Share Logs</string>
+    <string name="share_logs_chooser_title">Share ClipRelay logs</string>
+    <string name="share_logs_failed">Could not prepare logs to share: %1$s</string>
 </resources>

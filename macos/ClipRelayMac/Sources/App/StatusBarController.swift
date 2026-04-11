@@ -32,6 +32,7 @@ final class StatusBarController {
 
     private var baseStatusBarImage: NSImage?
     private var syncPulseTimer: Timer?
+    private var sharingPicker: NSSharingServicePicker?
 
     init(updaterController: SPUStandardUpdaterController) {
         self.updaterController = updaterController
@@ -191,6 +192,9 @@ final class StatusBarController {
         let emailItem = NSMenuItem(title: "Email Support\u{2026}", action: #selector(handleOpenEmail), keyEquivalent: "")
         emailItem.target = self
         supportMenu.addItem(emailItem)
+        let shareLogsItem = NSMenuItem(title: "Share Logs\u{2026}", action: #selector(handleShareLogs), keyEquivalent: "")
+        shareLogsItem.target = self
+        supportMenu.addItem(shareLogsItem)
         supportMenu.addItem(NSMenuItem.separator())
         let discussionsItem = NSMenuItem(title: "Community Discussions\u{2026}", action: #selector(handleOpenDiscussions), keyEquivalent: "")
         discussionsItem.target = self
@@ -347,6 +351,23 @@ final class StatusBarController {
     }
 
     @objc
+    private func handleShareLogs() {
+        let context = deviceContext()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result(catching: { try LogShareExporter.exportLogs(deviceContext: context) })
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch result {
+                case .success(let fileURL):
+                    self.presentSharingPicker(for: fileURL)
+                case .failure(let error):
+                    self.presentShareLogsError(message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    @objc
     private func handleOpenDiscussions() {
         if let url = URL(string: "https://github.com/geekflyer/cliprelay/discussions") {
             NSWorkspace.shared.open(url)
@@ -373,6 +394,24 @@ final class StatusBarController {
             ("Device", model),
             ("BLE State", bleState),
         ]
+    }
+
+    private func presentSharingPicker(for fileURL: URL) {
+        guard let button = statusItem.button else {
+            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+            return
+        }
+        let picker = NSSharingServicePicker(items: [fileURL])
+        sharingPicker = picker
+        picker.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    private func presentShareLogsError(message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Could not prepare ClipRelay logs"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     @objc
