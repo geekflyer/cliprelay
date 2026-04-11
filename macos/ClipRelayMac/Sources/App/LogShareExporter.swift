@@ -42,7 +42,6 @@ enum LogShareExporter {
 
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             return "Unable to capture unified logs: \(error.localizedDescription)"
         }
@@ -51,6 +50,7 @@ enum LogShareExporter {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let errorOutput = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
             return """
