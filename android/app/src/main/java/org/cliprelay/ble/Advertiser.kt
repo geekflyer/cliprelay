@@ -81,8 +81,21 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
         // Scan response: device tag + PSM as manufacturer data, plus device name.
         // Manufacturer data: 2 (company ID) + 8 (tag) + 2 (PSM) = 12 bytes + overhead ~12 bytes.
         // Device name: up to ~15 chars. Both fit in 31 bytes.
+        //
+        // In practice, the local Bluetooth name can be much longer and will cause
+        // ADVERTISE_FAILED_DATA_TOO_LARGE. Pre-compute if it can fit and omit it up-front.
+        val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+        val localNameUtf8Bytes = adapter?.name?.toByteArray(Charsets.UTF_8)?.size
         val scanResponseBuilder = AdvertiseData.Builder()
-            .setIncludeDeviceName(includeDeviceName)
+            .setIncludeDeviceName(
+                includeDeviceName && (
+                    localNameUtf8Bytes == null ||
+                        BleAdvertiseSizing.canIncludeDeviceName(
+                            nameUtf8Bytes = localNameUtf8Bytes,
+                            manufacturerPayloadLen = deviceTag?.size?.let { it + 2 }
+                        )
+                    )
+            )
         val tag = deviceTag
         if (tag != null) {
             // Pack: [device_tag: 8 bytes][psm: 2 bytes big-endian]
