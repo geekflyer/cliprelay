@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetryManager: TelemetryManager?
     private var clipboardMonitor: ClipboardMonitor?
     private var awaitingNewPairingConnection = false
-    private var hasShownBluetoothAlert = false
+    private var bluetoothAlertState = BluetoothAlertStateMachine()
     private var bluetoothOffDebounceTimer: Timer?
     private static let bluetoothOffDebounceDelay: TimeInterval = 60.0
 
@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notificationManager.requestAuthorization()
         pairingManager.removePendingDevices()
         enableLaunchAtLoginIfFirstRun()
+        installSleepWakeObservers()
 
         updaterDriverDelegate.onUpdateAvailabilityChanged = { [weak self] in
             guard let self else { return }
@@ -127,6 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         bluetoothOffDebounceTimer?.invalidate()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         telemetryManager?.stop()
         clipboardMonitor?.stop()
         connectionController?.disconnect()
@@ -183,6 +185,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Bluetooth Alert
+
+    private func installSleepWakeObservers() {
+        let workspaceNotifications = NSWorkspace.shared.notificationCenter
+        workspaceNotifications.addObserver(
+            self,
+            selector: #selector(handleSystemWillSleep),
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+        workspaceNotifications.addObserver(
+            self,
+            selector: #selector(handleSystemDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleSystemWillSleep(_ notification: Notification) {
+        applyBluetoothAlertEffect(bluetoothAlertState.handleWillSleep())
+    }
+
+    @objc private func handleSystemDidWake(_ notification: Notification) {
+        applyBluetoothAlertEffect(bluetoothAlertState.handleDidWake())
+    }
+
+    private func applyBluetoothAlertEffect(_ effect: BluetoothAlertEffect) {
+        switch effect {
+        case .none:
+            break
+        case .cancelDebounce(let clearWarning):
+            bluetoothOffDebounceTimer?.invalidate()
+            bluetoothOffDebounceTimer = nil
+            if clearWarning {
+                statusBarController.setBluetoothWarning(nil)
+            }
+        case .schedulePoweredOffDebounce:
+            scheduleBluetoothOffAlertIfNeeded()
+        case .showUnauthorizedAlert:
+            bluetoothOffDebounceTimer?.invalidate()
+            bluetoothOffDebounceTimer = nil
+            statusBarController.setBluetoothWarning("Bluetooth permission denied")
+            showBluetoothAlert(
+                message: "Bluetooth access denied",
+                info: "ClipRelay needs Bluetooth permission. Please grant access in System Settings > Privacy & Security > Bluetooth."
+            )
+        }
+    }
+
+    private func scheduleBluetoothOffAlertIfNeeded() {
+        guard bluetoothOffDebounceTimer == nil else { return }
+        bluetoothOffDebounceTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.bluetoothOffDebounceDelay, repeats: false
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.bluetoothOffDebounceTimer = nil
+            self.bluetoothAlertState.markPoweredOffAlertShown()
+            self.statusBarController.setBluetoothWarning("Bluetooth is turned off")
+            self.showBluetoothAlert(
+                message: "Bluetooth is turned off",
+                info: "ClipRelay needs Bluetooth to sync your clipboard. Please enable Bluetooth in System Settings."
+            )
+        }
+    }
 
     private func showBluetoothAlert(message: String, info: String) {
         let alert = NSAlert()
@@ -287,38 +352,7 @@ extension AppDelegate: ConnectionControllerDelegate {
     }
 
     func didUpdateBluetoothState(state: CBManagerState) {
-        switch state {
-        case .poweredOn:
-            bluetoothOffDebounceTimer?.invalidate()
-            bluetoothOffDebounceTimer = nil
-            statusBarController.setBluetoothWarning(nil)
-            hasShownBluetoothAlert = false
-        case .unauthorized:
-            statusBarController.setBluetoothWarning("Bluetooth permission denied")
-            if !hasShownBluetoothAlert {
-                hasShownBluetoothAlert = true
-                showBluetoothAlert(
-                    message: "Bluetooth access denied",
-                    info: "ClipRelay needs Bluetooth permission. Please grant access in System Settings > Privacy & Security > Bluetooth."
-                )
-            }
-        case .poweredOff:
-            if !hasShownBluetoothAlert && bluetoothOffDebounceTimer == nil {
-                bluetoothOffDebounceTimer = Timer.scheduledTimer(
-                    withTimeInterval: Self.bluetoothOffDebounceDelay, repeats: false
-                ) { [weak self] _ in
-                    guard let self else { return }
-                    self.bluetoothOffDebounceTimer = nil
-                    self.hasShownBluetoothAlert = true
-                    self.statusBarController.setBluetoothWarning("Bluetooth is turned off")
-                    self.showBluetoothAlert(
-                        message: "Bluetooth is turned off",
-                        info: "ClipRelay needs Bluetooth to sync your clipboard. Please enable Bluetooth in System Settings."
-                    )
-                }
-            }
-        default: break
-        }
+        applyBluetoothAlertEffect(bluetoothAlertState.handleBluetoothState(state))
     }
 
     func didSyncClipboard(hash: String) {
