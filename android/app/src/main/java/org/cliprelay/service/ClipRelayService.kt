@@ -5,6 +5,7 @@ package org.cliprelay.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
@@ -37,6 +38,7 @@ import org.cliprelay.protocol.SessionCallback
 import org.cliprelay.protocol.SessionMode
 import org.cliprelay.protocol.VersionMismatchException
 import org.cliprelay.settings.ClipboardSettingsStore
+import org.cliprelay.ui.MainActivity
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.Executors
@@ -71,6 +73,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
 
         private const val TAG = "ClipRelayService"
+        private const val NOTIFICATION_ID = 1001
+        private const val NOTIFICATION_CHANNEL_ID = "cliprelay-service"
         private const val MAX_CLIPBOARD_BYTES = 102_400
         private const val CLIPBOARD_DEBOUNCE_MS = 200L
     }
@@ -105,6 +109,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private var bleStarted = false
     @Volatile
     private var isDestroyed = false
+    @Volatile
+    private var isConnected = false
     @Volatile
     private var pairingInProgress = false
     private var pendingPairingKeyPair: java.security.KeyPair? = null
@@ -144,7 +150,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         loadPairingState()
         DebugSmokeProbe.reset(this)
 
-        startForeground(1001, buildNotification())
+        startForeground(NOTIFICATION_ID, buildNotification())
         ContextCompat.registerReceiver(
             this,
             bluetoothStateReceiver,
@@ -230,7 +236,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 }
             }
             ACTION_QUERY_CONNECTION -> {
-                val connected = activeSession != null
+                val connected = isConnected
                 val name = if (connected) loadConnectedDeviceName() else null
                 sendConnectionBroadcast(connected, name)
             }
@@ -373,6 +379,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         sessionThread?.let { thread ->
             try { thread.join(2000) } catch (_: InterruptedException) {}
         }
+        isConnected = false
 
         // Determine session mode
         val mode = if (pairingInProgress) {
@@ -518,6 +525,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         if (remoteName != null) {
             saveConnectedDeviceName(remoteName)
         }
+        updateNotification()
 
         // Broadcast pairing complete with device tag for UI
         val deviceTagHex = E2ECrypto.deviceTag(sharedSecret).take(4)
@@ -652,6 +660,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             stopBleComponents(broadcastDisconnected = false)
         }
         ensureBleComponentsState()
+        updateNotification()
     }
 
     // ── Unpair ────────────────────────────────────────────────────────
@@ -772,11 +781,13 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     }
 
     private fun sendConnectionBroadcast(connected: Boolean, deviceName: String? = null) {
+        isConnected = connected
         val intent = Intent(ACTION_CONNECTION_STATE)
         intent.setPackage(packageName)
         intent.putExtra(EXTRA_CONNECTED, connected)
         if (deviceName != null) intent.putExtra(EXTRA_DEVICE_NAME, deviceName)
         sendBroadcast(intent)
+        updateNotification()
     }
 
     // ── Preferences ───────────────────────────────────────────────────
@@ -795,20 +806,52 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     // ── Notification ──────────────────────────────────────────────────
 
     private fun buildNotification(): Notification {
-        val channelId = "cliprelay-service"
         val manager = getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(
-            channelId,
+            NOTIFICATION_CHANNEL_ID,
             getString(R.string.service_channel_name),
             NotificationManager.IMPORTANCE_LOW
         )
         manager.createNotificationChannel(channel)
 
-        return NotificationCompat.Builder(this, channelId)
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.service_notification_text))
+            .setContentText(resolveNotificationText())
+            .setContentIntent(buildNotificationContentIntent())
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .build()
+    }
+
+    private fun buildNotificationContentIntent(): PendingIntent {
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        return PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun resolveNotificationText(): String = when {
+        isConnected -> {
+            val deviceName = loadConnectedDeviceName()
+            if (deviceName.isNullOrBlank()) {
+                getString(R.string.service_notification_connected_fallback)
+            } else {
+                getString(R.string.service_notification_connected, deviceName)
+            }
+        }
+        pairingInProgress -> getString(R.string.service_notification_pairing)
+        isPaired -> getString(R.string.service_notification_searching)
+        else -> getString(R.string.service_notification_unpaired)
+    }
+
+    private fun updateNotification() {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(NOTIFICATION_ID, buildNotification())
     }
 }
