@@ -37,13 +37,34 @@ internal class ClipboardAccessibilityHeuristics(
     fun containsCopyText(values: Sequence<String>): Boolean {
         return values
             .map(::normalize)
-            .any(::isCopyAffordanceText)
+            .any(COPY_WORDS::contains)
+    }
+
+    fun containsCopyWindowText(packageName: String?, values: Sequence<String>): Boolean {
+        return values
+            .map(::normalize)
+            .any { normalized ->
+                if (packageName in BROAD_WINDOW_COMMAND_PACKAGES) {
+                    isCopyAffordanceText(normalized)
+                } else {
+                    COPY_WORDS.contains(normalized)
+                }
+            }
     }
 
     fun containsCopyCommandText(values: Sequence<String>): Boolean {
         return values
             .map(::normalize)
             .any(::isCopyAffordanceText)
+    }
+
+    fun debugCopyCandidates(values: Sequence<String>): List<String> {
+        return values
+            .map(::normalize)
+            .filter(::looksCopyRelated)
+            .distinct()
+            .take(MAX_DEBUG_CANDIDATES)
+            .toList()
     }
 
     private fun normalize(value: String): String {
@@ -61,10 +82,24 @@ internal class ClipboardAccessibilityHeuristics(
             }
     }
 
+    private fun looksCopyRelated(normalized: String): Boolean {
+        return isCopyAffordanceText(normalized) ||
+            COPY_COMMAND_PREFIXES.any { prefix -> normalized.startsWith("$prefix ") }
+    }
+
     companion object {
         const val DEFAULT_TOOLBAR_GRACE_PERIOD_MS = 1_500L
+        private const val MAX_DEBUG_CANDIDATES = 4
 
         private val WHITESPACE_REGEX = "\\s+".toRegex()
+        private val BROAD_WINDOW_COMMAND_PACKAGES = setOf(
+            "com.reddit.frontpage",
+            "com.android.chrome",
+            "org.mozilla.firefox",
+            "com.brave.browser",
+            "com.microsoft.emmx",
+            "com.sec.android.app.sbrowser",
+        )
 
         private val COPY_WORDS = setOf(
             "copy",

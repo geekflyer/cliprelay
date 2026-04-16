@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import org.cliprelay.BuildConfig
 import org.cliprelay.settings.ClipboardSettingsStore
 
 class ClipboardAccessibilityService : AccessibilityService() {
@@ -45,15 +46,18 @@ class ClipboardAccessibilityService : AccessibilityService() {
     // ── TYPE_VIEW_CLICKED detection (most apps) ──────────────────────
 
     private fun handleClickEvent(event: AccessibilityEvent) {
-        if (eventMatchesCopy(event)) {
+        val matched = eventMatchesCopy(event)
+        if (matched) {
             triggerCopyDetected("click", ClipRelayService.CLIPBOARD_TRIGGER_DIRECT)
+        } else {
+            logPotentialMissIfDebug("click", event)
         }
     }
 
     // ── TYPE_WINDOW_STATE_CHANGED detection (Chrome, etc.) ───────────
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
-        val hasCopyAffordance = heuristics.containsCopyText(eventSignals(event))
+        val hasCopyAffordance = heuristics.containsCopyWindowText(packageName(event), eventSignals(event))
         if (heuristics.onCopyAffordanceChanged(hasCopyAffordance)) {
             triggerCopyDetected(
                 "window state changed close",
@@ -61,6 +65,8 @@ class ClipboardAccessibilityService : AccessibilityService() {
             )
         } else if (hasCopyAffordance) {
             Log.d(TAG, "Copy affordance visible via window state changed")
+        } else {
+            logPotentialMissIfDebug("window_state", event)
         }
     }
 
@@ -99,6 +105,46 @@ class ClipboardAccessibilityService : AccessibilityService() {
         val contentDescription = sequenceOf(node.contentDescription?.toString()).filterNotNull()
         val actionLabels = node.actionList.asSequence().mapNotNull { it.label?.toString() }
         return nodeText + contentDescription + actionLabels
+    }
+
+    private fun packageName(event: AccessibilityEvent): String? = event.packageName?.toString()
+
+    private fun logPotentialMissIfDebug(reason: String, event: AccessibilityEvent) {
+        if (!BuildConfig.DEBUG) return
+
+        val candidates = eventDebugCandidates(event)
+        if (candidates.isEmpty()) return
+
+        Log.d(
+            TAG,
+            "Potential copy miss: reason=$reason type=${eventTypeName(event.eventType)} " +
+                "pkg=${packageName(event) ?: "unknown"} candidates=$candidates"
+        )
+    }
+
+    private fun eventTypeName(eventType: Int): String {
+        return when (eventType) {
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> "view_clicked"
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "window_state_changed"
+            else -> eventType.toString()
+        }
+    }
+
+    private fun eventDebugCandidates(event: AccessibilityEvent): List<String> {
+        val signals = mutableListOf<String>()
+        signals += event.text.map { it.toString() }
+        event.contentDescription?.toString()?.let(signals::add)
+
+        val source = event.source
+        if (source != null) {
+            try {
+                signals += nodeSignals(source).toList()
+            } finally {
+                source.recycle()
+            }
+        }
+
+        return heuristics.debugCopyCandidates(signals.asSequence())
     }
 
     companion object {

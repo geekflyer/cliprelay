@@ -12,8 +12,30 @@ class ClipboardAccessibilityHeuristicsTest {
 
         assertTrue(heuristics.containsCopyText(sequenceOf("Copy link")))
         assertTrue(heuristics.containsCopyText(sequenceOf("COPY CODE")))
-        assertTrue(heuristics.containsCopyText(sequenceOf("Copy permalink")))
-        assertTrue(heuristics.containsCopyText(sequenceOf("Copy post link")))
+    }
+
+    @Test
+    fun `window text uses broader matching for known toolbar apps`() {
+        val heuristics = ClipboardAccessibilityHeuristics()
+
+        assertTrue(
+            heuristics.containsCopyWindowText(
+                "com.reddit.frontpage",
+                sequenceOf("Copy permalink")
+            )
+        )
+        assertTrue(
+            heuristics.containsCopyWindowText(
+                "com.android.chrome",
+                sequenceOf("Copy address")
+            )
+        )
+        assertFalse(
+            heuristics.containsCopyWindowText(
+                "com.example.notes",
+                sequenceOf("Copy address")
+            )
+        )
     }
 
     @Test
@@ -32,8 +54,23 @@ class ClipboardAccessibilityHeuristicsTest {
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy address")))
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy password")))
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy permalink")))
+        assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy post link")))
         assertFalse(heuristics.containsCopyCommandText(sequenceOf("Don't copy")))
         assertFalse(heuristics.containsCopyCommandText(sequenceOf("Copy to folder")))
+    }
+
+    @Test
+    fun `debug copy candidates only returns copy like labels`() {
+        val heuristics = ClipboardAccessibilityHeuristics()
+
+        val candidates = heuristics.debugCopyCandidates(
+            sequenceOf("Copy permalink", "Share link", "Copy to folder", "copycat")
+        )
+
+        assertTrue(candidates.contains("copy permalink"))
+        assertTrue(candidates.contains("copy to folder"))
+        assertFalse(candidates.contains("share link"))
+        assertFalse(candidates.contains("copycat"))
     }
 
     @Test
