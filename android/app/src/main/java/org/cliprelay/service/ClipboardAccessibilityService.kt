@@ -172,6 +172,27 @@ class ClipboardAccessibilityService : AccessibilityService() {
             return false
         }
 
+        if (isActionableNode(node)) {
+            return true
+        }
+
+        var currentParent = node.parent
+        var depth = 0
+        while (currentParent != null && depth < MAX_ACTIONABLE_ANCESTOR_DEPTH) {
+            val parent = currentParent
+            if (isActionableNode(parent)) {
+                parent.recycle()
+                return true
+            }
+            currentParent = parent.parent
+            parent.recycle()
+            depth += 1
+        }
+
+        return false
+    }
+
+    private fun isActionableNode(node: AccessibilityNodeInfo): Boolean {
         return node.isClickable ||
             node.isLongClickable ||
             node.isFocusable ||
@@ -229,6 +250,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "ClipboardA11y"
         private const val MAX_WINDOW_SCAN_NODES = 64
+        private const val MAX_ACTIONABLE_ANCESTOR_DEPTH = 2
     }
 
     private fun triggerCopyDetected(
