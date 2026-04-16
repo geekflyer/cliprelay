@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.core.content.ContextCompat
 
 class ClipboardGhostActivity : ComponentActivity() {
 
@@ -77,7 +78,7 @@ class ClipboardGhostActivity : ComponentActivity() {
             action = ClipRelayService.ACTION_PUSH_TEXT
             putExtra(ClipRelayService.EXTRA_TEXT, text)
         }
-        startService(pushIntent)
+        ContextCompat.startForegroundService(this, pushIntent)
         Log.d(TAG, "Forwarded clipboard text to service (${text.length} chars)")
     }
 
@@ -90,7 +91,7 @@ class ClipboardGhostActivity : ComponentActivity() {
         val clearIntent = Intent(this, ClipRelayService::class.java).apply {
             action = ClipRelayService.ACTION_GHOST_FINISHED
         }
-        startService(clearIntent)
+        ContextCompat.startForegroundService(this, clearIntent)
 
         finish()
         if (android.os.Build.VERSION.SDK_INT >= 34) {

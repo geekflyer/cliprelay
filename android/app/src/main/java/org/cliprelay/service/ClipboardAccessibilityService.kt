@@ -15,6 +15,7 @@ package org.cliprelay.service
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.util.Log
+import androidx.core.content.ContextCompat
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.cliprelay.settings.ClipboardSettingsStore
@@ -22,10 +23,7 @@ import org.cliprelay.settings.ClipboardSettingsStore
 class ClipboardAccessibilityService : AccessibilityService() {
 
     private lateinit var settingsStore: ClipboardSettingsStore
-
-    // Tracks whether a copy toolbar was recently visible
-    @Volatile
-    private var copyToolbarVisible = false
+    private val heuristics = ClipboardAccessibilityHeuristics()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -40,6 +38,8 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClickEvent(event)
+            AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> handleNotificationEvent(event)
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> handleWindowSnapshotEvent(event, "window content changed")
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
         }
     }
@@ -47,98 +47,117 @@ class ClipboardAccessibilityService : AccessibilityService() {
     // ── TYPE_VIEW_CLICKED detection (most apps) ──────────────────────
 
     private fun handleClickEvent(event: AccessibilityEvent) {
-        // Check source node for ACTION_COPY (Tier 1)
-        val source = event.source
-        if (source != null) {
-            try {
-                if (hasActionCopy(source)) {
-                    Log.d(TAG, "ACTION_COPY detected on clicked node")
-                    copyToolbarVisible = false
-                    notifyService()
-                    return
-                }
-            } finally {
-                source.recycle()
-            }
-        }
-
-        // Check event text for "Copy" (Tier 3)
-        if (isCopyText(event)) {
-            Log.d(TAG, "Copy text detected in click event")
-            copyToolbarVisible = false
-            notifyService()
+        if (eventMatchesCopy(event)) {
+            triggerCopyDetected("click")
         }
     }
 
     // ── TYPE_WINDOW_STATE_CHANGED detection (Chrome, etc.) ───────────
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
-        val text = event.text?.joinToString(" ")?.lowercase() ?: ""
+        handleWindowSnapshotEvent(event, "window state changed")
+    }
 
-        val hasCopyOption = COPY_WORDS.any { text.contains(it) }
-
-        if (hasCopyOption) {
-            // Toolbar with "Copy" option appeared — just note it, don't act yet
-            if (!copyToolbarVisible) {
-                Log.d(TAG, "Copy toolbar appeared")
-            }
-            copyToolbarVisible = true
-        } else if (copyToolbarVisible) {
-            // Toolbar was visible but this window state change doesn't have copy text
-            // → toolbar closed (user tapped an option or dismissed it)
-            copyToolbarVisible = false
-            Log.d(TAG, "Copy toolbar closed → checking clipboard")
-            notifyService()
+    private fun handleNotificationEvent(event: AccessibilityEvent) {
+        if (heuristics.containsCopyConfirmationText(eventSignals(event))) {
+            triggerCopyDetected("notification")
         }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
 
+    private fun handleWindowSnapshotEvent(event: AccessibilityEvent, reason: String) {
+        val hasCopyAffordance = snapshotHasCopyAffordance(event)
+        if (heuristics.onCopyAffordanceChanged(hasCopyAffordance)) {
+            triggerCopyDetected("$reason close")
+        } else if (hasCopyAffordance) {
+            Log.d(TAG, "Copy affordance visible via $reason")
+        }
+    }
+
+    private fun eventMatchesCopy(event: AccessibilityEvent): Boolean {
+        if (snapshotHasCopyAffordance(event)) {
+            return true
+        }
+        return heuristics.containsCopyText(eventSignals(event))
+    }
+
+    private fun snapshotHasCopyAffordance(event: AccessibilityEvent): Boolean {
+        val source = event.source
+        if (source != null) {
+            try {
+                if (nodeContainsCopySignal(source, 0)) {
+                    return true
+                }
+            } finally {
+                @Suppress("DEPRECATION")
+                source.recycle()
+            }
+        }
+
+        val root = rootInActiveWindow
+        if (root != null) {
+            try {
+                if (nodeContainsCopySignal(root, 0)) {
+                    return true
+                }
+            } finally {
+                @Suppress("DEPRECATION")
+                root.recycle()
+            }
+        }
+
+        return heuristics.containsCopyText(eventSignals(event))
+    }
+
+    private fun nodeContainsCopySignal(node: AccessibilityNodeInfo, depth: Int): Boolean {
+        if (depth > MAX_NODE_DEPTH) return false
+        if (hasActionCopy(node)) return true
+
+        val nodeSignals = sequenceOf(
+            node.text?.toString(),
+            node.contentDescription?.toString()
+        ).filterNotNull()
+        if (heuristics.containsCopyText(nodeSignals)) {
+            return true
+        }
+
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+            try {
+                if (nodeContainsCopySignal(child, depth + 1)) {
+                    return true
+                }
+            } finally {
+                @Suppress("DEPRECATION")
+                child.recycle()
+            }
+        }
+        return false
+    }
+
     private fun hasActionCopy(node: AccessibilityNodeInfo): Boolean {
         return node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_COPY }
     }
 
-    private fun isCopyText(event: AccessibilityEvent): Boolean {
-        val text = event.text?.joinToString(" ")?.lowercase()?.trim() ?: return false
-        if (text.contains("copyright")) return false
-        return text in COPY_WORDS
+    private fun eventSignals(event: AccessibilityEvent): Sequence<String> {
+        val eventText = event.text.asSequence().map { it.toString() }
+        val contentDescription = sequenceOf(event.contentDescription?.toString()).filterNotNull()
+        return eventText + contentDescription
     }
 
     companion object {
         private const val TAG = "ClipboardA11y"
-
-        private val COPY_WORDS = setOf(
-            "copy", "copy text",           // English
-            "copiar", "copiar texto",       // Spanish, Portuguese
-            "copier",                       // French
-            "kopieren",                     // German
-            "kopiëren",                     // Dutch
-            "copia", "copiare",             // Italian
-            "コピー",                        // Japanese
-            "복사",                          // Korean
-            "复制",                          // Chinese (Simplified)
-            "複製",                          // Chinese (Traditional)
-            "копировать", "скопировать",     // Russian
-            "kopyala",                      // Turkish
-            "คัดลอก",                       // Thai
-            "sao chép",                     // Vietnamese
-            "salin",                        // Filipino/Malay
-            "kopiuj", "skopiuj",            // Polish
-            "kopírovat",                    // Czech
-            "kopiera",                      // Swedish
-            "kopioi",                       // Finnish
-            "αντιγραφή",                    // Greek
-            "העתק",                         // Hebrew
-            "نسخ",                          // Arabic
-            "कॉपी करें",                     // Hindi
-        )
+        private const val MAX_NODE_DEPTH = 5
     }
 
-    private fun notifyService() {
+    private fun triggerCopyDetected(reason: String) {
+        heuristics.resetAfterDirectDetection()
+        Log.d(TAG, "Copy detected via $reason")
         val intent = Intent(this, ClipRelayService::class.java).apply {
             action = ClipRelayService.ACTION_ACCESSIBILITY_COPY_DETECTED
         }
-        startService(intent)
+        ContextCompat.startForegroundService(this, intent)
     }
 
     override fun onInterrupt() {

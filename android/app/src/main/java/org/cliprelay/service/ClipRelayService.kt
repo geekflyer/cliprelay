@@ -89,8 +89,6 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     @Volatile
     private var lastInboundHash: String? = null
     @Volatile
-    private var lastSentTextHash: String? = null
-    @Volatile
     private var lastReceivedImageHash: String? = null
 
     // Support
@@ -100,6 +98,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private val executor = Executors.newSingleThreadExecutor()
     private val clipboardAutoClearHandler = Handler(Looper.getMainLooper())
     private var pendingClipboardAutoClear: Runnable? = null
+    private val clipboardSendGate = ClipboardSendGate()
 
     @Volatile
     private var bleStarted = false
@@ -474,6 +473,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         Log.e(TAG, "Session error: ${error.message}")
         activeSession = null
         sessionThread = null
+        clipboardSendGate.reset()
         sendConnectionBroadcast(false)
         DebugSmokeProbe.onConnectionChanged(this, false)
 
@@ -571,18 +571,17 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             return
         }
 
-        // Dedup: skip if we already sent this exact text
         val textHash = MessageDigest.getInstance("SHA-256")
             .digest(plaintext).joinToString("") { "%02x".format(it) }
-        if (textHash == lastSentTextHash) {
-            Log.d(TAG, "Skipping send — same text already sent")
-            return
-        }
-        lastSentTextHash = textHash
 
         val session = activeSession
         if (session == null) {
             Log.d(TAG, "No active L2CAP session; skipping Android->Mac push")
+            return
+        }
+
+        if (!clipboardSendGate.shouldSend(textHash)) {
+            Log.d(TAG, "Skipping send — same text was sent very recently")
             return
         }
 
