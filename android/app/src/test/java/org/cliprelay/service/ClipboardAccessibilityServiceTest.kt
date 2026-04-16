@@ -7,27 +7,27 @@ import org.junit.Test
 class ClipboardAccessibilityServiceTest {
 
     @Test
-    fun `delayed probe requires a fresh clipboard timestamp`() {
+    fun `toolbar close read requires a fresh clipboard timestamp`() {
         assertFalse(
-            ClipboardAccessibilityService.delayedProbeHasFreshClipboardTimestamp(
+            ClipboardAccessibilityService.toolbarCloseShouldTriggerRead(
                 clipboardTimestampMs = null,
                 minClipboardTimestampMs = 10_000L
             )
         )
         assertFalse(
-            ClipboardAccessibilityService.delayedProbeHasFreshClipboardTimestamp(
-                clipboardTimestampMs = 9_600L,
+            ClipboardAccessibilityService.toolbarCloseShouldTriggerRead(
+                clipboardTimestampMs = 8_900L,
                 minClipboardTimestampMs = 10_000L
             )
         )
         assertTrue(
-            ClipboardAccessibilityService.delayedProbeHasFreshClipboardTimestamp(
-                clipboardTimestampMs = 9_800L,
+            ClipboardAccessibilityService.toolbarCloseShouldTriggerRead(
+                clipboardTimestampMs = 9_100L,
                 minClipboardTimestampMs = 10_000L
             )
         )
         assertTrue(
-            ClipboardAccessibilityService.delayedProbeHasFreshClipboardTimestamp(
+            ClipboardAccessibilityService.toolbarCloseShouldTriggerRead(
                 clipboardTimestampMs = 10_200L,
                 minClipboardTimestampMs = 10_000L
             )

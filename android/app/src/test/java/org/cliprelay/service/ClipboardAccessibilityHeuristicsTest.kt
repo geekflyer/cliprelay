@@ -207,12 +207,28 @@ class ClipboardAccessibilityHeuristicsTest {
     }
 
     @Test
-    fun `conservative delayed probe stays package scoped`() {
+    fun `window probe strategy stays package scoped outside aggressive mode`() {
         val heuristics = ClipboardAccessibilityHeuristics()
 
-        assertTrue(heuristics.shouldUseConservativeDelayedProbe("com.reddit.frontpage"))
-        assertTrue(heuristics.shouldUseConservativeDelayedProbe("com.reddit.frontpage.debug"))
-        assertFalse(heuristics.shouldUseConservativeDelayedProbe("com.android.chrome"))
-        assertFalse(heuristics.shouldUseConservativeDelayedProbe(null))
+        assertEquals(
+            WindowProbeStrategy.BALANCED,
+            heuristics.windowProbeStrategy("com.reddit.frontpage", aggressiveMode = false)
+        )
+        assertEquals(
+            WindowProbeStrategy.BALANCED,
+            heuristics.windowProbeStrategy("com.reddit.frontpage.debug", aggressiveMode = false)
+        )
+        assertEquals(
+            WindowProbeStrategy.NONE,
+            heuristics.windowProbeStrategy("com.android.chrome", aggressiveMode = false)
+        )
+        assertEquals(
+            WindowProbeStrategy.NONE,
+            heuristics.windowProbeStrategy(null, aggressiveMode = false)
+        )
+        assertEquals(
+            WindowProbeStrategy.AGGRESSIVE,
+            heuristics.windowProbeStrategy("com.android.chrome", aggressiveMode = true)
+        )
     }
 }

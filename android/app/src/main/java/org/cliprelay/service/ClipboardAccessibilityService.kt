@@ -68,7 +68,12 @@ class ClipboardAccessibilityService : AccessibilityService() {
     // ── TYPE_WINDOW_STATE_CHANGED detection (Chrome, etc.) ───────────
 
     private fun handleWindowChangeEvent(event: AccessibilityEvent, aggressiveMode: Boolean) {
-        if (aggressiveMode) {
+        val probeStrategy = heuristics.windowProbeStrategy(
+            packageName = event.packageName,
+            aggressiveMode = aggressiveMode
+        )
+
+        if (probeStrategy == WindowProbeStrategy.AGGRESSIVE) {
             val removedWindowSeenAtMs = heuristics.onWindowsRemoved(event.windowChanges)
             if (removedWindowSeenAtMs != null) {
                 cancelWindowProbe()
@@ -79,9 +84,8 @@ class ClipboardAccessibilityService : AccessibilityService() {
                             "windowChanges=${event.windowChanges}"
                     )
                 }
-                triggerCopyDetected(
-                    "${eventTypeName(event.eventType)} removed",
-                    ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                triggerToolbarCloseIfFresh(
+                    reason = "${eventTypeName(event.eventType)} removed",
                     minClipboardTimestampMs = removedWindowSeenAtMs
                 )
                 return
@@ -97,9 +101,8 @@ class ClipboardAccessibilityService : AccessibilityService() {
                             "windowChanges=${event.windowChanges}"
                     )
                 }
-                triggerCopyDetected(
-                    "${eventTypeName(event.eventType)} mutation",
-                    ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                triggerToolbarCloseIfFresh(
+                    reason = "${eventTypeName(event.eventType)} mutation",
                     minClipboardTimestampMs = mutationSeenAtMs
                 )
                 return
@@ -110,14 +113,13 @@ class ClipboardAccessibilityService : AccessibilityService() {
         val affordanceSeenAtMs = heuristics.onCopyAffordanceChanged(hasCopyAffordance)
         if (affordanceSeenAtMs != null) {
             cancelWindowProbe()
-            triggerCopyDetected(
-                "${eventTypeName(event.eventType)} close",
-                ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+            triggerToolbarCloseIfFresh(
+                reason = "${eventTypeName(event.eventType)} close",
                 minClipboardTimestampMs = affordanceSeenAtMs
             )
         } else if (hasCopyAffordance) {
             Log.d(TAG, "Copy affordance visible via ${eventTypeName(event.eventType)}")
-            if (aggressiveMode || heuristics.shouldUseConservativeDelayedProbe(event.packageName)) {
+            if (probeStrategy != WindowProbeStrategy.NONE) {
                 scheduleWindowProbe(event)
             }
         } else {
@@ -298,7 +300,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
         pendingWindowProbe = Runnable {
             if (windowProbeToken.get() != token) return@Runnable
             val clipboardTimestampMs = currentClipboardTimestampMs()
-            if (!delayedProbeHasFreshClipboardTimestamp(clipboardTimestampMs, seenWallClockAtMs)) {
+            if (!toolbarCloseShouldTriggerRead(clipboardTimestampMs, seenWallClockAtMs)) {
                 if (BuildConfig.DEBUG) {
                     Log.d(
                         TAG,
@@ -322,6 +324,25 @@ class ClipboardAccessibilityService : AccessibilityService() {
             )
         }
         mainHandler.postDelayed(pendingWindowProbe!!, WINDOW_PROBE_DELAY_MS)
+    }
+
+    private fun triggerToolbarCloseIfFresh(reason: String, minClipboardTimestampMs: Long) {
+        val clipboardTimestampMs = currentClipboardTimestampMs()
+        if (!toolbarCloseShouldTriggerRead(clipboardTimestampMs, minClipboardTimestampMs)) {
+            if (BuildConfig.DEBUG) {
+                Log.d(
+                    TAG,
+                    "Skipping toolbar close trigger: clipboard timestamp=$clipboardTimestampMs " +
+                        "min=$minClipboardTimestampMs reason=$reason"
+                )
+            }
+            return
+        }
+        triggerCopyDetected(
+            reason = reason,
+            triggerSource = ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+            minClipboardTimestampMs = minClipboardTimestampMs
+        )
     }
 
     private fun currentClipboardTimestampMs(): Long? {
@@ -414,14 +435,14 @@ class ClipboardAccessibilityService : AccessibilityService() {
         private const val MAX_WINDOW_SCAN_NODES = 64
         private const val MAX_ACTIONABLE_ANCESTOR_DEPTH = 2
         private const val WINDOW_PROBE_DELAY_MS = 900L
-        private const val DELAYED_PROBE_CLIPBOARD_SKEW_MS = 250L
+        private const val TOOLBAR_CLOSE_CLIPBOARD_SKEW_MS = 1_000L
 
-        internal fun delayedProbeHasFreshClipboardTimestamp(
+        internal fun toolbarCloseShouldTriggerRead(
             clipboardTimestampMs: Long?,
             minClipboardTimestampMs: Long
         ): Boolean {
             return clipboardTimestampMs != null &&
-                clipboardTimestampMs + DELAYED_PROBE_CLIPBOARD_SKEW_MS >= minClipboardTimestampMs
+                clipboardTimestampMs + TOOLBAR_CLOSE_CLIPBOARD_SKEW_MS >= minClipboardTimestampMs
         }
     }
 
