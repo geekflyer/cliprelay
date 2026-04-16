@@ -13,6 +13,8 @@ package org.cliprelay.service
 //      This avoids stealing focus while the toolbar is still visible.
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
@@ -295,6 +297,17 @@ class ClipboardAccessibilityService : AccessibilityService() {
         pendingWindowProbe?.let(mainHandler::removeCallbacks)
         pendingWindowProbe = Runnable {
             if (windowProbeToken.get() != token) return@Runnable
+            val clipboardTimestampMs = currentClipboardTimestampMs()
+            if (!delayedProbeHasFreshClipboardTimestamp(clipboardTimestampMs, seenWallClockAtMs)) {
+                if (BuildConfig.DEBUG) {
+                    Log.d(
+                        TAG,
+                        "Skipping delayed probe: clipboard timestamp=$clipboardTimestampMs " +
+                            "min=$seenWallClockAtMs"
+                    )
+                }
+                return@Runnable
+            }
             if (BuildConfig.DEBUG) {
                 Log.d(
                     TAG,
@@ -309,6 +322,16 @@ class ClipboardAccessibilityService : AccessibilityService() {
             )
         }
         mainHandler.postDelayed(pendingWindowProbe!!, WINDOW_PROBE_DELAY_MS)
+    }
+
+    private fun currentClipboardTimestampMs(): Long? {
+        val clipboardManager =
+            getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+        return try {
+            clipboardManager.primaryClipDescription?.timestamp
+        } catch (_: SecurityException) {
+            null
+        }
     }
 
     private fun cancelWindowProbe() {
@@ -391,6 +414,15 @@ class ClipboardAccessibilityService : AccessibilityService() {
         private const val MAX_WINDOW_SCAN_NODES = 64
         private const val MAX_ACTIONABLE_ANCESTOR_DEPTH = 2
         private const val WINDOW_PROBE_DELAY_MS = 900L
+        private const val DELAYED_PROBE_CLIPBOARD_SKEW_MS = 250L
+
+        internal fun delayedProbeHasFreshClipboardTimestamp(
+            clipboardTimestampMs: Long?,
+            minClipboardTimestampMs: Long
+        ): Boolean {
+            return clipboardTimestampMs != null &&
+                clipboardTimestampMs + DELAYED_PROBE_CLIPBOARD_SKEW_MS >= minClipboardTimestampMs
+        }
     }
 
     private fun triggerCopyDetected(
