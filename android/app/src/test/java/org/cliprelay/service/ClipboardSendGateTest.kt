@@ -7,6 +7,39 @@ import org.junit.Test
 class ClipboardSendGateTest {
 
     @Test
+    fun `toolbar close replay only skips when timestamp matches previous send`() {
+        val service = ClipRelayService()
+
+        assertTrue(
+            service.shouldSkipToolbarCloseReplay(
+                triggerSource = ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                textHash = "abc",
+                clipboardTimestampMs = 123L,
+                lastSentTextHash = "abc",
+                lastSentClipboardTimestampMs = 123L
+            )
+        )
+        assertFalse(
+            service.shouldSkipToolbarCloseReplay(
+                triggerSource = ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                textHash = "abc",
+                clipboardTimestampMs = 456L,
+                lastSentTextHash = "abc",
+                lastSentClipboardTimestampMs = 123L
+            )
+        )
+        assertFalse(
+            service.shouldSkipToolbarCloseReplay(
+                triggerSource = ClipRelayService.CLIPBOARD_TRIGGER_DIRECT,
+                textHash = "abc",
+                clipboardTimestampMs = 123L,
+                lastSentTextHash = "abc",
+                lastSentClipboardTimestampMs = 123L
+            )
+        )
+    }
+
+    @Test
     fun `first send is allowed`() {
         val gate = ClipboardSendGate()
 

@@ -39,7 +39,8 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClickEvent(event)
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowChangeEvent(event)
         }
     }
 
@@ -56,17 +57,17 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     // ── TYPE_WINDOW_STATE_CHANGED detection (Chrome, etc.) ───────────
 
-    private fun handleWindowStateChanged(event: AccessibilityEvent) {
-        val hasCopyAffordance = heuristics.containsCopyWindowText(eventSignals(event))
+    private fun handleWindowChangeEvent(event: AccessibilityEvent) {
+        val hasCopyAffordance = hasWindowCopyAffordance(event)
         val affordanceSeenAtMs = heuristics.onCopyAffordanceChanged(hasCopyAffordance)
         if (affordanceSeenAtMs != null) {
             triggerCopyDetected(
-                "window state changed close",
+                "${eventTypeName(event.eventType)} close",
                 ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
                 minClipboardTimestampMs = affordanceSeenAtMs
             )
         } else if (hasCopyAffordance) {
-            Log.d(TAG, "Copy affordance visible via window state changed")
+            Log.d(TAG, "Copy affordance visible via ${eventTypeName(event.eventType)}")
         } else {
             logPotentialMissIfDebug("window_state", event)
         }
@@ -109,6 +110,83 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return nodeText + contentDescription + actionLabels
     }
 
+    private fun windowStateSignals(event: AccessibilityEvent): Sequence<String> {
+        val signals = mutableListOf<String>()
+        signals += event.text.map { it.toString() }
+        event.contentDescription?.toString()?.let(signals::add)
+
+        val source = event.source
+        if (source != null) {
+            try {
+                signals += nodeSignals(source).toList()
+            } finally {
+                source.recycle()
+            }
+        }
+
+        return signals.asSequence()
+    }
+
+    private fun hasWindowCopyAffordance(event: AccessibilityEvent): Boolean {
+        if (heuristics.containsCopyWindowText(windowStateSignals(event))) {
+            return true
+        }
+
+        val root = rootInActiveWindow ?: return false
+        return activeWindowHasCopyAffordance(root)
+    }
+
+    private fun activeWindowHasCopyAffordance(root: AccessibilityNodeInfo): Boolean {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var inspectedNodes = 0
+
+        while (queue.isNotEmpty() && inspectedNodes < MAX_WINDOW_SCAN_NODES) {
+            val node = queue.removeFirst()
+            try {
+                inspectedNodes += 1
+                if (node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_COPY }) {
+                    recycleQueue(queue)
+                    return true
+                }
+                if (nodeHasActionableCopyLabel(node)) {
+                    recycleQueue(queue)
+                    return true
+                }
+
+                val childCount = node.childCount
+                for (index in 0 until childCount) {
+                    node.getChild(index)?.let(queue::addLast)
+                }
+            } finally {
+                node.recycle()
+            }
+        }
+
+        recycleQueue(queue)
+        return false
+    }
+
+    private fun nodeHasActionableCopyLabel(node: AccessibilityNodeInfo): Boolean {
+        if (!heuristics.containsCopyWindowText(nodeSignals(node))) {
+            return false
+        }
+
+        return node.isClickable ||
+            node.isLongClickable ||
+            node.isFocusable ||
+            node.actionList.any { action ->
+                action.id == AccessibilityNodeInfo.ACTION_CLICK ||
+                    action.id == AccessibilityNodeInfo.ACTION_LONG_CLICK
+            }
+    }
+
+    private fun recycleQueue(queue: ArrayDeque<AccessibilityNodeInfo>) {
+        while (queue.isNotEmpty()) {
+            queue.removeFirst().recycle()
+        }
+    }
+
     private fun logPotentialMissIfDebug(reason: String, event: AccessibilityEvent) {
         if (!BuildConfig.DEBUG) return
 
@@ -126,6 +204,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return when (eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> "view_clicked"
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "window_state_changed"
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> "windows_changed"
             else -> eventType.toString()
         }
     }
@@ -149,6 +228,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "ClipboardA11y"
+        private const val MAX_WINDOW_SCAN_NODES = 64
     }
 
     private fun triggerCopyDetected(

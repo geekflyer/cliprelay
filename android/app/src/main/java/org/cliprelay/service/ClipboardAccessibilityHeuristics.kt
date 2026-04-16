@@ -55,9 +55,7 @@ internal class ClipboardAccessibilityHeuristics(
     }
 
     fun containsCopyCommandText(values: Sequence<String>): Boolean {
-        return values
-            .map(::normalize)
-            .any(::isCopyAffordanceText)
+        return containsCopyWindowText(values)
     }
 
     fun debugCopyCandidates(values: Sequence<String>): List<String> {
@@ -75,6 +73,7 @@ internal class ClipboardAccessibilityHeuristics(
             .trim()
             .trim { !it.isLetterOrDigit() && !it.isWhitespace() }
             .replace(WHITESPACE_REGEX, " ")
+            .trim()
     }
 
     private fun isCopyAffordanceText(normalized: String): Boolean {

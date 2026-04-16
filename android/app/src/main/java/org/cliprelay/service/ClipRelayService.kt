@@ -108,6 +108,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private val clipboardSendGate = ClipboardSendGate()
     @Volatile
     private var lastSentTextHash: String? = null
+    @Volatile
+    private var lastSentClipboardTimestampMs: Long? = null
 
     @Volatile
     private var bleStarted = false
@@ -371,6 +373,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         sessionThread = null
         clipboardSendGate.reset()
         lastSentTextHash = null
+        lastSentClipboardTimestampMs = null
 
         // Stop BLE stack
         advertiser?.stop()
@@ -467,6 +470,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         Log.w(TAG, "L2CAP session ready")
         clipboardSendGate.reset()
         lastSentTextHash = null
+        lastSentClipboardTimestampMs = null
 
         // If the advertiser's device tag was updated during pairing (without a
         // restart), restart it now so future reconnections use the correct tag.
@@ -510,6 +514,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         sessionThread = null
         clipboardSendGate.reset()
         lastSentTextHash = null
+        lastSentClipboardTimestampMs = null
         sendConnectionBroadcast(false)
         DebugSmokeProbe.onConnectionChanged(this, false)
 
@@ -633,7 +638,15 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             return
         }
 
-        if (triggerSource == CLIPBOARD_TRIGGER_TOOLBAR_CLOSE && textHash == lastSentTextHash) {
+        if (
+            shouldSkipToolbarCloseReplay(
+                triggerSource = triggerSource,
+                textHash = textHash,
+                clipboardTimestampMs = clipboardTimestampMs,
+                lastSentTextHash = lastSentTextHash,
+                lastSentClipboardTimestampMs = lastSentClipboardTimestampMs
+            )
+        ) {
             Log.d(TAG, "Skipping send — toolbar close resolved to already-synced clipboard")
             return
         }
@@ -645,7 +658,21 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
         session.sendClipboard(plaintext)
         lastSentTextHash = textHash
+        lastSentClipboardTimestampMs = clipboardTimestampMs
         DebugSmokeProbe.onOutboundClipboardPublished(this, text)
+    }
+
+    internal fun shouldSkipToolbarCloseReplay(
+        triggerSource: String,
+        textHash: String,
+        clipboardTimestampMs: Long?,
+        lastSentTextHash: String?,
+        lastSentClipboardTimestampMs: Long?
+    ): Boolean {
+        return triggerSource == CLIPBOARD_TRIGGER_TOOLBAR_CLOSE &&
+            textHash == lastSentTextHash &&
+            clipboardTimestampMs != null &&
+            clipboardTimestampMs == lastSentClipboardTimestampMs
     }
 
     private fun pushImageToMac(imagePath: String, mimeType: String) {

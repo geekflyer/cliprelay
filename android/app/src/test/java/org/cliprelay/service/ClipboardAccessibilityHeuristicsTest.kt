@@ -1,6 +1,8 @@
 package org.cliprelay.service
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,11 +69,11 @@ class ClipboardAccessibilityHeuristicsTest {
             toolbarGracePeriodMs = 500L
         )
 
-        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
+        assertNull(heuristics.onCopyAffordanceChanged(true))
 
         nowElapsed += 300L
         nowWallClock += 300L
-        assertTrue(heuristics.onCopyAffordanceChanged(false) == 50_000L)
+        assertEquals(50_000L, heuristics.onCopyAffordanceChanged(false))
     }
 
     @Test
@@ -84,20 +86,20 @@ class ClipboardAccessibilityHeuristicsTest {
             toolbarGracePeriodMs = 500L
         )
 
-        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
+        assertNull(heuristics.onCopyAffordanceChanged(true))
 
         nowElapsed += 700L
         nowWallClock += 700L
-        assertFalse(heuristics.onCopyAffordanceChanged(false) != null)
+        assertNull(heuristics.onCopyAffordanceChanged(false))
     }
 
     @Test
     fun `direct detection resets toolbar fallback state`() {
         val heuristics = ClipboardAccessibilityHeuristics()
 
-        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
+        assertNull(heuristics.onCopyAffordanceChanged(true))
         heuristics.resetAfterDirectDetection()
-        assertFalse(heuristics.onCopyAffordanceChanged(false) != null)
+        assertNull(heuristics.onCopyAffordanceChanged(false))
     }
 
     @Test
@@ -110,18 +112,18 @@ class ClipboardAccessibilityHeuristicsTest {
             toolbarGracePeriodMs = 500L
         )
 
-        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
+        assertNull(heuristics.onCopyAffordanceChanged(true))
         nowElapsed += 700L
         nowWallClock += 700L
-        assertFalse(heuristics.onCopyAffordanceChanged(false) != null)
+        assertNull(heuristics.onCopyAffordanceChanged(false))
 
         nowElapsed += 100L
         nowWallClock = 90_000L
-        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
+        assertNull(heuristics.onCopyAffordanceChanged(true))
 
         nowElapsed += 200L
         nowWallClock += 200L
-        assertTrue(heuristics.onCopyAffordanceChanged(false) == 90_000L)
+        assertEquals(90_000L, heuristics.onCopyAffordanceChanged(false))
     }
 
     @Test
@@ -130,5 +132,15 @@ class ClipboardAccessibilityHeuristicsTest {
 
         assertTrue(heuristics.containsCopyText(sequenceOf("  Copy   to   clipboard  ")))
         assertTrue(heuristics.containsCopyText(sequenceOf("Copy link!")))
+        assertTrue(heuristics.containsCopyText(sequenceOf("📋 Copy")))
+        assertTrue(heuristics.containsCopyText(sequenceOf("🔗 Copy link")))
+    }
+
+    @Test
+    fun `contains copy command text matches icon prefixed commands`() {
+        val heuristics = ClipboardAccessibilityHeuristics()
+
+        assertTrue(heuristics.containsCopyCommandText(sequenceOf("📋 Copy address")))
+        assertTrue(heuristics.containsCopyCommandText(sequenceOf("🔗 Copy permalink")))
     }
 }
