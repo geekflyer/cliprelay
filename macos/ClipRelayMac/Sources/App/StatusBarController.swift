@@ -6,6 +6,11 @@ import QuartzCore
 import Sparkle
 
 final class StatusBarController {
+    enum SyncIndicatorStyle {
+        case outbound
+        case inbound
+    }
+
     var onPairNewDeviceRequested: (() -> Void)?
     var onForgetDeviceRequested: ((String) -> Void)?
     var onToggleLaunchAtLogin: (() -> Void)?
@@ -84,14 +89,15 @@ final class StatusBarController {
 
 
     /// Briefly pulses the status bar icon to indicate a clipboard sync.
-    func flashSyncIndicator() {
+    func flashSyncIndicator(style: SyncIndicatorStyle = .outbound) {
         guard let button = statusItem.button, let base = baseStatusBarImage else { return }
 
         // Cancel any in-progress pulse
         syncPulseTimer?.invalidate()
+        button.layer?.removeAnimation(forKey: "syncPulse")
 
         // Show bright highlight icon
-        let highlight = base.colorized(with: .systemYellow)
+        let highlight = base.colorized(with: highlightColor(for: style))
         highlight.isTemplate = false
         button.image = highlight
 
@@ -99,16 +105,54 @@ final class StatusBarController {
         button.wantsLayer = true
         if let layer = button.layer {
             let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-            pulse.values = [1.0, 1.3, 1.0]
-            pulse.keyTimes = [0, 0.4, 1.0]
-            pulse.duration = 0.35
+            pulse.values = pulseValues(for: style)
+            pulse.keyTimes = [0, 0.35, 1.0]
+            pulse.duration = pulseDuration(for: style)
             pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             layer.add(pulse, forKey: "syncPulse")
         }
 
         // Restore normal icon after the animation completes
-        syncPulseTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: restoreDelay(for: style), repeats: false) { [weak self] _ in
             self?.updateStatusBarIcon()
+        }
+        syncPulseTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func highlightColor(for style: SyncIndicatorStyle) -> NSColor {
+        switch style {
+        case .outbound:
+            return .systemYellow
+        case .inbound:
+            return .systemOrange
+        }
+    }
+
+    private func pulseValues(for style: SyncIndicatorStyle) -> [CGFloat] {
+        switch style {
+        case .outbound:
+            return [1.0, 1.3, 1.0]
+        case .inbound:
+            return [1.0, 1.45, 1.15, 1.0]
+        }
+    }
+
+    private func pulseDuration(for style: SyncIndicatorStyle) -> TimeInterval {
+        switch style {
+        case .outbound:
+            return 0.35
+        case .inbound:
+            return 0.65
+        }
+    }
+
+    private func restoreDelay(for style: SyncIndicatorStyle) -> TimeInterval {
+        switch style {
+        case .outbound:
+            return 0.4
+        case .inbound:
+            return 0.85
         }
     }
 
