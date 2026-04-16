@@ -7,6 +7,33 @@ import org.junit.Test
 class ClipboardSendGateTest {
 
     @Test
+    fun `toolbar close timestamp allows small platform skew`() {
+        val service = ClipRelayService()
+
+        assertTrue(
+            service.toolbarCloseHasFreshClipboardTimestamp(
+                triggerSource = ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                clipboardTimestampMs = 9_500L,
+                minClipboardTimestampMs = 10_000L
+            )
+        )
+        assertFalse(
+            service.toolbarCloseHasFreshClipboardTimestamp(
+                triggerSource = ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                clipboardTimestampMs = 8_500L,
+                minClipboardTimestampMs = 10_000L
+            )
+        )
+        assertTrue(
+            service.toolbarCloseHasFreshClipboardTimestamp(
+                triggerSource = ClipRelayService.CLIPBOARD_TRIGGER_DIRECT,
+                clipboardTimestampMs = null,
+                minClipboardTimestampMs = null
+            )
+        )
+    }
+
+    @Test
     fun `toolbar close replay only skips when timestamp matches previous send`() {
         val service = ClipRelayService()
 

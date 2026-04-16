@@ -77,6 +77,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
         private const val CLIPBOARD_DEBOUNCE_MS = 200L
+        private const val TOOLBAR_CLIPBOARD_TIMESTAMP_SKEW_MS = 1_000L
 
         const val CLIPBOARD_TRIGGER_DIRECT = "direct"
         const val CLIPBOARD_TRIGGER_TOOLBAR_CLOSE = "toolbar_close"
@@ -627,9 +628,11 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
 
         if (
-            triggerSource == CLIPBOARD_TRIGGER_TOOLBAR_CLOSE &&
-            (clipboardTimestampMs == null || minClipboardTimestampMs == null ||
-                clipboardTimestampMs < minClipboardTimestampMs)
+            !toolbarCloseHasFreshClipboardTimestamp(
+                triggerSource = triggerSource,
+                clipboardTimestampMs = clipboardTimestampMs,
+                minClipboardTimestampMs = minClipboardTimestampMs
+            )
         ) {
             Log.d(
                 TAG,
@@ -673,6 +676,20 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             textHash == lastSentTextHash &&
             clipboardTimestampMs != null &&
             clipboardTimestampMs == lastSentClipboardTimestampMs
+    }
+
+    internal fun toolbarCloseHasFreshClipboardTimestamp(
+        triggerSource: String,
+        clipboardTimestampMs: Long?,
+        minClipboardTimestampMs: Long?
+    ): Boolean {
+        if (triggerSource != CLIPBOARD_TRIGGER_TOOLBAR_CLOSE) {
+            return true
+        }
+        if (clipboardTimestampMs == null || minClipboardTimestampMs == null) {
+            return false
+        }
+        return clipboardTimestampMs + TOOLBAR_CLIPBOARD_TIMESTAMP_SKEW_MS >= minClipboardTimestampMs
     }
 
     private fun pushImageToMac(imagePath: String, mimeType: String) {
