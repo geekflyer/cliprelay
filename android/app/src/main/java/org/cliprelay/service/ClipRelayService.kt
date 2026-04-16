@@ -78,6 +78,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         private const val MAX_CLIPBOARD_BYTES = 102_400
         private const val CLIPBOARD_DEBOUNCE_MS = 200L
         private const val TOOLBAR_CLIPBOARD_TIMESTAMP_SKEW_MS = 1_000L
+        private const val GHOST_ACTIVITY_TIMEOUT_MS = 3_000L
 
         const val CLIPBOARD_TRIGGER_DIRECT = "direct"
         const val CLIPBOARD_TRIGGER_TOOLBAR_CLOSE = "toolbar_close"
@@ -106,6 +107,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private val executor = Executors.newSingleThreadExecutor()
     private val clipboardAutoClearHandler = Handler(Looper.getMainLooper())
     private var pendingClipboardAutoClear: Runnable? = null
+    private var pendingGhostActivityClear: Runnable? = null
     private val clipboardSendGate = ClipboardSendGate()
     @Volatile
     private var lastSentTextHash: String? = null
@@ -830,6 +832,15 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         // Only an Activity with window focus can call getPrimaryClip() successfully.
         Log.d(TAG, "Launching ghost activity for clipboard read")
         ghostActivityInFlight = true
+        pendingGhostActivityClear?.let(clipboardAutoClearHandler::removeCallbacks)
+        pendingGhostActivityClear = Runnable {
+            if (ghostActivityInFlight) {
+                Log.w(TAG, "Ghost activity timeout — clearing in-flight flag")
+                clearGhostActivityInFlight()
+            }
+        }.also { runnable ->
+            clipboardAutoClearHandler.postDelayed(runnable, GHOST_ACTIVITY_TIMEOUT_MS)
+        }
         val ghostIntent = Intent(this, ClipboardGhostActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or
@@ -839,11 +850,18 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 putExtra(EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS, it)
             }
         }
-        startActivity(ghostIntent)
+        try {
+            startActivity(ghostIntent)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Could not launch ghost activity", t)
+            clearGhostActivityInFlight()
+        }
     }
 
     fun clearGhostActivityInFlight() {
         ghostActivityInFlight = false
+        pendingGhostActivityClear?.let(clipboardAutoClearHandler::removeCallbacks)
+        pendingGhostActivityClear = null
     }
 
     // ── Direct Share shortcut ─────────────────────────────────────────

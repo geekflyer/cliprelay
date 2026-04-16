@@ -14,17 +14,23 @@ package org.cliprelay.service
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.cliprelay.BuildConfig
 import org.cliprelay.settings.ClipboardSettingsStore
+import java.util.concurrent.atomic.AtomicLong
 
 class ClipboardAccessibilityService : AccessibilityService() {
 
     private lateinit var settingsStore: ClipboardSettingsStore
     private val heuristics = ClipboardAccessibilityHeuristics()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingWindowProbe: Runnable? = null
+    private val windowProbeToken = AtomicLong(0L)
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -36,11 +42,12 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
         // Only process if auto-copy is enabled
         if (!::settingsStore.isInitialized || !settingsStore.isAutoCopyEnabled()) return
+        val aggressiveMode = settingsStore.isAggressiveAutoCopyEnabled()
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClickEvent(event)
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowChangeEvent(event)
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowChangeEvent(event, aggressiveMode)
         }
     }
 
@@ -49,6 +56,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
     private fun handleClickEvent(event: AccessibilityEvent) {
         val matched = eventMatchesCopy(event)
         if (matched) {
+            cancelWindowProbe()
             triggerCopyDetected("click", ClipRelayService.CLIPBOARD_TRIGGER_DIRECT)
         } else {
             logPotentialMissIfDebug("click", event)
@@ -57,10 +65,49 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     // ── TYPE_WINDOW_STATE_CHANGED detection (Chrome, etc.) ───────────
 
-    private fun handleWindowChangeEvent(event: AccessibilityEvent) {
-        val hasCopyAffordance = hasWindowCopyAffordance(event)
+    private fun handleWindowChangeEvent(event: AccessibilityEvent, aggressiveMode: Boolean) {
+        if (aggressiveMode) {
+            val removedWindowSeenAtMs = heuristics.onWindowsRemoved(event.windowChanges)
+            if (removedWindowSeenAtMs != null) {
+                cancelWindowProbe()
+                if (BuildConfig.DEBUG) {
+                    Log.d(
+                        TAG,
+                        "Aggressive removal trigger: type=${eventTypeName(event.eventType)} " +
+                            "windowChanges=${event.windowChanges}"
+                    )
+                }
+                triggerCopyDetected(
+                    "${eventTypeName(event.eventType)} removed",
+                    ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                    minClipboardTimestampMs = removedWindowSeenAtMs
+                )
+                return
+            }
+
+            val mutationSeenAtMs = heuristics.onAggressiveWindowMutation(event.windowChanges)
+            if (mutationSeenAtMs != null) {
+                cancelWindowProbe()
+                if (BuildConfig.DEBUG) {
+                    Log.d(
+                        TAG,
+                        "Aggressive mutation trigger: type=${eventTypeName(event.eventType)} " +
+                            "windowChanges=${event.windowChanges}"
+                    )
+                }
+                triggerCopyDetected(
+                    "${eventTypeName(event.eventType)} mutation",
+                    ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                    minClipboardTimestampMs = mutationSeenAtMs
+                )
+                return
+            }
+        }
+
+        val hasCopyAffordance = hasWindowCopyAffordance(event, aggressiveMode)
         val affordanceSeenAtMs = heuristics.onCopyAffordanceChanged(hasCopyAffordance)
         if (affordanceSeenAtMs != null) {
+            cancelWindowProbe()
             triggerCopyDetected(
                 "${eventTypeName(event.eventType)} close",
                 ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
@@ -68,7 +115,11 @@ class ClipboardAccessibilityService : AccessibilityService() {
             )
         } else if (hasCopyAffordance) {
             Log.d(TAG, "Copy affordance visible via ${eventTypeName(event.eventType)}")
+            if (aggressiveMode || heuristics.shouldUseConservativeDelayedProbe(event.packageName)) {
+                scheduleWindowProbe(event)
+            }
         } else {
+            cancelWindowProbe()
             logPotentialMissIfDebug("window_state", event)
         }
     }
@@ -127,16 +178,22 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return signals.asSequence()
     }
 
-    private fun hasWindowCopyAffordance(event: AccessibilityEvent): Boolean {
-        if (heuristics.containsCopyWindowText(windowStateSignals(event))) {
+    private fun hasWindowCopyAffordance(event: AccessibilityEvent, aggressiveMode: Boolean): Boolean {
+        val windowSignals = windowStateSignals(event).toList()
+        if (heuristics.containsCopyWindowText(windowSignals.asSequence())) {
+            logWindowSignalsIfDebug("event", event, windowSignals)
             return true
         }
 
         val root = rootInActiveWindow ?: return false
-        return activeWindowHasCopyAffordance(root)
+        return activeWindowHasCopyAffordance(root, aggressiveMode, event)
     }
 
-    private fun activeWindowHasCopyAffordance(root: AccessibilityNodeInfo): Boolean {
+    private fun activeWindowHasCopyAffordance(
+        root: AccessibilityNodeInfo,
+        aggressiveMode: Boolean,
+        event: AccessibilityEvent
+    ): Boolean {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var inspectedNodes = 0
@@ -146,10 +203,12 @@ class ClipboardAccessibilityService : AccessibilityService() {
             try {
                 inspectedNodes += 1
                 if (node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_COPY }) {
+                    logRootMatchIfDebug(event, "action_copy", nodeSignals(node).toList())
                     recycleQueue(queue)
                     return true
                 }
-                if (nodeHasActionableCopyLabel(node)) {
+                val nodeSignals = nodeSignals(node).toList()
+                if (nodeHasActionableCopyLabel(node, nodeSignals, aggressiveMode, event)) {
                     recycleQueue(queue)
                     return true
                 }
@@ -167,12 +226,23 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return false
     }
 
-    private fun nodeHasActionableCopyLabel(node: AccessibilityNodeInfo): Boolean {
-        if (!heuristics.containsCopyWindowText(nodeSignals(node))) {
+    private fun nodeHasActionableCopyLabel(
+        node: AccessibilityNodeInfo,
+        nodeSignals: List<String>,
+        aggressiveMode: Boolean,
+        event: AccessibilityEvent
+    ): Boolean {
+        if (!heuristics.containsCopyWindowText(nodeSignals.asSequence())) {
             return false
         }
 
+        if (aggressiveMode) {
+            logRootMatchIfDebug(event, "aggressive_text", nodeSignals)
+            return true
+        }
+
         if (isActionableNode(node)) {
+            logRootMatchIfDebug(event, "node_actionable", nodeSignals)
             return true
         }
 
@@ -181,6 +251,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
         while (currentParent != null && depth < MAX_ACTIONABLE_ANCESTOR_DEPTH) {
             val parent = currentParent
             if (isActionableNode(parent)) {
+                logRootMatchIfDebug(event, "ancestor_actionable_$depth", nodeSignals)
                 parent.recycle()
                 return true
             }
@@ -189,6 +260,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
             depth += 1
         }
 
+        logRootMatchIfDebug(event, "copy_text_without_actionable_parent", nodeSignals)
         return false
     }
 
@@ -206,6 +278,41 @@ class ClipboardAccessibilityService : AccessibilityService() {
         while (queue.isNotEmpty()) {
             queue.removeFirst().recycle()
         }
+    }
+
+    private fun scheduleWindowProbe(event: AccessibilityEvent) {
+        if (
+            event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+            event.windowChanges and AccessibilityEvent.WINDOWS_CHANGE_CHILDREN == 0
+        ) {
+            return
+        }
+
+        val token = windowProbeToken.incrementAndGet()
+        val seenWallClockAtMs = System.currentTimeMillis()
+        pendingWindowProbe?.let(mainHandler::removeCallbacks)
+        pendingWindowProbe = Runnable {
+            if (windowProbeToken.get() != token) return@Runnable
+            if (BuildConfig.DEBUG) {
+                Log.d(
+                    TAG,
+                    "Aggressive delayed probe: type=${eventTypeName(event.eventType)} " +
+                        "windowChanges=${event.windowChanges}"
+                )
+            }
+            triggerCopyDetected(
+                "${eventTypeName(event.eventType)} delayed_probe",
+                ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                minClipboardTimestampMs = seenWallClockAtMs
+            )
+        }
+        mainHandler.postDelayed(pendingWindowProbe!!, WINDOW_PROBE_DELAY_MS)
+    }
+
+    private fun cancelWindowProbe() {
+        windowProbeToken.incrementAndGet()
+        pendingWindowProbe?.let(mainHandler::removeCallbacks)
+        pendingWindowProbe = null
     }
 
     private fun logPotentialMissIfDebug(reason: String, event: AccessibilityEvent) {
@@ -247,10 +354,41 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return heuristics.debugCopyCandidates(signals.asSequence())
     }
 
+    private fun logWindowSignalsIfDebug(
+        source: String,
+        event: AccessibilityEvent,
+        signals: List<String>
+    ) {
+        if (!BuildConfig.DEBUG) return
+        val candidates = heuristics.debugCopyCandidates(signals.asSequence())
+        if (candidates.isEmpty()) return
+        Log.d(
+            TAG,
+            "Window copy candidates: source=$source type=${eventTypeName(event.eventType)} " +
+                "windowChanges=${event.windowChanges} candidates=$candidates"
+        )
+    }
+
+    private fun logRootMatchIfDebug(
+        event: AccessibilityEvent,
+        reason: String,
+        signals: List<String>
+    ) {
+        if (!BuildConfig.DEBUG) return
+        val candidates = heuristics.debugCopyCandidates(signals.asSequence())
+        if (candidates.isEmpty()) return
+        Log.d(
+            TAG,
+            "Root copy match: reason=$reason type=${eventTypeName(event.eventType)} " +
+                "windowChanges=${event.windowChanges} candidates=$candidates"
+        )
+    }
+
     companion object {
         private const val TAG = "ClipboardA11y"
         private const val MAX_WINDOW_SCAN_NODES = 64
         private const val MAX_ACTIONABLE_ANCESTOR_DEPTH = 2
+        private const val WINDOW_PROBE_DELAY_MS = 900L
     }
 
     private fun triggerCopyDetected(
@@ -271,6 +409,12 @@ class ClipboardAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        cancelWindowProbe()
         Log.d(TAG, "Accessibility service interrupted")
+    }
+
+    override fun onDestroy() {
+        cancelWindowProbe()
+        super.onDestroy()
     }
 }

@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import android.view.accessibility.AccessibilityEvent
 
 class ClipboardAccessibilityHeuristicsTest {
 
@@ -103,6 +104,67 @@ class ClipboardAccessibilityHeuristicsTest {
     }
 
     @Test
+    fun `window removal can trigger fallback while affordance remains otherwise visible`() {
+        var nowElapsed = 1_000L
+        var nowWallClock = 50_000L
+        val heuristics = ClipboardAccessibilityHeuristics(
+            elapsedRealtimeMs = { nowElapsed },
+            wallClockMs = { nowWallClock },
+            toolbarGracePeriodMs = 500L
+        )
+
+        assertNull(heuristics.onCopyAffordanceChanged(true))
+
+        nowElapsed += 200L
+        nowWallClock += 200L
+        assertEquals(
+            50_000L,
+            heuristics.onWindowsRemoved(AccessibilityEvent.WINDOWS_CHANGE_REMOVED)
+        )
+    }
+
+    @Test
+    fun `aggressive children mutation can trigger popup fallback after short delay`() {
+        var nowElapsed = 1_000L
+        var nowWallClock = 50_000L
+        val heuristics = ClipboardAccessibilityHeuristics(
+            elapsedRealtimeMs = { nowElapsed },
+            wallClockMs = { nowWallClock },
+            toolbarGracePeriodMs = 500L,
+            aggressiveMutationDelayMs = 150L
+        )
+
+        assertNull(heuristics.onCopyAffordanceChanged(true))
+
+        nowElapsed += 200L
+        nowWallClock += 200L
+        assertEquals(
+            50_000L,
+            heuristics.onAggressiveWindowMutation(AccessibilityEvent.WINDOWS_CHANGE_CHILDREN)
+        )
+    }
+
+    @Test
+    fun `aggressive children mutation ignores immediate popup layout churn`() {
+        var nowElapsed = 1_000L
+        var nowWallClock = 50_000L
+        val heuristics = ClipboardAccessibilityHeuristics(
+            elapsedRealtimeMs = { nowElapsed },
+            wallClockMs = { nowWallClock },
+            toolbarGracePeriodMs = 500L,
+            aggressiveMutationDelayMs = 150L
+        )
+
+        assertNull(heuristics.onCopyAffordanceChanged(true))
+
+        nowElapsed += 50L
+        nowWallClock += 50L
+        assertNull(
+            heuristics.onAggressiveWindowMutation(AccessibilityEvent.WINDOWS_CHANGE_CHILDREN)
+        )
+    }
+
+    @Test
     fun `expired close resets state before next affordance`() {
         var nowElapsed = 1_000L
         var nowWallClock = 50_000L
@@ -142,5 +204,15 @@ class ClipboardAccessibilityHeuristicsTest {
 
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("📋 Copy address")))
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("🔗 Copy permalink")))
+    }
+
+    @Test
+    fun `conservative delayed probe stays package scoped`() {
+        val heuristics = ClipboardAccessibilityHeuristics()
+
+        assertTrue(heuristics.shouldUseConservativeDelayedProbe("com.reddit.frontpage"))
+        assertTrue(heuristics.shouldUseConservativeDelayedProbe("com.reddit.frontpage.debug"))
+        assertFalse(heuristics.shouldUseConservativeDelayedProbe("com.android.chrome"))
+        assertFalse(heuristics.shouldUseConservativeDelayedProbe(null))
     }
 }

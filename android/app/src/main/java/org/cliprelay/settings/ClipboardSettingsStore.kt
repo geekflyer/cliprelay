@@ -9,6 +9,7 @@ class ClipboardSettingsStore(context: Context) {
         private const val PREFS_NAME = "cliprelay_settings"
         private const val KEY_AUTO_CLEAR_SYNCED_CLIPBOARD = "auto_clear_synced_clipboard"
         const val KEY_AUTO_COPY_ENABLED = "auto_copy_enabled"
+        private const val KEY_AGGRESSIVE_AUTO_COPY_ENABLED = "aggressive_auto_copy_enabled"
         const val KEY_AUTO_COPY_ONBOARDING_SHOWN = "auto_copy_onboarding_shown"
 
         const val AUTO_CLEAR_DELAY_MS = 60_000L
@@ -30,6 +31,14 @@ class ClipboardSettingsStore(context: Context) {
 
     fun setAutoCopyEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTO_COPY_ENABLED, enabled).apply()
+    }
+
+    fun isAggressiveAutoCopyEnabled(): Boolean {
+        return prefs.getBoolean(KEY_AGGRESSIVE_AUTO_COPY_ENABLED, false)
+    }
+
+    fun setAggressiveAutoCopyEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AGGRESSIVE_AUTO_COPY_ENABLED, enabled).apply()
     }
 
     fun isAutoCopyOnboardingShown(): Boolean {

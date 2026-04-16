@@ -24,6 +24,10 @@
     <string name="auto_copy_setting_title">Auto-copy to Mac (experimental)</string>
     <string name="auto_copy_setting_subtitle_on">Automatically send copied text to Mac</string>
     <string name="auto_copy_setting_subtitle_off">Automatically send copied text to Mac. Requires Accessibility permission.</string>
+    <string name="aggressive_auto_copy_setting_title">Aggressive auto-copy detection</string>
+    <string name="aggressive_auto_copy_setting_subtitle_on">Broader detection for apps like Reddit and browsers. Fewer misses, but may false-trigger.</string>
+    <string name="aggressive_auto_copy_setting_subtitle_off">Use a broader fallback when apps hide copy actions inside popup menus.</string>
+    <string name="aggressive_auto_copy_setting_disabled">Turn on Auto-copy to Mac first.</string>
     <string name="onboarding_title">Sharing your clipboard</string>
     <string name="onboarding_always_available">Always available</string>
     <string name="onboarding_share_sheet_title">Share menu</string>
@@ -37,14 +41,14 @@
     <string name="onboarding_auto_caveat_notification">Shows a system notification each time</string>
     <string name="onboarding_auto_caveat_reliability">May not detect all copy actions</string>
     <string name="onboarding_got_it">Got it</string>
-    <string name="accessibility_service_description">Detects when you copy text so it can be automatically sent to your paired Mac. Only monitors tap actions — does not read screen content.</string>
+    <string name="accessibility_service_description">Detects copy actions so copied text can be sent to your paired Mac. Only inspects accessibility labels related to copy actions and does not upload screen content.</string>
     <string name="tile_label">Send to Mac</string>
     <string name="tile_not_paired">Not paired</string>
     <string name="auto_copy_needs_accessibility">Not working — tap to enable Accessibility permission</string>
     <string name="image_sync_setting_title">Image sync (experimental)</string>
     <string name="image_sync_setting_subtitle">Sync clipboard images. Requires devices to be on the same Wi-Fi.</string>
     <string name="accessibility_disclosure_title">Accessibility Permission</string>
-    <string name="accessibility_disclosure_body">ClipRelay uses Android\'s Accessibility Service to detect when you copy text, so it can automatically send your clipboard to your paired Mac.\n\nThis permission allows ClipRelay to monitor tap actions only. It does not read, collect, or store any screen content or personal data.</string>
+    <string name="accessibility_disclosure_body">ClipRelay uses Android\'s Accessibility Service to detect when you copy text, so it can automatically send your clipboard to your paired Mac.\n\nClipRelay only inspects accessibility labels related to copy actions and does not upload screen content or personal data. An optional aggressive mode can broaden detection for apps with unusual popup menus, which may increase false positives.</string>
     <string name="accessibility_disclosure_allow">Allow</string>
     <string name="accessibility_disclosure_deny">Deny</string>
 </resources>

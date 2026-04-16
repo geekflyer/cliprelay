@@ -4,12 +4,14 @@ package org.cliprelay.service
 // Reference-only source code. See the repository LICENSE for terms.
 
 import android.os.SystemClock
+import android.view.accessibility.AccessibilityEvent
 import java.util.Locale
 
 internal class ClipboardAccessibilityHeuristics(
     private val elapsedRealtimeMs: () -> Long = { SystemClock.elapsedRealtime() },
     private val wallClockMs: () -> Long = { System.currentTimeMillis() },
-    private val toolbarGracePeriodMs: Long = DEFAULT_TOOLBAR_GRACE_PERIOD_MS
+    private val toolbarGracePeriodMs: Long = DEFAULT_TOOLBAR_GRACE_PERIOD_MS,
+    private val aggressiveMutationDelayMs: Long = DEFAULT_AGGRESSIVE_MUTATION_DELAY_MS
 ) {
     private var copyAffordanceVisible = false
     private var lastCopyAffordanceSeenElapsedAtMs = 0L
@@ -42,6 +44,50 @@ internal class ClipboardAccessibilityHeuristics(
         resetToolbarState()
     }
 
+    @Synchronized
+    fun onWindowsRemoved(windowChanges: Int): Long? {
+        if (windowChanges and AccessibilityEvent.WINDOWS_CHANGE_REMOVED == 0) {
+            return null
+        }
+
+        val now = elapsedRealtimeMs()
+        val seenWallClockAtMs = if (
+            copyAffordanceVisible &&
+            now - lastCopyAffordanceSeenElapsedAtMs <= toolbarGracePeriodMs
+        ) {
+            lastCopyAffordanceSeenWallClockAtMs
+        } else {
+            null
+        }
+
+        if (seenWallClockAtMs != null) {
+            resetToolbarState()
+        }
+        return seenWallClockAtMs
+    }
+
+    @Synchronized
+    fun onAggressiveWindowMutation(windowChanges: Int): Long? {
+        if (windowChanges and AGGRESSIVE_MUTATION_MASK == 0) {
+            return null
+        }
+
+        val now = elapsedRealtimeMs()
+        val seenWallClockAtMs = if (
+            copyAffordanceVisible &&
+            now - lastCopyAffordanceSeenElapsedAtMs in aggressiveMutationDelayMs..toolbarGracePeriodMs
+        ) {
+            lastCopyAffordanceSeenWallClockAtMs
+        } else {
+            null
+        }
+
+        if (seenWallClockAtMs != null) {
+            resetToolbarState()
+        }
+        return seenWallClockAtMs
+    }
+
     fun containsCopyText(values: Sequence<String>): Boolean {
         return values
             .map(::normalize)
@@ -56,6 +102,11 @@ internal class ClipboardAccessibilityHeuristics(
 
     fun containsCopyCommandText(values: Sequence<String>): Boolean {
         return containsCopyWindowText(values)
+    }
+
+    fun shouldUseConservativeDelayedProbe(packageName: CharSequence?): Boolean {
+        val normalizedPackage = packageName?.toString()?.lowercase(Locale.ROOT) ?: return false
+        return CONSERVATIVE_DELAYED_PROBE_PACKAGES.contains(normalizedPackage)
     }
 
     fun debugCopyCandidates(values: Sequence<String>): List<String> {
@@ -96,7 +147,15 @@ internal class ClipboardAccessibilityHeuristics(
 
     companion object {
         const val DEFAULT_TOOLBAR_GRACE_PERIOD_MS = 1_500L
+        const val DEFAULT_AGGRESSIVE_MUTATION_DELAY_MS = 150L
         private const val MAX_DEBUG_CANDIDATES = 4
+        private const val AGGRESSIVE_MUTATION_MASK =
+            AccessibilityEvent.WINDOWS_CHANGE_CHILDREN or
+                AccessibilityEvent.WINDOWS_CHANGE_REMOVED
+        private val CONSERVATIVE_DELAYED_PROBE_PACKAGES = setOf(
+            "com.reddit.frontpage",
+            "com.reddit.frontpage.debug",
+        )
 
         private val WHITESPACE_REGEX = "\\s+".toRegex()
 

@@ -86,6 +86,7 @@ fun ClipRelayScreen(
     clipboardTransferFlow: Flow<Boolean> = emptyFlow(),
     autoClearEnabled: Boolean,
     autoCopyEnabled: Boolean,
+    aggressiveAutoCopyEnabled: Boolean = false,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
     onPairClick: () -> Unit,
@@ -93,6 +94,7 @@ fun ClipRelayScreen(
     onBurstShown: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
     onAutoCopySettingChanged: (Boolean) -> Unit,
+    onAggressiveAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {},
     onHelpClick: () -> Unit = {},
@@ -170,12 +172,14 @@ fun ClipRelayScreen(
                 clipboardTransferFlow = clipboardTransferFlow,
                 autoClearEnabled = autoClearEnabled,
                 autoCopyEnabled = autoCopyEnabled,
+                aggressiveAutoCopyEnabled = aggressiveAutoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
                 onPairClick = onPairClick,
                 onUnpairClick = onUnpairClick,
                 onAutoClearSettingChanged = onAutoClearSettingChanged,
                 onAutoCopySettingChanged = onAutoCopySettingChanged,
+                onAggressiveAutoCopySettingChanged = onAggressiveAutoCopySettingChanged,
                 onImageSyncSettingChanged = onImageSyncSettingChanged,
                 onAutoCopyFixClick = onAutoCopyFixClick
             )
@@ -287,12 +291,14 @@ private fun MainCard(
     clipboardTransferFlow: Flow<Boolean>,
     autoClearEnabled: Boolean,
     autoCopyEnabled: Boolean,
+    aggressiveAutoCopyEnabled: Boolean = false,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
     onAutoCopySettingChanged: (Boolean) -> Unit,
+    onAggressiveAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {}
 ) {
@@ -562,6 +568,12 @@ private fun MainCard(
                 onEnabledChange = onAutoCopySettingChanged,
                 onFixClick = onAutoCopyFixClick
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            AggressiveAutoCopySettingRow(
+                enabled = aggressiveAutoCopyEnabled,
+                autoCopyEnabled = autoCopyEnabled,
+                onEnabledChange = onAggressiveAutoCopySettingChanged
+            )
         }
     }
 }
@@ -704,6 +716,76 @@ private fun AutoCopySettingRow(
                 uncheckedThumbColor = Color(0xFF7A7A7A),
                 uncheckedTrackColor = Color(0x15000000),
                 uncheckedBorderColor = Color(0x40000000)
+            )
+        )
+    }
+}
+
+@Composable
+private fun AggressiveAutoCopySettingRow(
+    enabled: Boolean,
+    autoCopyEnabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
+) {
+    val rowEnabled = autoCopyEnabled
+    val toggleBg = if (enabled) Color(0x1400FFD5) else Color(0x08000000)
+    val toggleBorder = if (enabled) Color(0x2B00FFD5) else Color(0x14000000)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(toggleBg)
+            .border(1.dp, toggleBorder, RoundedCornerShape(18.dp))
+            .toggleable(
+                value = enabled,
+                enabled = rowEnabled,
+                role = Role.Switch,
+                onValueChange = onEnabledChange
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.aggressive_auto_copy_setting_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (rowEnabled) Color(0xCC000000) else Color(0x66000000)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (!rowEnabled) {
+                    stringResource(R.string.aggressive_auto_copy_setting_disabled)
+                } else if (enabled) {
+                    stringResource(R.string.aggressive_auto_copy_setting_subtitle_on)
+                } else {
+                    stringResource(R.string.aggressive_auto_copy_setting_subtitle_off)
+                },
+                fontSize = 12.sp,
+                color = if (rowEnabled) Color(0x80000000) else Color(0x66000000),
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Switch(
+            checked = enabled,
+            enabled = rowEnabled,
+            onCheckedChange = onEnabledChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Teal,
+                checkedTrackColor = Aqua.copy(alpha = 0.45f),
+                checkedBorderColor = Aqua.copy(alpha = 0.60f),
+                uncheckedThumbColor = Color(0xFF7A7A7A),
+                uncheckedTrackColor = Color(0x15000000),
+                uncheckedBorderColor = Color(0x40000000),
+                disabledCheckedThumbColor = Color(0x807A7A7A),
+                disabledCheckedTrackColor = Color(0x1200FFD5),
+                disabledUncheckedThumbColor = Color(0x807A7A7A),
+                disabledUncheckedTrackColor = Color(0x10000000)
             )
         )
     }

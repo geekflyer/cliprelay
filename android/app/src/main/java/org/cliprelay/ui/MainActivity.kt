@@ -117,14 +117,24 @@ class MainActivity : AppCompatActivity() {
         }
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         val autoCopyEnabled = clipboardSettingsStore.isAutoCopyEnabled()
+        val aggressiveAutoCopyEnabled = clipboardSettingsStore.isAggressiveAutoCopyEnabled()
         val imageSyncEnabled = pairingStore.isRichMediaEnabled()
-        viewModel.initState(isPaired, deviceName, deviceTag, autoClearEnabled, autoCopyEnabled, imageSyncEnabled)
+        viewModel.initState(
+            isPaired = isPaired,
+            deviceName = deviceName,
+            deviceTag = deviceTag,
+            autoClearEnabled = autoClearEnabled,
+            autoCopyEnabled = autoCopyEnabled,
+            aggressiveAutoCopyEnabled = aggressiveAutoCopyEnabled,
+            imageSyncEnabled = imageSyncEnabled
+        )
 
         setContent {
             val state by viewModel.state.collectAsState()
             val showBurst by viewModel.showBurst.collectAsState()
             val autoClearEnabled by viewModel.autoClearEnabled.collectAsState()
             val autoCopyEnabled by viewModel.autoCopyEnabled.collectAsState()
+            val aggressiveAutoCopyEnabled by viewModel.aggressiveAutoCopyEnabled.collectAsState()
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
             val imageSyncEnabled by viewModel.imageSyncEnabled.collectAsState()
             val showVersionMismatch by viewModel.showVersionMismatch.collectAsState()
@@ -156,6 +166,7 @@ class MainActivity : AppCompatActivity() {
                 clipboardTransferFlow = viewModel.clipboardTransfer,
                 autoClearEnabled = autoClearEnabled,
                 autoCopyEnabled = autoCopyEnabled,
+                aggressiveAutoCopyEnabled = aggressiveAutoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
                 onPairClick = {
@@ -183,6 +194,10 @@ class MainActivity : AppCompatActivity() {
                         viewModel.onAutoCopySettingChanged(enabled)
                         clipboardSettingsStore.setAutoCopyEnabled(enabled)
                     }
+                },
+                onAggressiveAutoCopySettingChanged = { enabled ->
+                    viewModel.onAggressiveAutoCopySettingChanged(enabled)
+                    clipboardSettingsStore.setAggressiveAutoCopyEnabled(enabled)
                 },
                 onImageSyncSettingChanged = { enabled ->
                     viewModel.onImageSyncSettingChanged(enabled)
