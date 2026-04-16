@@ -1,7 +1,9 @@
 package org.cliprelay.service
 
+import android.os.SystemClock
+
 internal class ClipboardSendGate(
-    private val nowMs: () -> Long = { System.currentTimeMillis() },
+    private val nowMs: () -> Long = { SystemClock.elapsedRealtime() },
     private val suppressionWindowMs: Long = DEFAULT_SUPPRESSION_WINDOW_MS
 ) {
     private var lastSentHash: String? = null

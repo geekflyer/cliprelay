@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.ParcelUuid
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.pm.ShortcutInfoCompat
@@ -52,6 +53,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val ACTION_CLIPBOARD_TRANSFER = "org.cliprelay.action.CLIPBOARD_TRANSFER"
         const val ACTION_PAIRING_COMPLETE = "org.cliprelay.action.PAIRING_COMPLETE"
         const val EXTRA_TEXT = "extra_text"
+        const val EXTRA_CLIPBOARD_TRIGGER_SOURCE = "extra_clipboard_trigger_source"
         const val EXTRA_CONNECTED = "extra_connected"
         const val EXTRA_DEVICE_NAME = "extra_device_name"
         const val EXTRA_DEVICE_TAG = "extra_device_tag"
@@ -73,6 +75,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
         private const val CLIPBOARD_DEBOUNCE_MS = 200L
+
+        const val CLIPBOARD_TRIGGER_DIRECT = "direct"
+        const val CLIPBOARD_TRIGGER_TOOLBAR_CLOSE = "toolbar_close"
     }
 
     // BLE components
@@ -99,6 +104,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private val clipboardAutoClearHandler = Handler(Looper.getMainLooper())
     private var pendingClipboardAutoClear: Runnable? = null
     private val clipboardSendGate = ClipboardSendGate()
+    @Volatile
+    private var lastSentTextHash: String? = null
 
     @Volatile
     private var bleStarted = false
@@ -203,7 +210,10 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 return START_STICKY
             }
             ACTION_ACCESSIBILITY_COPY_DETECTED -> {
-                handleClipboardChanged()
+                handleClipboardChanged(
+                    intent.getStringExtra(EXTRA_CLIPBOARD_TRIGGER_SOURCE)
+                        ?: CLIPBOARD_TRIGGER_DIRECT
+                )
                 return START_STICKY
             }
             ACTION_SEND_CONFIG_UPDATE -> {
@@ -222,9 +232,11 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             ACTION_PUSH_TEXT -> {
                 clearGhostActivityInFlight()
                 val text = intent.getStringExtra(EXTRA_TEXT)
+                val triggerSource = intent.getStringExtra(EXTRA_CLIPBOARD_TRIGGER_SOURCE)
+                    ?: CLIPBOARD_TRIGGER_DIRECT
                 if (!text.isNullOrBlank()) {
                     executor.execute {
-                        pushPlainTextToMac(text)
+                        pushPlainTextToMac(text, triggerSource)
                     }
                 }
             }
@@ -339,6 +351,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         activeSession = null
         sessionThread = null
         clipboardSendGate.reset()
+        lastSentTextHash = null
 
         // Stop BLE stack
         advertiser?.stop()
@@ -434,6 +447,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     override fun onSessionReady() {
         Log.w(TAG, "L2CAP session ready")
         clipboardSendGate.reset()
+        lastSentTextHash = null
 
         // If the advertiser's device tag was updated during pairing (without a
         // restart), restart it now so future reconnections use the correct tag.
@@ -476,6 +490,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         activeSession = null
         sessionThread = null
         clipboardSendGate.reset()
+        lastSentTextHash = null
         sendConnectionBroadcast(false)
         DebugSmokeProbe.onConnectionChanged(this, false)
 
@@ -566,7 +581,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     // ── Outbound (Android → Mac) ─────────────────────────────────────
 
-    private fun pushPlainTextToMac(text: String) {
+    private fun pushPlainTextToMac(text: String, triggerSource: String) {
         if (isDestroyed) return
         val plaintext = text.toByteArray(Charsets.UTF_8)
         if (plaintext.isEmpty() || plaintext.size > MAX_CLIPBOARD_BYTES) {
@@ -582,12 +597,18 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             return
         }
 
+        if (triggerSource == CLIPBOARD_TRIGGER_TOOLBAR_CLOSE && textHash == lastSentTextHash) {
+            Log.d(TAG, "Skipping send — toolbar close resolved to already-synced clipboard")
+            return
+        }
+
         if (!clipboardSendGate.shouldSend(textHash)) {
             Log.d(TAG, "Skipping send — same text was sent very recently")
             return
         }
 
         session.sendClipboard(plaintext)
+        lastSentTextHash = textHash
         DebugSmokeProbe.onOutboundClipboardPublished(this, text)
     }
 
@@ -698,7 +719,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     // ── Auto-copy (triggered by AccessibilityService) ────────────────
 
-    private fun handleClipboardChanged() {
+    private fun handleClipboardChanged(triggerSource: String) {
         Log.d(TAG, "Clipboard changed — activeSession=${activeSession != null}, ghostInFlight=$ghostActivityInFlight")
 
         // Skip if no active session (no Mac connected)
@@ -708,7 +729,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
 
         // 200ms time guard to prevent double-fires from text classification
-        val now = System.currentTimeMillis()
+        val now = SystemClock.elapsedRealtime()
         if (now - lastClipboardLaunchMs < CLIPBOARD_DEBOUNCE_MS) {
             Log.d(TAG, "Skipping clipboard: debounce (${now - lastClipboardLaunchMs}ms)")
             return
@@ -730,6 +751,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or
                     Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+            putExtra(EXTRA_CLIPBOARD_TRIGGER_SOURCE, triggerSource)
         }
         startActivity(ghostIntent)
     }

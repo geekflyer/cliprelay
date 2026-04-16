@@ -30,6 +30,7 @@ class ClipboardAccessibilityHeuristicsTest {
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy address")))
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy password")))
         assertFalse(heuristics.containsCopyCommandText(sequenceOf("Don't copy")))
+        assertFalse(heuristics.containsCopyCommandText(sequenceOf("Copy to folder")))
     }
 
     @Test

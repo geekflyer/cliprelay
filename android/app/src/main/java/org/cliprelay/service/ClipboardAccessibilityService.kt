@@ -46,7 +46,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     private fun handleClickEvent(event: AccessibilityEvent) {
         if (eventMatchesCopy(event)) {
-            triggerCopyDetected("click")
+            triggerCopyDetected("click", ClipRelayService.CLIPBOARD_TRIGGER_DIRECT)
         }
     }
 
@@ -55,7 +55,10 @@ class ClipboardAccessibilityService : AccessibilityService() {
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         val hasCopyAffordance = heuristics.containsCopyText(eventSignals(event))
         if (heuristics.onCopyAffordanceChanged(hasCopyAffordance)) {
-            triggerCopyDetected("window state changed close")
+            triggerCopyDetected(
+                "window state changed close",
+                ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE
+            )
         } else if (hasCopyAffordance) {
             Log.d(TAG, "Copy affordance visible via window state changed")
         }
@@ -91,11 +94,12 @@ class ClipboardAccessibilityService : AccessibilityService() {
         private const val TAG = "ClipboardA11y"
     }
 
-    private fun triggerCopyDetected(reason: String) {
+    private fun triggerCopyDetected(reason: String, triggerSource: String) {
         heuristics.resetAfterDirectDetection()
         Log.d(TAG, "Copy detected via $reason")
         val intent = Intent(this, ClipRelayService::class.java).apply {
             action = ClipRelayService.ACTION_ACCESSIBILITY_COPY_DETECTED
+            putExtra(ClipRelayService.EXTRA_CLIPBOARD_TRIGGER_SOURCE, triggerSource)
         }
         ContextCompat.startForegroundService(this, intent)
     }

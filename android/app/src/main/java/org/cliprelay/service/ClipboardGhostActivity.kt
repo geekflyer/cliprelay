@@ -77,6 +77,10 @@ class ClipboardGhostActivity : ComponentActivity() {
         val pushIntent = Intent(this, ClipRelayService::class.java).apply {
             action = ClipRelayService.ACTION_PUSH_TEXT
             putExtra(ClipRelayService.EXTRA_TEXT, text)
+            putExtra(
+                ClipRelayService.EXTRA_CLIPBOARD_TRIGGER_SOURCE,
+                intent.getStringExtra(ClipRelayService.EXTRA_CLIPBOARD_TRIGGER_SOURCE)
+            )
         }
         ContextCompat.startForegroundService(this, pushIntent)
         Log.d(TAG, "Forwarded clipboard text to service (${text.length} chars)")

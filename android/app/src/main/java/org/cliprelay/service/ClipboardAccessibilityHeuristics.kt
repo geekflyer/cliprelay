@@ -1,9 +1,10 @@
 package org.cliprelay.service
 
+import android.os.SystemClock
 import java.util.Locale
 
 internal class ClipboardAccessibilityHeuristics(
-    private val nowMs: () -> Long = { System.currentTimeMillis() },
+    private val nowMs: () -> Long = { SystemClock.elapsedRealtime() },
     private val toolbarGracePeriodMs: Long = DEFAULT_TOOLBAR_GRACE_PERIOD_MS
 ) {
     private var copyAffordanceVisible = false
@@ -43,7 +44,9 @@ internal class ClipboardAccessibilityHeuristics(
             .map(::normalize)
             .any { normalized ->
                 COPY_WORDS.contains(normalized) ||
-                    COPY_COMMAND_PREFIXES.any { prefix -> normalized.startsWith("$prefix ") }
+                    COPY_COMMAND_PREFIXES.any { prefix ->
+                        normalized.startsWith("$prefix ") && !normalized.startsWith("$prefix to ")
+                    }
             }
     }
 
