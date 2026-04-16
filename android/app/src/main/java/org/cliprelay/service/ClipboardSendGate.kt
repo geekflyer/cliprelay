@@ -7,6 +7,7 @@ internal class ClipboardSendGate(
     private var lastSentHash: String? = null
     private var lastSentAtMs: Long = 0L
 
+    @Synchronized
     fun shouldSend(hash: String): Boolean {
         val now = nowMs()
         if (hash == lastSentHash && now - lastSentAtMs < suppressionWindowMs) {
@@ -17,6 +18,7 @@ internal class ClipboardSendGate(
         return true
     }
 
+    @Synchronized
     fun reset() {
         lastSentHash = null
         lastSentAtMs = 0L

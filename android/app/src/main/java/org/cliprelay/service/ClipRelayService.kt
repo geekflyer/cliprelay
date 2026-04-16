@@ -338,6 +338,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
         activeSession = null
         sessionThread = null
+        clipboardSendGate.reset()
 
         // Stop BLE stack
         advertiser?.stop()
@@ -432,6 +433,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     override fun onSessionReady() {
         Log.w(TAG, "L2CAP session ready")
+        clipboardSendGate.reset()
 
         // If the advertiser's device tag was updated during pairing (without a
         // restart), restart it now so future reconnections use the correct tag.

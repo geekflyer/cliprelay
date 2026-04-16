@@ -1,5 +1,7 @@
 package org.cliprelay.service
 
+import java.util.Locale
+
 internal class ClipboardAccessibilityHeuristics(
     private val nowMs: () -> Long = { System.currentTimeMillis() },
     private val toolbarGracePeriodMs: Long = DEFAULT_TOOLBAR_GRACE_PERIOD_MS
@@ -7,6 +9,7 @@ internal class ClipboardAccessibilityHeuristics(
     private var copyAffordanceVisible = false
     private var lastCopyAffordanceSeenAtMs = 0L
 
+    @Synchronized
     fun onCopyAffordanceChanged(hasCopyAffordance: Boolean): Boolean {
         val now = nowMs()
         return if (hasCopyAffordance) {
@@ -21,36 +24,33 @@ internal class ClipboardAccessibilityHeuristics(
         }
     }
 
+    @Synchronized
     fun resetAfterDirectDetection() {
         copyAffordanceVisible = false
         lastCopyAffordanceSeenAtMs = 0L
     }
 
+    @Synchronized
     fun containsCopyText(values: Sequence<String>): Boolean {
         return values
             .map(::normalize)
-            .filter { it.isNotEmpty() && !it.contains("copyright") }
-            .any { normalized -> COPY_WORDS.any { word -> normalized.contains(word) } }
-    }
-
-    fun containsCopyConfirmationText(values: Sequence<String>): Boolean {
-        return values
-            .map(::normalize)
-            .filter { it.isNotEmpty() }
-            .any { normalized ->
-                COPIED_WORDS.any { word -> normalized.contains(word) } ||
-                    (normalized.contains("clipboard") && COPY_WORDS.any { word -> normalized.contains(word) })
-            }
+            .any(COPY_WORDS::contains)
     }
 
     private fun normalize(value: String): String {
-        return value.lowercase().trim()
+        return value
+            .lowercase(Locale.ROOT)
+            .trim()
+            .trim { !it.isLetterOrDigit() && !it.isWhitespace() }
+            .replace(WHITESPACE_REGEX, " ")
     }
 
     companion object {
         const val DEFAULT_TOOLBAR_GRACE_PERIOD_MS = 1_500L
 
-        val COPY_WORDS = setOf(
+        private val WHITESPACE_REGEX = "\\s+".toRegex()
+
+        private val COPY_WORDS = setOf(
             "copy",
             "copy text",
             "copy code",
@@ -83,17 +83,6 @@ internal class ClipboardAccessibilityHeuristics(
             "העתק",
             "نسخ",
             "कॉपी करें",
-        )
-
-        private val COPIED_WORDS = setOf(
-            "copied",
-            "copied to clipboard",
-            "text copied",
-            "link copied",
-            "copied link",
-            "copied text",
-            "copied code",
-            "copying to clipboard",
         )
     }
 }

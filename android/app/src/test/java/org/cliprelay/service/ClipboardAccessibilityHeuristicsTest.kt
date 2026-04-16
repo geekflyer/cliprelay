@@ -7,7 +7,7 @@ import org.junit.Test
 class ClipboardAccessibilityHeuristicsTest {
 
     @Test
-    fun `contains copy text matches common extended labels`() {
+    fun `contains copy text matches common exact labels`() {
         val heuristics = ClipboardAccessibilityHeuristics()
 
         assertTrue(heuristics.containsCopyText(sequenceOf("Copy link")))
@@ -15,17 +15,12 @@ class ClipboardAccessibilityHeuristicsTest {
     }
 
     @Test
-    fun `contains copy text ignores copyright strings`() {
+    fun `contains copy text ignores substring false positives`() {
         val heuristics = ClipboardAccessibilityHeuristics()
 
         assertFalse(heuristics.containsCopyText(sequenceOf("Copyright 2026 ClipRelay")))
-    }
-
-    @Test
-    fun `contains copy confirmation text matches copied toast`() {
-        val heuristics = ClipboardAccessibilityHeuristics()
-
-        assertTrue(heuristics.containsCopyConfirmationText(sequenceOf("Copied to clipboard")))
+        assertFalse(heuristics.containsCopyText(sequenceOf("copycat")))
+        assertFalse(heuristics.containsCopyText(sequenceOf("Stop copying")))
     }
 
     @Test
@@ -57,5 +52,13 @@ class ClipboardAccessibilityHeuristicsTest {
         assertFalse(heuristics.onCopyAffordanceChanged(true))
         heuristics.resetAfterDirectDetection()
         assertFalse(heuristics.onCopyAffordanceChanged(false))
+    }
+
+    @Test
+    fun `contains copy text normalizes whitespace and punctuation`() {
+        val heuristics = ClipboardAccessibilityHeuristics()
+
+        assertTrue(heuristics.containsCopyText(sequenceOf("  Copy   to   clipboard  ")))
+        assertTrue(heuristics.containsCopyText(sequenceOf("Copy link!")))
     }
 }

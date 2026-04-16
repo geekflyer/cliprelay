@@ -34,6 +34,16 @@ class ClipboardSendGateTest {
     }
 
     @Test
+    fun `different hash inside suppression window is allowed`() {
+        var now = 1_000L
+        val gate = ClipboardSendGate(nowMs = { now }, suppressionWindowMs = 500L)
+
+        assertTrue(gate.shouldSend("abc"))
+        now += 100L
+        assertTrue(gate.shouldSend("def"))
+    }
+
+    @Test
     fun `reset clears duplicate suppression`() {
         val gate = ClipboardSendGate(nowMs = { 1_000L }, suppressionWindowMs = 500L)
 
