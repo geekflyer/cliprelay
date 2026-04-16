@@ -207,16 +207,28 @@ class ClipboardAccessibilityHeuristicsTest {
     }
 
     @Test
-    fun `window probe strategy stays package scoped outside aggressive mode`() {
+    fun `window probe strategy only broadens when aggressive mode is enabled`() {
         val heuristics = ClipboardAccessibilityHeuristics()
 
         assertEquals(
-            WindowProbeStrategy.BALANCED,
+            WindowProbeStrategy.NONE,
             heuristics.windowProbeStrategy("com.reddit.frontpage", aggressiveMode = false)
         )
         assertEquals(
-            WindowProbeStrategy.BALANCED,
+            WindowProbeStrategy.NONE,
             heuristics.windowProbeStrategy("com.reddit.frontpage.debug", aggressiveMode = false)
+        )
+        assertEquals(
+            WindowProbeStrategy.NONE,
+            heuristics.windowProbeStrategy("info.plateaukao.einkbro", aggressiveMode = false)
+        )
+        assertEquals(
+            WindowProbeStrategy.NONE,
+            heuristics.windowProbeStrategy("info.plateaukao.einkbubble", aggressiveMode = false)
+        )
+        assertEquals(
+            WindowProbeStrategy.NONE,
+            heuristics.windowProbeStrategy("info.plateaukao.einkbubble.beta", aggressiveMode = false)
         )
         assertEquals(
             WindowProbeStrategy.NONE,

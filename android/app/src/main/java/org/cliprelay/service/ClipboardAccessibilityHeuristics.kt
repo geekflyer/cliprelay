@@ -108,16 +108,7 @@ internal class ClipboardAccessibilityHeuristics(
         packageName: CharSequence?,
         aggressiveMode: Boolean
     ): WindowProbeStrategy {
-        if (aggressiveMode) {
-            return WindowProbeStrategy.AGGRESSIVE
-        }
-        val normalizedPackage = packageName?.toString()?.lowercase(Locale.ROOT)
-            ?: return WindowProbeStrategy.NONE
-        return if (BALANCED_DELAYED_PROBE_PACKAGES.contains(normalizedPackage)) {
-            WindowProbeStrategy.BALANCED
-        } else {
-            WindowProbeStrategy.NONE
-        }
+        return if (aggressiveMode) WindowProbeStrategy.AGGRESSIVE else WindowProbeStrategy.NONE
     }
 
     fun debugCopyCandidates(values: Sequence<String>): List<String> {
@@ -163,11 +154,6 @@ internal class ClipboardAccessibilityHeuristics(
         private const val AGGRESSIVE_MUTATION_MASK =
             AccessibilityEvent.WINDOWS_CHANGE_CHILDREN or
                 AccessibilityEvent.WINDOWS_CHANGE_REMOVED
-        private val BALANCED_DELAYED_PROBE_PACKAGES = setOf(
-            "com.reddit.frontpage",
-            "com.reddit.frontpage.debug",
-        )
-
         private val WHITESPACE_REGEX = "\\s+".toRegex()
 
         private val COPY_WORDS = setOf(
@@ -226,6 +212,5 @@ internal class ClipboardAccessibilityHeuristics(
 
 internal enum class WindowProbeStrategy {
     NONE,
-    BALANCED,
     AGGRESSIVE,
 }
