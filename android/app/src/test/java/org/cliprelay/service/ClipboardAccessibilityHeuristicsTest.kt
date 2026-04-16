@@ -12,6 +12,8 @@ class ClipboardAccessibilityHeuristicsTest {
 
         assertTrue(heuristics.containsCopyText(sequenceOf("Copy link")))
         assertTrue(heuristics.containsCopyText(sequenceOf("COPY CODE")))
+        assertTrue(heuristics.containsCopyText(sequenceOf("Copy permalink")))
+        assertTrue(heuristics.containsCopyText(sequenceOf("Copy post link")))
     }
 
     @Test
@@ -29,6 +31,7 @@ class ClipboardAccessibilityHeuristicsTest {
 
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy address")))
         assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy password")))
+        assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy permalink")))
         assertFalse(heuristics.containsCopyCommandText(sequenceOf("Don't copy")))
         assertFalse(heuristics.containsCopyCommandText(sequenceOf("Copy to folder")))
     }

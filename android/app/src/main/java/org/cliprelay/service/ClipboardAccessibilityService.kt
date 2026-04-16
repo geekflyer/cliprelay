@@ -70,7 +70,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
         val source = event.source
         if (source != null) {
             try {
-                if (hasActionCopy(source)) {
+                if (nodeMatchesCopy(source)) {
                     return true
                 }
             } finally {
@@ -80,14 +80,25 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return heuristics.containsCopyCommandText(eventSignals(event))
     }
 
-    private fun hasActionCopy(node: AccessibilityNodeInfo): Boolean {
-        return node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_COPY }
+    private fun nodeMatchesCopy(node: AccessibilityNodeInfo): Boolean {
+        if (node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_COPY }) {
+            return true
+        }
+
+        return heuristics.containsCopyCommandText(nodeSignals(node))
     }
 
     private fun eventSignals(event: AccessibilityEvent): Sequence<String> {
         val eventText = event.text.asSequence().map { it.toString() }
         val contentDescription = sequenceOf(event.contentDescription?.toString()).filterNotNull()
         return eventText + contentDescription
+    }
+
+    private fun nodeSignals(node: AccessibilityNodeInfo): Sequence<String> {
+        val nodeText = sequenceOf(node.text?.toString()).filterNotNull()
+        val contentDescription = sequenceOf(node.contentDescription?.toString()).filterNotNull()
+        val actionLabels = node.actionList.asSequence().mapNotNull { it.label?.toString() }
+        return nodeText + contentDescription + actionLabels
     }
 
     companion object {

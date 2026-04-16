@@ -34,23 +34,16 @@ internal class ClipboardAccessibilityHeuristics(
         lastCopyAffordanceSeenAtMs = 0L
     }
 
-    @Synchronized
     fun containsCopyText(values: Sequence<String>): Boolean {
         return values
             .map(::normalize)
-            .any(COPY_WORDS::contains)
+            .any(::isCopyAffordanceText)
     }
 
-    @Synchronized
     fun containsCopyCommandText(values: Sequence<String>): Boolean {
         return values
             .map(::normalize)
-            .any { normalized ->
-                COPY_WORDS.contains(normalized) ||
-                    COPY_COMMAND_PREFIXES.any { prefix ->
-                        normalized.startsWith("$prefix ") && !normalized.startsWith("$prefix to ")
-                    }
-            }
+            .any(::isCopyAffordanceText)
     }
 
     private fun normalize(value: String): String {
@@ -59,6 +52,13 @@ internal class ClipboardAccessibilityHeuristics(
             .trim()
             .trim { !it.isLetterOrDigit() && !it.isWhitespace() }
             .replace(WHITESPACE_REGEX, " ")
+    }
+
+    private fun isCopyAffordanceText(normalized: String): Boolean {
+        return COPY_WORDS.contains(normalized) ||
+            COPY_COMMAND_PREFIXES.any { prefix ->
+                normalized.startsWith("$prefix ") && !normalized.startsWith("$prefix to ")
+            }
     }
 
     companion object {
