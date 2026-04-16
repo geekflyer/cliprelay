@@ -281,9 +281,11 @@ class ClipboardAccessibilityService : AccessibilityService() {
     }
 
     private fun scheduleWindowProbe(event: AccessibilityEvent) {
+        val eventType = event.eventType
+        val windowChanges = event.windowChanges
         if (
-            event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
-            event.windowChanges and AccessibilityEvent.WINDOWS_CHANGE_CHILDREN == 0
+            eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+            windowChanges and AccessibilityEvent.WINDOWS_CHANGE_CHILDREN == 0
         ) {
             return
         }
@@ -296,12 +298,12 @@ class ClipboardAccessibilityService : AccessibilityService() {
             if (BuildConfig.DEBUG) {
                 Log.d(
                     TAG,
-                    "Aggressive delayed probe: type=${eventTypeName(event.eventType)} " +
-                        "windowChanges=${event.windowChanges}"
+                    "Aggressive delayed probe: type=${eventTypeName(eventType)} " +
+                        "windowChanges=$windowChanges"
                 )
             }
             triggerCopyDetected(
-                "${eventTypeName(event.eventType)} delayed_probe",
+                "${eventTypeName(eventType)} delayed_probe",
                 ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
                 minClipboardTimestampMs = seenWallClockAtMs
             )
