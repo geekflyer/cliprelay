@@ -305,6 +305,15 @@ class ClipboardAccessibilityService : AccessibilityService() {
         pendingWindowProbe?.let(mainHandler::removeCallbacks)
         pendingWindowProbe = Runnable {
             if (windowProbeToken.get() != token) return@Runnable
+            if (!shouldAllowScheduledProbe(strategy)) {
+                if (BuildConfig.DEBUG) {
+                    Log.d(
+                        TAG,
+                        "Skipping delayed probe: strategy=$strategy disabled by current settings"
+                    )
+                }
+                return@Runnable
+            }
             val clipboardTimestampMs = currentClipboardTimestampMs()
             if (!shouldPreflightToolbarRead(strategy, clipboardTimestampMs, seenWallClockAtMs)) {
                 if (BuildConfig.DEBUG) {
@@ -330,6 +339,13 @@ class ClipboardAccessibilityService : AccessibilityService() {
             )
         }
         mainHandler.postDelayed(pendingWindowProbe!!, WINDOW_PROBE_DELAY_MS)
+    }
+
+    private fun shouldAllowScheduledProbe(strategy: WindowProbeStrategy): Boolean {
+        if (!::settingsStore.isInitialized) return false
+        val autoCopyEnabled = settingsStore.isAutoCopyEnabled()
+        val aggressiveModeEnabled = settingsStore.isAggressiveAutoCopyEnabled()
+        return shouldAllowScheduledProbe(strategy, autoCopyEnabled, aggressiveModeEnabled)
     }
 
     private fun triggerToolbarCloseIfFresh(
@@ -456,6 +472,17 @@ class ClipboardAccessibilityService : AccessibilityService() {
                 return strategy != WindowProbeStrategy.NONE
             }
             return clipboardTimestampMs + TOOLBAR_CLOSE_CLIPBOARD_SKEW_MS >= minClipboardTimestampMs
+        }
+
+        internal fun shouldAllowScheduledProbe(
+            strategy: WindowProbeStrategy,
+            autoCopyEnabled: Boolean,
+            aggressiveModeEnabled: Boolean
+        ): Boolean {
+            if (!autoCopyEnabled) {
+                return false
+            }
+            return strategy != WindowProbeStrategy.AGGRESSIVE || aggressiveModeEnabled
         }
     }
 

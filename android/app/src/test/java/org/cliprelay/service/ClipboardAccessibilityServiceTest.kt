@@ -44,4 +44,36 @@ class ClipboardAccessibilityServiceTest {
             )
         )
     }
+
+    @Test
+    fun `scheduled probe respects current auto copy settings`() {
+        assertFalse(
+            ClipboardAccessibilityService.shouldAllowScheduledProbe(
+                strategy = WindowProbeStrategy.NONE,
+                autoCopyEnabled = false,
+                aggressiveModeEnabled = true
+            )
+        )
+        assertTrue(
+            ClipboardAccessibilityService.shouldAllowScheduledProbe(
+                strategy = WindowProbeStrategy.NONE,
+                autoCopyEnabled = true,
+                aggressiveModeEnabled = false
+            )
+        )
+        assertFalse(
+            ClipboardAccessibilityService.shouldAllowScheduledProbe(
+                strategy = WindowProbeStrategy.AGGRESSIVE,
+                autoCopyEnabled = true,
+                aggressiveModeEnabled = false
+            )
+        )
+        assertTrue(
+            ClipboardAccessibilityService.shouldAllowScheduledProbe(
+                strategy = WindowProbeStrategy.AGGRESSIVE,
+                autoCopyEnabled = true,
+                aggressiveModeEnabled = true
+            )
+        )
+    }
 }
