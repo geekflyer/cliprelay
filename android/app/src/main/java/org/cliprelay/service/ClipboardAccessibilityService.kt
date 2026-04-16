@@ -57,11 +57,13 @@ class ClipboardAccessibilityService : AccessibilityService() {
     // ── TYPE_WINDOW_STATE_CHANGED detection (Chrome, etc.) ───────────
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
-        val hasCopyAffordance = heuristics.containsCopyWindowText(packageName(event), eventSignals(event))
-        if (heuristics.onCopyAffordanceChanged(hasCopyAffordance)) {
+        val hasCopyAffordance = heuristics.containsCopyWindowText(eventSignals(event))
+        val affordanceSeenAtMs = heuristics.onCopyAffordanceChanged(hasCopyAffordance)
+        if (affordanceSeenAtMs != null) {
             triggerCopyDetected(
                 "window state changed close",
-                ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE
+                ClipRelayService.CLIPBOARD_TRIGGER_TOOLBAR_CLOSE,
+                minClipboardTimestampMs = affordanceSeenAtMs
             )
         } else if (hasCopyAffordance) {
             Log.d(TAG, "Copy affordance visible via window state changed")
@@ -107,8 +109,6 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return nodeText + contentDescription + actionLabels
     }
 
-    private fun packageName(event: AccessibilityEvent): String? = event.packageName?.toString()
-
     private fun logPotentialMissIfDebug(reason: String, event: AccessibilityEvent) {
         if (!BuildConfig.DEBUG) return
 
@@ -118,7 +118,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
         Log.d(
             TAG,
             "Potential copy miss: reason=$reason type=${eventTypeName(event.eventType)} " +
-                "pkg=${packageName(event) ?: "unknown"} candidates=$candidates"
+                "pkg=${event.packageName?.toString() ?: "unknown"} candidates=$candidates"
         )
     }
 
@@ -151,12 +151,19 @@ class ClipboardAccessibilityService : AccessibilityService() {
         private const val TAG = "ClipboardA11y"
     }
 
-    private fun triggerCopyDetected(reason: String, triggerSource: String) {
+    private fun triggerCopyDetected(
+        reason: String,
+        triggerSource: String,
+        minClipboardTimestampMs: Long? = null
+    ) {
         heuristics.resetAfterDirectDetection()
         Log.d(TAG, "Copy detected via $reason")
         val intent = Intent(this, ClipRelayService::class.java).apply {
             action = ClipRelayService.ACTION_ACCESSIBILITY_COPY_DETECTED
             putExtra(ClipRelayService.EXTRA_CLIPBOARD_TRIGGER_SOURCE, triggerSource)
+            minClipboardTimestampMs?.let {
+                putExtra(ClipRelayService.EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS, it)
+            }
         }
         ContextCompat.startForegroundService(this, intent)
     }

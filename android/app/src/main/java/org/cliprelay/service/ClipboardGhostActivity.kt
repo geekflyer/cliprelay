@@ -72,15 +72,25 @@ class ClipboardGhostActivity : ComponentActivity() {
             Log.d(TAG, "Clipboard text empty")
             return
         }
+        val clipboardTimestampMs = clipboardManager.primaryClipDescription?.timestamp
 
         // Forward to service via the same path as the share sheet
         val pushIntent = Intent(this, ClipRelayService::class.java).apply {
             action = ClipRelayService.ACTION_PUSH_TEXT
             putExtra(ClipRelayService.EXTRA_TEXT, text)
+            clipboardTimestampMs?.let {
+                putExtra(ClipRelayService.EXTRA_CLIPBOARD_TIMESTAMP_MS, it)
+            }
             putExtra(
                 ClipRelayService.EXTRA_CLIPBOARD_TRIGGER_SOURCE,
                 intent.getStringExtra(ClipRelayService.EXTRA_CLIPBOARD_TRIGGER_SOURCE)
             )
+            if (intent.hasExtra(ClipRelayService.EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS)) {
+                putExtra(
+                    ClipRelayService.EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS,
+                    intent.getLongExtra(ClipRelayService.EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS, 0L)
+                )
+            }
         }
         ContextCompat.startForegroundService(this, pushIntent)
         Log.d(TAG, "Forwarded clipboard text to service (${text.length} chars)")

@@ -7,31 +7,39 @@ import android.os.SystemClock
 import java.util.Locale
 
 internal class ClipboardAccessibilityHeuristics(
-    private val nowMs: () -> Long = { SystemClock.elapsedRealtime() },
+    private val elapsedRealtimeMs: () -> Long = { SystemClock.elapsedRealtime() },
+    private val wallClockMs: () -> Long = { System.currentTimeMillis() },
     private val toolbarGracePeriodMs: Long = DEFAULT_TOOLBAR_GRACE_PERIOD_MS
 ) {
     private var copyAffordanceVisible = false
-    private var lastCopyAffordanceSeenAtMs = 0L
+    private var lastCopyAffordanceSeenElapsedAtMs = 0L
+    private var lastCopyAffordanceSeenWallClockAtMs = 0L
 
     @Synchronized
-    fun onCopyAffordanceChanged(hasCopyAffordance: Boolean): Boolean {
-        val now = nowMs()
+    fun onCopyAffordanceChanged(hasCopyAffordance: Boolean): Long? {
+        val now = elapsedRealtimeMs()
         return if (hasCopyAffordance) {
             copyAffordanceVisible = true
-            lastCopyAffordanceSeenAtMs = now
-            false
+            lastCopyAffordanceSeenElapsedAtMs = now
+            lastCopyAffordanceSeenWallClockAtMs = wallClockMs()
+            null
         } else {
-            val shouldTrigger = copyAffordanceVisible &&
-                now - lastCopyAffordanceSeenAtMs <= toolbarGracePeriodMs
-            copyAffordanceVisible = false
-            shouldTrigger
+            val seenWallClockAtMs = if (
+                copyAffordanceVisible &&
+                now - lastCopyAffordanceSeenElapsedAtMs <= toolbarGracePeriodMs
+            ) {
+                lastCopyAffordanceSeenWallClockAtMs
+            } else {
+                null
+            }
+            resetToolbarState()
+            seenWallClockAtMs
         }
     }
 
     @Synchronized
     fun resetAfterDirectDetection() {
-        copyAffordanceVisible = false
-        lastCopyAffordanceSeenAtMs = 0L
+        resetToolbarState()
     }
 
     fun containsCopyText(values: Sequence<String>): Boolean {
@@ -40,16 +48,10 @@ internal class ClipboardAccessibilityHeuristics(
             .any(COPY_WORDS::contains)
     }
 
-    fun containsCopyWindowText(packageName: String?, values: Sequence<String>): Boolean {
+    fun containsCopyWindowText(values: Sequence<String>): Boolean {
         return values
             .map(::normalize)
-            .any { normalized ->
-                if (packageName in BROAD_WINDOW_COMMAND_PACKAGES) {
-                    isCopyAffordanceText(normalized)
-                } else {
-                    COPY_WORDS.contains(normalized)
-                }
-            }
+            .any(::isCopyAffordanceText)
     }
 
     fun containsCopyCommandText(values: Sequence<String>): Boolean {
@@ -87,19 +89,17 @@ internal class ClipboardAccessibilityHeuristics(
             COPY_COMMAND_PREFIXES.any { prefix -> normalized.startsWith("$prefix ") }
     }
 
+    private fun resetToolbarState() {
+        copyAffordanceVisible = false
+        lastCopyAffordanceSeenElapsedAtMs = 0L
+        lastCopyAffordanceSeenWallClockAtMs = 0L
+    }
+
     companion object {
         const val DEFAULT_TOOLBAR_GRACE_PERIOD_MS = 1_500L
         private const val MAX_DEBUG_CANDIDATES = 4
 
         private val WHITESPACE_REGEX = "\\s+".toRegex()
-        private val BROAD_WINDOW_COMMAND_PACKAGES = setOf(
-            "com.reddit.frontpage",
-            "com.android.chrome",
-            "org.mozilla.firefox",
-            "com.brave.browser",
-            "com.microsoft.emmx",
-            "com.sec.android.app.sbrowser",
-        )
 
         private val COPY_WORDS = setOf(
             "copy",

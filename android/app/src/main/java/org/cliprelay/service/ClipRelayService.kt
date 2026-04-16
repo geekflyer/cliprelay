@@ -54,6 +54,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val ACTION_PAIRING_COMPLETE = "org.cliprelay.action.PAIRING_COMPLETE"
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_CLIPBOARD_TRIGGER_SOURCE = "extra_clipboard_trigger_source"
+        const val EXTRA_CLIPBOARD_TIMESTAMP_MS = "extra_clipboard_timestamp_ms"
+        const val EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS = "extra_min_clipboard_timestamp_ms"
         const val EXTRA_CONNECTED = "extra_connected"
         const val EXTRA_DEVICE_NAME = "extra_device_name"
         const val EXTRA_DEVICE_TAG = "extra_device_tag"
@@ -211,8 +213,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             }
             ACTION_ACCESSIBILITY_COPY_DETECTED -> {
                 handleClipboardChanged(
-                    intent.getStringExtra(EXTRA_CLIPBOARD_TRIGGER_SOURCE)
-                        ?: CLIPBOARD_TRIGGER_DIRECT
+                    triggerSource = intent.getStringExtra(EXTRA_CLIPBOARD_TRIGGER_SOURCE)
+                        ?: CLIPBOARD_TRIGGER_DIRECT,
+                    minClipboardTimestampMs = intent.getLongExtra(
+                        EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS,
+                        0L
+                    ).takeIf { intent.hasExtra(EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS) }
                 )
                 return START_STICKY
             }
@@ -234,9 +240,22 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 val text = intent.getStringExtra(EXTRA_TEXT)
                 val triggerSource = intent.getStringExtra(EXTRA_CLIPBOARD_TRIGGER_SOURCE)
                     ?: CLIPBOARD_TRIGGER_DIRECT
+                val clipboardTimestampMs = intent.getLongExtra(
+                    EXTRA_CLIPBOARD_TIMESTAMP_MS,
+                    0L
+                ).takeIf { intent.hasExtra(EXTRA_CLIPBOARD_TIMESTAMP_MS) }
+                val minClipboardTimestampMs = intent.getLongExtra(
+                    EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS,
+                    0L
+                ).takeIf { intent.hasExtra(EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS) }
                 if (!text.isNullOrBlank()) {
                     executor.execute {
-                        pushPlainTextToMac(text, triggerSource)
+                        pushPlainTextToMac(
+                            text = text,
+                            triggerSource = triggerSource,
+                            clipboardTimestampMs = clipboardTimestampMs,
+                            minClipboardTimestampMs = minClipboardTimestampMs
+                        )
                     }
                 }
             }
@@ -581,7 +600,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     // ── Outbound (Android → Mac) ─────────────────────────────────────
 
-    private fun pushPlainTextToMac(text: String, triggerSource: String) {
+    private fun pushPlainTextToMac(
+        text: String,
+        triggerSource: String,
+        clipboardTimestampMs: Long? = null,
+        minClipboardTimestampMs: Long? = null
+    ) {
         if (isDestroyed) return
         val plaintext = text.toByteArray(Charsets.UTF_8)
         if (plaintext.isEmpty() || plaintext.size > MAX_CLIPBOARD_BYTES) {
@@ -594,6 +618,18 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         val session = activeSession
         if (session == null) {
             Log.d(TAG, "No active L2CAP session; skipping Android->Mac push")
+            return
+        }
+
+        if (
+            triggerSource == CLIPBOARD_TRIGGER_TOOLBAR_CLOSE &&
+            (clipboardTimestampMs == null || minClipboardTimestampMs == null ||
+                clipboardTimestampMs < minClipboardTimestampMs)
+        ) {
+            Log.d(
+                TAG,
+                "Skipping send — toolbar close was not backed by a fresh clipboard timestamp"
+            )
             return
         }
 
@@ -719,7 +755,10 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     // ── Auto-copy (triggered by AccessibilityService) ────────────────
 
-    private fun handleClipboardChanged(triggerSource: String) {
+    private fun handleClipboardChanged(
+        triggerSource: String,
+        minClipboardTimestampMs: Long? = null
+    ) {
         Log.d(TAG, "Clipboard changed — activeSession=${activeSession != null}, ghostInFlight=$ghostActivityInFlight")
 
         // Skip if no active session (no Mac connected)
@@ -752,6 +791,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or
                     Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
             putExtra(EXTRA_CLIPBOARD_TRIGGER_SOURCE, triggerSource)
+            minClipboardTimestampMs?.let {
+                putExtra(EXTRA_MIN_CLIPBOARD_TIMESTAMP_MS, it)
+            }
         }
         startActivity(ghostIntent)
     }

@@ -15,27 +15,11 @@ class ClipboardAccessibilityHeuristicsTest {
     }
 
     @Test
-    fun `window text uses broader matching for known toolbar apps`() {
+    fun `window text uses broader matching for command style labels`() {
         val heuristics = ClipboardAccessibilityHeuristics()
 
-        assertTrue(
-            heuristics.containsCopyWindowText(
-                "com.reddit.frontpage",
-                sequenceOf("Copy permalink")
-            )
-        )
-        assertTrue(
-            heuristics.containsCopyWindowText(
-                "com.android.chrome",
-                sequenceOf("Copy address")
-            )
-        )
-        assertFalse(
-            heuristics.containsCopyWindowText(
-                "com.example.notes",
-                sequenceOf("Copy address")
-            )
-        )
+        assertTrue(heuristics.containsCopyWindowText(sequenceOf("Copy permalink")))
+        assertTrue(heuristics.containsCopyWindowText(sequenceOf("Copy address")))
     }
 
     @Test
@@ -75,33 +59,69 @@ class ClipboardAccessibilityHeuristicsTest {
 
     @Test
     fun `toolbar close within grace window triggers fallback`() {
-        var now = 1_000L
-        val heuristics = ClipboardAccessibilityHeuristics(nowMs = { now }, toolbarGracePeriodMs = 500L)
+        var nowElapsed = 1_000L
+        var nowWallClock = 50_000L
+        val heuristics = ClipboardAccessibilityHeuristics(
+            elapsedRealtimeMs = { nowElapsed },
+            wallClockMs = { nowWallClock },
+            toolbarGracePeriodMs = 500L
+        )
 
-        assertFalse(heuristics.onCopyAffordanceChanged(true))
+        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
 
-        now += 300L
-        assertTrue(heuristics.onCopyAffordanceChanged(false))
+        nowElapsed += 300L
+        nowWallClock += 300L
+        assertTrue(heuristics.onCopyAffordanceChanged(false) == 50_000L)
     }
 
     @Test
     fun `toolbar close after grace window does not trigger fallback`() {
-        var now = 1_000L
-        val heuristics = ClipboardAccessibilityHeuristics(nowMs = { now }, toolbarGracePeriodMs = 500L)
+        var nowElapsed = 1_000L
+        var nowWallClock = 50_000L
+        val heuristics = ClipboardAccessibilityHeuristics(
+            elapsedRealtimeMs = { nowElapsed },
+            wallClockMs = { nowWallClock },
+            toolbarGracePeriodMs = 500L
+        )
 
-        assertFalse(heuristics.onCopyAffordanceChanged(true))
+        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
 
-        now += 700L
-        assertFalse(heuristics.onCopyAffordanceChanged(false))
+        nowElapsed += 700L
+        nowWallClock += 700L
+        assertFalse(heuristics.onCopyAffordanceChanged(false) != null)
     }
 
     @Test
     fun `direct detection resets toolbar fallback state`() {
         val heuristics = ClipboardAccessibilityHeuristics()
 
-        assertFalse(heuristics.onCopyAffordanceChanged(true))
+        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
         heuristics.resetAfterDirectDetection()
-        assertFalse(heuristics.onCopyAffordanceChanged(false))
+        assertFalse(heuristics.onCopyAffordanceChanged(false) != null)
+    }
+
+    @Test
+    fun `expired close resets state before next affordance`() {
+        var nowElapsed = 1_000L
+        var nowWallClock = 50_000L
+        val heuristics = ClipboardAccessibilityHeuristics(
+            elapsedRealtimeMs = { nowElapsed },
+            wallClockMs = { nowWallClock },
+            toolbarGracePeriodMs = 500L
+        )
+
+        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
+        nowElapsed += 700L
+        nowWallClock += 700L
+        assertFalse(heuristics.onCopyAffordanceChanged(false) != null)
+
+        nowElapsed += 100L
+        nowWallClock = 90_000L
+        assertFalse(heuristics.onCopyAffordanceChanged(true) != null)
+
+        nowElapsed += 200L
+        nowWallClock += 200L
+        assertTrue(heuristics.onCopyAffordanceChanged(false) == 90_000L)
     }
 
     @Test
