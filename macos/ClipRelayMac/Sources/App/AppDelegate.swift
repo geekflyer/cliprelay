@@ -278,14 +278,14 @@ extension AppDelegate: ConnectionControllerDelegate {
     }
 
     func didReceiveClipboard(text: String) {
-        statusBarController.flashSyncIndicator(style: .inbound)
         clipboardWriter.writeText(text)
         notificationManager.postClipboardReceived(text: text)
+        statusBarController.flashSyncIndicator(style: .inbound)
     }
 
     func didReceiveImage(data: Data, contentType: String) {
-        statusBarController.flashSyncIndicator(style: .inbound)
         clipboardWriter.writeImage(data, contentType: contentType)
+        statusBarController.flashSyncIndicator(style: .inbound)
     }
 
     func didCompletePairing(deviceName: String?) {

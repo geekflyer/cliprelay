@@ -11,6 +11,13 @@ final class StatusBarController {
         case inbound
     }
 
+    struct SyncIndicatorSpec {
+        let values: [CGFloat]
+        let keyTimes: [NSNumber]
+        let duration: TimeInterval
+        let restoreDelay: TimeInterval
+    }
+
     var onPairNewDeviceRequested: (() -> Void)?
     var onForgetDeviceRequested: ((String) -> Void)?
     var onToggleLaunchAtLogin: (() -> Void)?
@@ -89,8 +96,9 @@ final class StatusBarController {
 
 
     /// Briefly pulses the status bar icon to indicate a clipboard sync.
-    func flashSyncIndicator(style: SyncIndicatorStyle = .outbound) {
+    func flashSyncIndicator(style: SyncIndicatorStyle) {
         guard let button = statusItem.button, let base = baseStatusBarImage else { return }
+        let spec = Self.syncIndicatorSpec(for: style)
 
         // Cancel any in-progress pulse
         syncPulseTimer?.invalidate()
@@ -105,15 +113,15 @@ final class StatusBarController {
         button.wantsLayer = true
         if let layer = button.layer {
             let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-            pulse.values = pulseValues(for: style)
-            pulse.keyTimes = [0, 0.35, 1.0]
-            pulse.duration = pulseDuration(for: style)
+            pulse.values = spec.values
+            pulse.keyTimes = spec.keyTimes
+            pulse.duration = spec.duration
             pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             layer.add(pulse, forKey: "syncPulse")
         }
 
         // Restore normal icon after the animation completes
-        let timer = Timer(timeInterval: restoreDelay(for: style), repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: spec.restoreDelay, repeats: false) { [weak self] _ in
             self?.updateStatusBarIcon()
         }
         syncPulseTimer = timer
@@ -129,30 +137,22 @@ final class StatusBarController {
         }
     }
 
-    private func pulseValues(for style: SyncIndicatorStyle) -> [CGFloat] {
+    static func syncIndicatorSpec(for style: SyncIndicatorStyle) -> SyncIndicatorSpec {
         switch style {
         case .outbound:
-            return [1.0, 1.3, 1.0]
+            return SyncIndicatorSpec(
+                values: [1.0, 1.3, 1.0],
+                keyTimes: [0.0, 0.35, 1.0],
+                duration: 0.35,
+                restoreDelay: 0.4
+            )
         case .inbound:
-            return [1.0, 1.45, 1.15, 1.0]
-        }
-    }
-
-    private func pulseDuration(for style: SyncIndicatorStyle) -> TimeInterval {
-        switch style {
-        case .outbound:
-            return 0.35
-        case .inbound:
-            return 0.65
-        }
-    }
-
-    private func restoreDelay(for style: SyncIndicatorStyle) -> TimeInterval {
-        switch style {
-        case .outbound:
-            return 0.4
-        case .inbound:
-            return 0.85
+            return SyncIndicatorSpec(
+                values: [1.0, 1.45, 1.15, 1.0],
+                keyTimes: [0.0, 0.25, 0.6, 1.0],
+                duration: 0.65,
+                restoreDelay: 0.85
+            )
         }
     }
 
