@@ -1,5 +1,8 @@
 package org.cliprelay.service
 
+// Copyright (c) 2026 Christian T. All Rights Reserved.
+// Reference-only source code. See the repository LICENSE for terms.
+
 import android.os.SystemClock
 import java.util.Locale
 
