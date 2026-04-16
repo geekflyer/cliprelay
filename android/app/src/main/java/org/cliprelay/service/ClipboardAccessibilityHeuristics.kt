@@ -37,6 +37,16 @@ internal class ClipboardAccessibilityHeuristics(
             .any(COPY_WORDS::contains)
     }
 
+    @Synchronized
+    fun containsCopyCommandText(values: Sequence<String>): Boolean {
+        return values
+            .map(::normalize)
+            .any { normalized ->
+                COPY_WORDS.contains(normalized) ||
+                    COPY_COMMAND_PREFIXES.any { prefix -> normalized.startsWith("$prefix ") }
+            }
+    }
+
     private fun normalize(value: String): String {
         return value
             .lowercase(Locale.ROOT)
@@ -83,6 +93,23 @@ internal class ClipboardAccessibilityHeuristics(
             "העתק",
             "نسخ",
             "कॉपी करें",
+        )
+
+        private val COPY_COMMAND_PREFIXES = setOf(
+            "copy",
+            "copiar",
+            "copier",
+            "kopieren",
+            "copia",
+            "copiare",
+            "копировать",
+            "скопировать",
+            "kopyala",
+            "kopiuj",
+            "skopiuj",
+            "kopírovat",
+            "kopiera",
+            "kopioi",
         )
     }
 }

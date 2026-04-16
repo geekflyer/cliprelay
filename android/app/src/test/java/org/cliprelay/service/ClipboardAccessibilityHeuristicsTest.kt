@@ -24,6 +24,15 @@ class ClipboardAccessibilityHeuristicsTest {
     }
 
     @Test
+    fun `contains copy command text matches copy actions with app specific suffixes`() {
+        val heuristics = ClipboardAccessibilityHeuristics()
+
+        assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy address")))
+        assertTrue(heuristics.containsCopyCommandText(sequenceOf("Copy password")))
+        assertFalse(heuristics.containsCopyCommandText(sequenceOf("Don't copy")))
+    }
+
+    @Test
     fun `toolbar close within grace window triggers fallback`() {
         var now = 1_000L
         val heuristics = ClipboardAccessibilityHeuristics(nowMs = { now }, toolbarGracePeriodMs = 500L)

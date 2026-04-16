@@ -74,7 +74,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
                 source.recycle()
             }
         }
-        return heuristics.containsCopyText(eventSignals(event))
+        return heuristics.containsCopyCommandText(eventSignals(event))
     }
 
     private fun hasActionCopy(node: AccessibilityNodeInfo): Boolean {
