@@ -3,23 +3,23 @@
 import CryptoKit
 import Foundation
 
-enum E2ECrypto {
+package enum E2ECrypto {
     // Also used for KEY_CONFIRM during pairing — v1 devices cannot pair with v2 devices
     private static let aad = Data("cliprelay-v2".utf8)
 
     // MARK: - Key derivation (mirrors Android E2ECrypto.kt)
 
-    static func deriveKey(tokenHex: String) -> SymmetricKey? {
+    package static func deriveKey(tokenHex: String) -> SymmetricKey? {
         guard let tokenData = hexToData(tokenHex) else { return nil }
         return deriveKey(secretBytes: tokenData)
     }
 
-    static func deviceTag(tokenHex: String) -> Data? {
+    package static func deviceTag(tokenHex: String) -> Data? {
         guard let tokenData = hexToData(tokenHex) else { return nil }
         return deviceTag(secretBytes: tokenData)
     }
 
-    static func deriveKey(secretBytes: Data) -> SymmetricKey? {
+    package static func deriveKey(secretBytes: Data) -> SymmetricKey? {
         guard secretBytes.count == 32 else { return nil }
         let ikm = SymmetricKey(data: secretBytes)
         return HKDF<SHA256>.deriveKey(
@@ -29,7 +29,7 @@ enum E2ECrypto {
         )
     }
 
-    static func deviceTag(secretBytes: Data) -> Data? {
+    package static func deviceTag(secretBytes: Data) -> Data? {
         guard secretBytes.count == 32 else { return nil }
         let ikm = SymmetricKey(data: secretBytes)
         let tagKey = HKDF<SHA256>.deriveKey(
@@ -42,7 +42,7 @@ enum E2ECrypto {
 
     // MARK: - ECDH
 
-    static func ecdhSharedSecret(
+    package static func ecdhSharedSecret(
         privateKey: Curve25519.KeyAgreement.PrivateKey,
         remotePublicKeyBytes: Data
     ) throws -> Data {
@@ -60,7 +60,7 @@ enum E2ECrypto {
 
     // MARK: - V2 session key derivation (mirrors Android E2ECrypto.kt)
 
-    static func deriveAuthKey(secretBytes: Data) -> SymmetricKey? {
+    package static func deriveAuthKey(secretBytes: Data) -> SymmetricKey? {
         guard secretBytes.count == 32 else { return nil }
         let ikm = SymmetricKey(data: secretBytes)
         return HKDF<SHA256>.deriveKey(
@@ -70,7 +70,7 @@ enum E2ECrypto {
         )
     }
 
-    static func deriveSessionKey(secretBytes: Data, ecdhResult: Data) -> SymmetricKey? {
+    package static func deriveSessionKey(secretBytes: Data, ecdhResult: Data) -> SymmetricKey? {
         guard secretBytes.count == 32, ecdhResult.count == 32 else { return nil }
         var ikm = Data()
         ikm.append(secretBytes)
@@ -82,17 +82,17 @@ enum E2ECrypto {
         )
     }
 
-    static func hmacAuth(publicKeyBytes: Data, authKey: SymmetricKey) -> Data {
+    package static func hmacAuth(publicKeyBytes: Data, authKey: SymmetricKey) -> Data {
         let mac = HMAC<SHA256>.authenticationCode(for: publicKeyBytes, using: authKey)
         return Data(mac)
     }
 
-    static func verifyAuth(publicKeyBytes: Data, authKey: SymmetricKey, expected: Data) -> Bool {
+    package static func verifyAuth(publicKeyBytes: Data, authKey: SymmetricKey, expected: Data) -> Bool {
         // Use CryptoKit's constant-time HMAC validation (NOT Data ==, which is not constant-time)
         return HMAC<SHA256>.isValidAuthenticationCode(expected, authenticating: publicKeyBytes, using: authKey)
     }
 
-    static func rawX25519(
+    package static func rawX25519(
         privateKey: Curve25519.KeyAgreement.PrivateKey,
         remotePublicKeyBytes: Data
     ) throws -> Data {
@@ -106,7 +106,7 @@ enum E2ECrypto {
 
     // MARK: - Encryption
 
-    static func seal(_ plaintext: Data, key: SymmetricKey) throws -> Data {
+    package static func seal(_ plaintext: Data, key: SymmetricKey) throws -> Data {
         let sealed = try AES.GCM.seal(plaintext, using: key, authenticating: aad)
         guard let combined = sealed.combined else {
             throw NSError(domain: "E2ECrypto", code: 1, userInfo: [
@@ -117,14 +117,14 @@ enum E2ECrypto {
         return combined
     }
 
-    static func open(_ blob: Data, key: SymmetricKey) throws -> Data {
+    package static func open(_ blob: Data, key: SymmetricKey) throws -> Data {
         let box = try AES.GCM.SealedBox(combined: blob)
         return try AES.GCM.open(box, using: key, authenticating: aad)
     }
 
     // MARK: - Helpers
 
-    static func hexToData(_ hex: String) -> Data? {
+    package static func hexToData(_ hex: String) -> Data? {
         let chars = Array(hex)
         guard chars.count.isMultiple(of: 2) else { return nil }
         var data = Data(capacity: chars.count / 2)

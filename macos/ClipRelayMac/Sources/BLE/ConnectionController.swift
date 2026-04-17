@@ -1,6 +1,7 @@
 // Unified BLE connection controller: owns the full lifecycle from scanning through
 // session ready state, with a single cleanup path and generation-based cancellation.
 
+import ClipRelayCore
 import CoreBluetooth
 import CryptoKit
 import Foundation
@@ -577,10 +578,16 @@ extension ConnectionController: CBCentralManagerDelegate {
     ) {
         guard case .scanning = state else { return }
 
-        guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
-              let deviceTag = Self.extractDeviceTag(from: manufacturerData),
+        guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data else {
+            log("Ignoring discovery without manufacturer data (rssi=\(RSSI))")
+            return
+        }
+        guard let deviceTag = Self.extractDeviceTag(from: manufacturerData),
               let psm = Self.extractPSM(from: manufacturerData)
-        else { return }
+        else {
+            log("Ignoring discovery with malformed manufacturer data=\(manufacturerData.map { String(format: "%02x", $0) }.joined())")
+            return
+        }
 
         // Check for active pairing request
         if let pairingTag, pairingTag == deviceTag {
@@ -614,6 +621,10 @@ extension ConnectionController: CBCentralManagerDelegate {
             lastAttemptedPeripheral = peripheral
             peripheral.delegate = self
             central.connect(peripheral, options: nil)
+        } else {
+            let discoveredTag = deviceTag.map { String(format: "%02x", $0) }.joined()
+            let pairedTags = paired.map { $0.tag.map { String(format: "%02x", $0) }.joined() }.joined(separator: ",")
+            log("Ignoring unmatched device tag=\(discoveredTag), PSM=\(psm), paired=[\(pairedTags)]")
         }
     }
 

@@ -1,4 +1,4 @@
-// App entry point: single-instance guard, smoke-test CLI dispatch, and NSApplication bootstrap.
+// App entry point: single-instance guard and NSApplication bootstrap.
 
 import AppKit
 import os
@@ -17,12 +17,6 @@ private func hasAnotherRunningInstance() -> Bool {
         .runningApplications(withBundleIdentifier: bundleID)
         .contains { $0.processIdentifier != currentPID }
 }
-
-#if SMOKE_TEST_CLI
-if let exitCode = SmokeAutomationCLI.runIfRequested(arguments: CommandLine.arguments) {
-    exit(exitCode)
-}
-#endif
 
 if hasAnotherRunningInstance() {
     bootstrapLogger.error("Another ClipRelay instance detected; refusing secondary launch")

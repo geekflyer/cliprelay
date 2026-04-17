@@ -1,8 +1,12 @@
 import XCTest
-@testable import ClipRelay
+@testable import ClipRelayCore
 
 /// Tests for PairedDevice rich media settings persistence and defaults.
 final class PairedDeviceTests: XCTestCase {
+    private func makeManager() -> PairingManager {
+        PairingManager(store: InMemoryDataStore())
+    }
+
 
     // MARK: - Default values
 
@@ -56,10 +60,6 @@ final class PairedDeviceTests: XCTestCase {
         XCTAssertEqual(decoded[0].richMediaEnabledChangedAt, 42)
     }
 
-    private func makeManager() -> PairingManager {
-        PairingManager(store: InMemoryDataStore())
-    }
-
     // MARK: - PairingManager integration
 
     func testSetRichMediaEnabledUpdatesDevice() {
@@ -77,13 +77,13 @@ final class PairedDeviceTests: XCTestCase {
         XCTAssertNotNil(found)
         XCTAssertTrue(found!.richMediaEnabled)
         XCTAssertEqual(found!.richMediaEnabledChangedAt, now)
-
     }
 
     func testClearRichMediaBySettingFalse() {
         let manager = makeManager()
         let secret = "ee" + String(repeating: "00", count: 31)
         let device = PairedDevice(sharedSecret: secret, displayName: "ClearTest", datePaired: Date())
+
         manager.addDevice(device)
 
         let t1 = Int64(Date().timeIntervalSince1970)

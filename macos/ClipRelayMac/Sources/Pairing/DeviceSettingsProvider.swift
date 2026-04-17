@@ -1,6 +1,7 @@
 // Wraps PairingManager to conform to SettingsProvider for a specific paired device.
 
 import Foundation
+import ClipRelayCore
 
 /// Adapter that exposes per-device rich-media settings through the SettingsProvider protocol.
 /// Holds a weak reference to PairingManager and the device's shared secret.

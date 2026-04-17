@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # Generates a shared pairing token and injects it into both Mac and Android for automated testing.
-# Rebuilds the local macOS app with smoke-test CLI enabled when needed.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 MAC_APP="$DIST_DIR/ClipRelay.app"
+MAC_SMOKE_CLI="$DIST_DIR/ClipRelaySmokeCLI"
+MAC_BINARY="$MAC_APP/Contents/MacOS/ClipRelay"
 ANDROID_PKG="org.cliprelay"
-ANDROID_PREFS_DIR="/data/data/$ANDROID_PKG/shared_prefs"
 
+# Shared macOS smoke-test helpers and dedicated keychain setup.
+# shellcheck source=/dev/null
 source "$ROOT_DIR/scripts/smoke-mac-common.sh"
+# shellcheck source=/dev/null
+ADB=(adb)
+source "$ROOT_DIR/scripts/smoke-android-common.sh"
 
 usage() {
-    echo "Usage: $0 [--token TOKEN]"
+    echo "Usage: $0 [--token TOKEN] [--serial ADB_SERIAL]"
     echo
     echo "Generates a shared pairing token and injects it into both Mac and Android."
     echo "If --token is provided, uses that token instead of generating a new one."
@@ -20,10 +25,15 @@ usage() {
 }
 
 TOKEN=""
+ANDROID_SERIAL=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --token)
             TOKEN="$2"
+            shift 2
+            ;;
+        --serial)
+            ANDROID_SERIAL="$2"
             shift 2
             ;;
         -h|--help)
@@ -52,42 +62,73 @@ fi
 
 TOKEN=$(echo "$TOKEN" | tr '[:upper:]' '[:lower:]')
 
+select_android_device() {
+    local state
+
+    if [[ -n "$ANDROID_SERIAL" ]]; then
+        state="$(adb -s "$ANDROID_SERIAL" get-state 2>/dev/null || true)"
+        if [[ "$state" != "device" ]]; then
+            echo "Error: Android device '$ANDROID_SERIAL' is not online" >&2
+            exit 1
+        fi
+        ADB=(adb -s "$ANDROID_SERIAL")
+        return
+    fi
+
+    local devices=()
+    while IFS= read -r serial; do
+        [[ -n "$serial" ]] && devices+=("$serial")
+    done < <(adb devices | tr -d '\r' | awk -F '\t' 'NR > 1 && $2 == "device" { print $1 }')
+
+    if [[ ${#devices[@]} -eq 0 ]]; then
+        echo "Error: No Android device connected (adb)" >&2
+        exit 1
+    fi
+
+    if [[ ${#devices[@]} -gt 1 ]]; then
+        echo "Error: Multiple adb devices detected: ${devices[*]}" >&2
+        echo "Use --serial <adb-serial> to choose one." >&2
+        exit 1
+    fi
+
+    ANDROID_SERIAL="${devices[0]}"
+    ADB=(adb -s "$ANDROID_SERIAL")
+}
+
 # ── Mac side ──────────────────────────────────────────────────────────
 
 echo
-echo "==> Importing token into Mac smoke CLI..."
+echo "==> Injecting token into Mac keychain..."
 
 # Kill existing Mac app
 pkill -f ClipRelay 2>/dev/null || true
 sleep 0.5
 
-ensure_primary_mac_app
-run_smoke_mac_cli --smoke-import-pairing --token "$TOKEN" --name "Android"
-echo "Mac pairing token imported."
+if [[ ! -x "$MAC_SMOKE_CLI" ]]; then
+    echo "Error: Smoke CLI not found at $MAC_SMOKE_CLI. Run scripts/build-all.sh first." >&2
+    exit 1
+fi
+
+prepare_mac_smoke_keychain
+smoke_mac_env "$MAC_SMOKE_CLI" --smoke-import-pairing --token "$TOKEN" --name "Android"
+echo "Mac pairing token injected."
 
 # ── Android side ──────────────────────────────────────────────────────
 
 echo
 echo "==> Injecting token into Android device..."
 
-# Check for connected device
-if ! adb get-state >/dev/null 2>&1; then
-    echo "Error: No Android device connected (adb)" >&2
-    exit 1
-fi
+select_android_device
+echo "Using adb device: $ANDROID_SERIAL"
 
 # Get Mac name for the Android side
 MAC_NAME_RAW="$(scutil --get ComputerName 2>/dev/null || hostname)"
 MAC_NAME="$(printf '%s' "$MAC_NAME_RAW" | tr -cs '[:alnum:]_-.' '_')"
 
-# Inject token via debug broadcast receiver
-adb shell am broadcast \
-    -n "$ANDROID_PKG/.debug.DebugSmokeReceiver" \
-    -a "org.cliprelay.debug.IMPORT_PAIRING" \
-    --es token "$TOKEN" \
-    --es device_name "$MAC_NAME" \
-    --receiver-foreground 2>&1 | tail -1
-echo "Android pairing token injected via broadcast."
+# Inject token via debug-only file overrides
+android_smoke_import_pairing "$TOKEN" "$MAC_NAME"
+android_smoke_reset_probe
+echo "Android pairing token injected."
 
 # ── Restart both apps ────────────────────────────────────────────────
 
@@ -95,11 +136,11 @@ echo
 echo "==> Restarting both apps..."
 
 # Start Mac app
-start_primary_mac_app
+smoke_open_mac_app "$MAC_APP" /tmp/cliprelay-auto-pair-mac.log /tmp/cliprelay-auto-pair-mac.log
 echo "Mac app started."
 
 # Bring Android app to foreground
-adb shell am start -n "$ANDROID_PKG/.ui.MainActivity" >/dev/null
+"${ADB[@]}" shell am start -n "$ANDROID_PKG/.ui.MainActivity" >/dev/null
 echo "Android app started."
 
 echo

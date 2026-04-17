@@ -1,6 +1,6 @@
 import CryptoKit
 import XCTest
-@testable import ClipRelay
+@testable import ClipRelayCore
 
 final class E2ECryptoKeyDerivationTests: XCTestCase {
     /// Known test vector — must match Android E2ECryptoTest.kt

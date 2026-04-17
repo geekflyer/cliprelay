@@ -2,6 +2,7 @@ import XCTest
 import CryptoKit
 import AppKit
 @testable import ClipRelay
+@testable import ClipRelayCore
 
 /// Tests for the Session protocol handler using piped in-memory streams.
 ///

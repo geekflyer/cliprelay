@@ -1,5 +1,6 @@
 // Sends periodic check-ins with app state for anonymous usage insights.
 
+import ClipRelayCore
 import Foundation
 import os
 

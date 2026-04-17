@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import org.cliprelay.crypto.E2ECrypto
+import org.cliprelay.debug.DebugSmokeOverrides
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.service.ClipboardAccessibilityService
@@ -113,8 +114,9 @@ class MainActivity : AppCompatActivity() {
         val pairingStore = PairingStore(this)
         val secret = pairingStore.loadSharedSecret()
         val isPaired = secret != null
-        val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
-            .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
+        val deviceName = DebugSmokeOverrides.connectedDeviceName(this)
+            ?: getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
+                .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
         val deviceTag = secret?.let(E2ECrypto::formatDeviceTag)
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         val autoCopyEnabled = clipboardSettingsStore.isAutoCopyEnabled()

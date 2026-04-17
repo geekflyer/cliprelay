@@ -7,9 +7,13 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import org.cliprelay.debug.DebugSmokeOverrides
 import org.cliprelay.protocol.SettingsProvider
 
-class PairingStore internal constructor(private val encryptedPrefs: SharedPreferences?) : SettingsProvider {
+class PairingStore internal constructor(
+    private val context: Context?,
+    private val encryptedPrefs: SharedPreferences?
+) : SettingsProvider {
     companion object {
         private const val TAG = "PairingStore"
         private const val PREFS_NAME = "cliprelay_pairing"
@@ -19,6 +23,7 @@ class PairingStore internal constructor(private val encryptedPrefs: SharedPrefer
     }
 
     constructor(context: Context) : this(
+        context,
         try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -49,6 +54,7 @@ class PairingStore internal constructor(private val encryptedPrefs: SharedPrefer
     }
 
     fun loadSharedSecret(): String? {
+        context?.let { DebugSmokeOverrides.sharedSecret(it) }?.let { return it }
         return readSecret(encryptedPrefs)
     }
 
@@ -73,6 +79,7 @@ class PairingStore internal constructor(private val encryptedPrefs: SharedPrefer
     }
 
     fun clear() {
+        context?.let(DebugSmokeOverrides::clear)
         clearAll(encryptedPrefs)
     }
 

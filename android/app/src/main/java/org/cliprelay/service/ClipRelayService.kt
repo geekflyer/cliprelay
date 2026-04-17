@@ -28,6 +28,7 @@ import org.cliprelay.ble.Advertiser
 import org.cliprelay.ble.L2capServer
 import org.cliprelay.ble.L2capServerCallback
 import org.cliprelay.crypto.E2ECrypto
+import org.cliprelay.debug.DebugSmokeOverrides
 import org.cliprelay.debug.DebugSmokeProbe
 import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.pairing.PairingStore
@@ -795,7 +796,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     }
 
     private fun loadConnectedDeviceName(): String? =
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_CONNECTED_DEVICE, null)
+        DebugSmokeOverrides.connectedDeviceName(this)
+            ?: getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_CONNECTED_DEVICE, null)
 
     // ── Notification ──────────────────────────────────────────────────
 
