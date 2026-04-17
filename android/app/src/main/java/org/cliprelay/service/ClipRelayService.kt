@@ -435,6 +435,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     override fun onSessionReady() {
         Log.w(TAG, "L2CAP session ready")
+        lastSentTextHash = null
 
         // If the advertiser's device tag was updated during pairing (without a
         // restart), restart it now so future reconnections use the correct tag.
@@ -476,6 +477,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         Log.e(TAG, "Session error: ${error.message}")
         activeSession = null
         sessionThread = null
+        lastSentTextHash = null
         sendConnectionBroadcast(false)
         DebugSmokeProbe.onConnectionChanged(this, false)
 
@@ -577,7 +579,6 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             Log.d(TAG, "Skipping send — same text already sent")
             return
         }
-        lastSentTextHash = textHash
 
         val session = activeSession
         if (session == null) {
@@ -586,6 +587,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
 
         session.sendClipboard(plaintext)
+        lastSentTextHash = textHash
         DebugSmokeProbe.onOutboundClipboardPublished(this, text)
     }
 
