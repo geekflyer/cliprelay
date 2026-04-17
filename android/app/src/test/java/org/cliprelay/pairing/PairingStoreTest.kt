@@ -15,7 +15,7 @@ class PairingStoreTest {
 
     @Before
     fun setUp() {
-        store = PairingStore(FakeSharedPreferences())
+        store = PairingStore(context = null, encryptedPrefs = FakeSharedPreferences())
     }
 
     @Test

@@ -1,6 +1,7 @@
 // Core app delegate: wires together BLE, clipboard, pairing, and UI subsystems.
 
 import AppKit
+import ClipRelayCore
 import CoreBluetooth
 import CryptoKit
 import os

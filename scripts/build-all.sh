@@ -67,6 +67,22 @@ fi
 
 mkdir -p "$DIST_DIR"
 
+resolve_swift_binary() {
+  local product_name="$1"
+  local candidate
+  for candidate in \
+    "$MAC_PROJECT_DIR/.build/release/$product_name" \
+    "$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/$product_name" \
+    "$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/$product_name"
+  do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 build_mac() {
   if ! command -v swift >/dev/null 2>&1; then
     echo "swift not found. Install Xcode command-line tools first." >&2
@@ -76,17 +92,16 @@ build_mac() {
   echo "==> Building macOS app"
   swift build --configuration release --package-path "$MAC_PROJECT_DIR"
 
-  local binary_path="$MAC_PROJECT_DIR/.build/release/ClipRelay"
-  if [[ ! -x "$binary_path" ]]; then
-    if [[ -x "$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/ClipRelay" ]]; then
-      binary_path="$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/ClipRelay"
-    elif [[ -x "$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/ClipRelay" ]]; then
-      binary_path="$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/ClipRelay"
-    else
-      echo "Could not locate built macOS binary." >&2
-      exit 1
-    fi
-  fi
+  local binary_path
+  binary_path="$(resolve_swift_binary ClipRelay)" || {
+    echo "Could not locate built macOS app binary." >&2
+    exit 1
+  }
+  local smoke_cli_path
+  smoke_cli_path="$(resolve_swift_binary ClipRelaySmokeCLI)" || {
+    echo "Could not locate built macOS smoke CLI binary." >&2
+    exit 1
+  }
 
   local app_dir="$DIST_DIR/ClipRelay.app"
   rm -rf "$app_dir"
@@ -157,23 +172,29 @@ PLIST
   # ── Sign with entitlements + hardened runtime ──
   local entitlements_path="$ROOT_DIR/macos/ClipRelayMac/Resources/ClipRelay.entitlements"
   local dev_id="Developer ID Application: Christian Theilemann (B66YFKPUA8)"
+  local signing_identity="-"
   if security find-identity -v -p codesigning 2>/dev/null | grep -q "$dev_id"; then
+    signing_identity="$dev_id"
     echo "Signing with Developer ID + hardened runtime..."
-    codesign --force --deep --sign "$dev_id" \
+    codesign --force --deep --sign "$signing_identity" \
         --entitlements "$entitlements_path" \
         --options runtime \
         --timestamp \
         "$app_dir"
   else
-    echo "Developer ID not found, signing ad-hoc with hardened runtime..."
-    codesign --force --sign - \
-        --entitlements "$entitlements_path" \
-        --options runtime \
+    echo "Developer ID not found, signing ad-hoc without hardened runtime..."
+    codesign --force --deep --sign "$signing_identity" \
         "$app_dir"
   fi
   echo "Code signing complete."
 
+  rm -f "$DIST_DIR/ClipRelaySmokeCLI"
+  cp "$smoke_cli_path" "$DIST_DIR/ClipRelaySmokeCLI"
+  chmod +x "$DIST_DIR/ClipRelaySmokeCLI"
+  codesign --force --sign "$signing_identity" "$DIST_DIR/ClipRelaySmokeCLI"
+
   echo "macOS app bundle created: $app_dir"
+  echo "macOS smoke CLI created: $DIST_DIR/ClipRelaySmokeCLI"
 }
 
 build_android() {

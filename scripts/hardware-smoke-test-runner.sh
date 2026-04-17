@@ -6,7 +6,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 ANDROID_APP_ID="org.cliprelay"
 MAC_APP_PATH="$DIST_DIR/ClipRelay.app"
-MAC_BIN="$MAC_APP_PATH/Contents/MacOS/ClipRelay"
+MAC_SMOKE_CLI="$DIST_DIR/ClipRelaySmokeCLI"
+MAC_APP_BIN="$MAC_APP_PATH/Contents/MacOS/ClipRelay"
+
+# Shared macOS smoke-test helpers and dedicated keychain setup.
+# shellcheck source=/dev/null
+source "$ROOT_DIR/scripts/smoke-mac-common.sh"
+# shellcheck source=/dev/null
+source "$ROOT_DIR/scripts/smoke-android-common.sh"
 
 ANDROID_SERIAL=""
 WIRELESS_DEBUG=false
@@ -23,7 +30,7 @@ M2A_STRESS_TIMEOUT_SEC=12
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/hardware-smoke-test-auto.sh [options]
+Usage: ./scripts/hardware-smoke-test.sh [options]
 
 Options:
   --serial <adb-serial>         Use a specific adb serial
@@ -245,11 +252,8 @@ cleanup_smoke_pairing() {
   fi
 
   echo "- Cleaning up smoke pairing token"
-  "$MAC_BIN" --smoke-remove-pairing --token "$PAIR_TOKEN" >/dev/null 2>&1 || true
-  "${ADB[@]}" shell am broadcast \
-    -n org.cliprelay/.debug.DebugSmokeReceiver \
-    -a org.cliprelay.debug.CLEAR_PAIRING \
-    --receiver-foreground >/dev/null 2>&1 || true
+  smoke_mac_env "$MAC_SMOKE_CLI" --smoke-remove-pairing --token "$PAIR_TOKEN" >/dev/null 2>&1 || true
+  android_smoke_clear_pairing
 }
 
 trap cleanup_smoke_pairing EXIT
@@ -555,26 +559,8 @@ run_m2a_stress_loop() {
   done
 }
 
-broadcast_debug_action() {
-  local action="$1"
-  shift
-  local output
-  output="$(
-    "${ADB[@]}" shell am broadcast \
-      -n org.cliprelay/.debug.DebugSmokeReceiver \
-      -a "$action" \
-      --receiver-foreground \
-      "$@" 2>&1 | tr -d '\r'
-  )"
-  if [[ "$output" != *"result=1"* ]]; then
-    echo "Debug broadcast failed for action: $action" >&2
-    echo "$output" >&2
-    return 1
-  fi
-}
-
 start_android_app() {
-  "${ADB[@]}" shell am start -W -n org.cliprelay/.ui.MainActivity >/dev/null 2>&1 || true
+  "${ADB[@]}" shell am start -n org.cliprelay/.ui.MainActivity >/dev/null 2>&1 || true
 }
 
 start_mac_app() {
@@ -582,7 +568,7 @@ start_mac_app() {
     return
   fi
 
-  open "$MAC_APP_PATH"
+  smoke_open_mac_app "$MAC_APP_PATH" /tmp/cliprelay-hardware-smoke-mac.log /tmp/cliprelay-hardware-smoke-mac.log
 
   local attempts=0
   until pgrep -f "ClipRelay.app/Contents/MacOS/ClipRelay" >/dev/null 2>&1; do
@@ -598,13 +584,31 @@ start_mac_app() {
 
 toggle_bluetooth() {
   if "${ADB[@]}" shell cmd bluetooth_manager disable >/dev/null 2>&1; then
-    if ! "${ADB[@]}" shell cmd bluetooth_manager wait-for-state:STATE_OFF >/dev/null 2>&1; then
+    local off_wait_ok=false
+    if "${ADB[@]}" shell cmd bluetooth_manager wait-for-state:STATE_OFF >/dev/null 2>&1; then
+      off_wait_ok=true
+    else
+      for _ in {1..8}; do
+        if [[ "$("${ADB[@]}" shell settings get global bluetooth_on 2>/dev/null | tr -d '\r')" == "0" ]]; then
+          off_wait_ok=true
+          break
+        fi
+        sleep 1
+      done
+    fi
+    if [[ "$off_wait_ok" != true ]]; then
       return 1
     fi
     if ! "${ADB[@]}" shell cmd bluetooth_manager enable >/dev/null 2>&1; then
       return 1
     fi
     if ! "${ADB[@]}" shell cmd bluetooth_manager wait-for-state:STATE_ON >/dev/null 2>&1; then
+      for _ in {1..8}; do
+        if [[ "$("${ADB[@]}" shell settings get global bluetooth_on 2>/dev/null | tr -d '\r')" == "1" ]]; then
+          return 0
+        fi
+        sleep 1
+      done
       return 1
     fi
     return 0
@@ -651,8 +655,13 @@ if [[ ! -d "$MAC_APP_PATH" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$MAC_BIN" ]]; then
-  echo "Missing macOS binary: $MAC_BIN" >&2
+if [[ ! -x "$MAC_SMOKE_CLI" ]]; then
+  echo "Missing macOS smoke CLI: $MAC_SMOKE_CLI" >&2
+  exit 1
+fi
+
+if [[ ! -x "$MAC_APP_BIN" ]]; then
+  echo "Missing macOS app binary: $MAC_APP_BIN" >&2
   exit 1
 fi
 
@@ -683,14 +692,14 @@ echo "- Android device: ${ANDROID_MODEL}"
 echo "- Importing fresh pairing token"
 
 pkill -f "ClipRelay.app/Contents/MacOS/ClipRelay" >/dev/null 2>&1 || true
-"$MAC_BIN" --smoke-import-pairing --token "$PAIR_TOKEN" --name "$ANDROID_MODEL" >/dev/null
+prepare_mac_smoke_keychain
+smoke_mac_env "$MAC_SMOKE_CLI" --smoke-import-pairing --token "$PAIR_TOKEN" --name "$ANDROID_MODEL" >/dev/null
 
 "${ADB[@]}" shell am force-stop "$ANDROID_APP_ID" >/dev/null 2>&1 || true
+android_smoke_import_pairing "$PAIR_TOKEN" "$MAC_NAME"
+android_smoke_reset_probe
 start_android_app
 sleep 2
-
-broadcast_debug_action "org.cliprelay.debug.IMPORT_PAIRING" --es token "$PAIR_TOKEN" --es device_name "$MAC_NAME"
-broadcast_debug_action "org.cliprelay.debug.RESET_PROBE"
 
 start_mac_app
 

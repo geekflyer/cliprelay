@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import org.cliprelay.crypto.E2ECrypto
+import org.cliprelay.debug.DebugSmokeOverrides
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.service.ClipboardAccessibilityService
@@ -46,8 +47,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 ClipRelayService.ACTION_PAIRING_COMPLETE -> {
                     val deviceTag = intent.getStringExtra(ClipRelayService.EXTRA_DEVICE_TAG)
-                    viewModel.onPaired(deviceTag)
+                    val deviceName = intent.getStringExtra(ClipRelayService.EXTRA_DEVICE_NAME)
+                    viewModel.onPaired(deviceName, deviceTag)
                     requestBatteryOptimizationAndOnboarding()
+                }
+                ClipRelayService.ACTION_PAIRING_CLEARED -> {
+                    viewModel.onUnpaired()
                 }
                 ClipRelayService.ACTION_CLIPBOARD_TRANSFER -> {
                     val fromMac = intent.getBooleanExtra(ClipRelayService.EXTRA_FROM_MAC, true)
@@ -79,7 +84,7 @@ class MainActivity : AppCompatActivity() {
         if (result.resultCode == RESULT_OK) {
             // Don't compute device tag here — ECDH handshake hasn't completed yet.
             // The service will broadcast ACTION_PAIRING_COMPLETE with the tag.
-            viewModel.onPaired(deviceTag = null)
+            viewModel.onPaired(deviceName = null, deviceTag = null)
         }
     }
 
@@ -109,12 +114,10 @@ class MainActivity : AppCompatActivity() {
         val pairingStore = PairingStore(this)
         val secret = pairingStore.loadSharedSecret()
         val isPaired = secret != null
-        val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
-            .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
-        val deviceTag = secret?.let { s ->
-            val hex = E2ECrypto.deviceTag(s).take(4).joinToString("") { "%02X".format(it) }
-            hex.chunked(4).joinToString(" ")
-        }
+        val deviceName = DebugSmokeOverrides.connectedDeviceName(this)
+            ?: getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
+                .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
+        val deviceTag = secret?.let(E2ECrypto::formatDeviceTag)
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         val autoCopyEnabled = clipboardSettingsStore.isAutoCopyEnabled()
         val imageSyncEnabled = pairingStore.isRichMediaEnabled()
@@ -208,6 +211,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         val filter = IntentFilter(ClipRelayService.ACTION_CONNECTION_STATE).also {
             it.addAction(ClipRelayService.ACTION_PAIRING_COMPLETE)
+            it.addAction(ClipRelayService.ACTION_PAIRING_CLEARED)
             it.addAction(ClipRelayService.ACTION_CLIPBOARD_TRANSFER)
             it.addAction(ClipRelayService.ACTION_VERSION_MISMATCH)
             it.addAction(ClipRelayService.ACTION_RICH_MEDIA_SETTING_CHANGED)

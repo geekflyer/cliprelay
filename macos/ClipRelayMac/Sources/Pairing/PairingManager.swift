@@ -2,20 +2,19 @@
 
 import CryptoKit
 import Foundation
-import Security
 import os
 
 private let pairingLogger = Logger(subsystem: "org.cliprelay", category: "Pairing")
 
-struct PairedDevice: Codable, Equatable {
-    let sharedSecret: String // 64-char hex (ECDH-derived root secret)
-    let displayName: String
-    let datePaired: Date
-    var richMediaEnabled: Bool
-    var richMediaEnabledChangedAt: Int64 // Unix seconds
+package struct PairedDevice: Codable, Equatable {
+    package let sharedSecret: String // 64-char hex (ECDH-derived root secret)
+    package let displayName: String
+    package let datePaired: Date
+    package var richMediaEnabled: Bool
+    package var richMediaEnabledChangedAt: Int64 // Unix seconds
 
-    init(sharedSecret: String, displayName: String, datePaired: Date,
-         richMediaEnabled: Bool = false, richMediaEnabledChangedAt: Int64 = 0) {
+    package init(sharedSecret: String, displayName: String, datePaired: Date,
+                 richMediaEnabled: Bool = false, richMediaEnabledChangedAt: Int64 = 0) {
         self.sharedSecret = sharedSecret
         self.displayName = displayName
         self.datePaired = datePaired
@@ -24,7 +23,7 @@ struct PairedDevice: Codable, Equatable {
     }
 
     // Custom decoding to handle existing data without the new fields
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sharedSecret = try container.decode(String.self, forKey: .sharedSecret)
         displayName = try container.decode(String.self, forKey: .displayName)
@@ -34,58 +33,73 @@ struct PairedDevice: Codable, Equatable {
     }
 }
 
-final class PairingManager {
+package final class PairingManager {
     private static let keychainAccount = "paired_devices"
+    private static let keychainService = ProcessInfo.processInfo.environment["CLIPRELAY_PAIRING_KEYCHAIN_SERVICE"] ?? "cliprelay"
+    private static let keychainPath = ProcessInfo.processInfo.environment["CLIPRELAY_PAIRING_KEYCHAIN_PATH"]
+    private static let keychainPassword = ProcessInfo.processInfo.environment["CLIPRELAY_PAIRING_KEYCHAIN_PASSWORD"]
     private static let pendingDisplayNamePrefix = "Pending pairing"
-    private let keychain = KeychainStore(service: "cliprelay")
+    private let store: any SecureDataStore
     private var tagCache: [String: Data] = [:]
 
     /// Ephemeral ECDH key pair for in-progress pairing. Lives only during pairing window.
-    private(set) var ephemeralPrivateKey: Curve25519.KeyAgreement.PrivateKey?
+    package private(set) var ephemeralPrivateKey: Curve25519.KeyAgreement.PrivateKey?
 
-    func generateKeyPair() -> Curve25519.KeyAgreement.PrivateKey {
+    package init(store: (any SecureDataStore)? = nil) {
+        self.store = store ?? KeychainStore(
+            service: Self.keychainService,
+            keychainPath: Self.keychainPath,
+            keychainPassword: Self.keychainPassword
+        )
+    }
+
+    package func generateKeyPair() -> Curve25519.KeyAgreement.PrivateKey {
         let key = Curve25519.KeyAgreement.PrivateKey()
         ephemeralPrivateKey = key
         return key
     }
 
-    func clearEphemeralKey() {
+    package func clearEphemeralKey() {
         ephemeralPrivateKey = nil
     }
 
-    func loadDevices() -> [PairedDevice] {
-        guard let data = keychain.data(for: Self.keychainAccount) else { return [] }
+    package func loadDevices() -> [PairedDevice] {
+        guard let data = store.data(for: Self.keychainAccount) else { return [] }
         return (try? JSONDecoder().decode([PairedDevice].self, from: data)) ?? []
     }
 
-    func addDevice(_ device: PairedDevice) {
+    @discardableResult
+    package func addDevice(_ device: PairedDevice) -> Bool {
         var devices = loadDevices()
         devices.removeAll { $0.sharedSecret == device.sharedSecret }
         devices.append(device)
-        persist(devices)
+        return persist(devices)
     }
 
-    func removeDevice(secret: String) {
+    @discardableResult
+    package func removeDevice(secret: String) -> Bool {
         var devices = loadDevices()
         devices.removeAll { $0.sharedSecret == secret }
-        persist(devices)
+        return persist(devices)
     }
 
-    func setRichMediaEnabled(_ enabled: Bool, changedAt: Int64, forSecret secret: String) {
+    @discardableResult
+    package func setRichMediaEnabled(_ enabled: Bool, changedAt: Int64, forSecret secret: String) -> Bool {
         var devices = loadDevices()
-        guard let index = devices.firstIndex(where: { $0.sharedSecret == secret }) else { return }
+        guard let index = devices.firstIndex(where: { $0.sharedSecret == secret }) else { return false }
         devices[index].richMediaEnabled = enabled
         devices[index].richMediaEnabledChangedAt = changedAt
-        persist(devices)
+        return persist(devices)
     }
 
-    func removePendingDevices() {
+    @discardableResult
+    package func removePendingDevices() -> Bool {
         var devices = loadDevices()
         devices.removeAll { $0.displayName.hasPrefix(Self.pendingDisplayNamePrefix) }
-        persist(devices)
+        return persist(devices)
     }
 
-    func pairingURI(publicKey: Curve25519.KeyAgreement.PublicKey) -> URL? {
+    package func pairingURI(publicKey: Curve25519.KeyAgreement.PublicKey) -> URL? {
         let pubHex = publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined()
         var components = URLComponents()
         components.scheme = "cliprelay"
@@ -98,12 +112,12 @@ final class PairingManager {
         return components.url
     }
 
-    static func pairingTag(from publicKey: Data) -> Data {
+    package static func pairingTag(from publicKey: Data) -> Data {
         let hash = SHA256.hash(data: publicKey)
         return Data(hash.prefix(8))
     }
 
-    func deviceTag(for secret: String) -> Data? {
+    package func deviceTag(for secret: String) -> Data? {
         if let cached = tagCache[secret] { return cached }
         guard let secretBytes = E2ECrypto.hexToData(secret) else { return nil }
         guard let result = E2ECrypto.deviceTag(secretBytes: secretBytes) else { return nil }
@@ -111,16 +125,20 @@ final class PairingManager {
         return result
     }
 
-    func encryptionKey(for secret: String) -> SymmetricKey? {
+    package func encryptionKey(for secret: String) -> SymmetricKey? {
         guard let secretBytes = E2ECrypto.hexToData(secret) else { return nil }
         return E2ECrypto.deriveKey(secretBytes: secretBytes)
     }
 
 
-    private func persist(_ devices: [PairedDevice]) {
+    @discardableResult
+    private func persist(_ devices: [PairedDevice]) -> Bool {
         tagCache.removeAll()
-        guard let data = try? JSONEncoder().encode(devices) else { return }
-        keychain.setData(data, for: Self.keychainAccount)
+        if devices.isEmpty {
+            return store.removeData(for: Self.keychainAccount)
+        }
+        guard let data = try? JSONEncoder().encode(devices) else { return false }
+        return store.setData(data, for: Self.keychainAccount)
     }
 
 }

@@ -4,12 +4,14 @@ package org.cliprelay.debug
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.util.Log
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
 object DebugSmokeProbe {
     private const val FILE_NAME = "debug-smoke-state.json"
+    private const val TAG = "DebugSmokeProbe"
     private val lock = Any()
 
     fun reset(context: Context) {
@@ -107,6 +109,9 @@ object DebugSmokeProbe {
         val updated = mutate(current)
         runCatching {
             file.writeText(updated.toString(), Charsets.UTF_8)
+            Log.i(TAG, "wrote ${file.absolutePath}: $updated")
+        }.onFailure {
+            Log.e(TAG, "failed to write probe state", it)
         }
     }
 

@@ -28,6 +28,7 @@ import org.cliprelay.ble.Advertiser
 import org.cliprelay.ble.L2capServer
 import org.cliprelay.ble.L2capServerCallback
 import org.cliprelay.crypto.E2ECrypto
+import org.cliprelay.debug.DebugSmokeOverrides
 import org.cliprelay.debug.DebugSmokeProbe
 import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.pairing.PairingStore
@@ -51,6 +52,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val ACTION_QUERY_CONNECTION = "org.cliprelay.action.QUERY_CONNECTION"
         const val ACTION_CLIPBOARD_TRANSFER = "org.cliprelay.action.CLIPBOARD_TRANSFER"
         const val ACTION_PAIRING_COMPLETE = "org.cliprelay.action.PAIRING_COMPLETE"
+        const val ACTION_PAIRING_CLEARED = "org.cliprelay.action.PAIRING_CLEARED"
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_CONNECTED = "extra_connected"
         const val EXTRA_DEVICE_NAME = "extra_device_name"
@@ -231,7 +233,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             }
             ACTION_QUERY_CONNECTION -> {
                 val connected = activeSession != null
-                val name = if (connected) loadConnectedDeviceName() else null
+                val name = if (connected || isPaired) loadConnectedDeviceName() else null
                 sendConnectionBroadcast(connected, name)
             }
         }
@@ -433,6 +435,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
     override fun onSessionReady() {
         Log.w(TAG, "L2CAP session ready")
+        lastSentTextHash = null
 
         // If the advertiser's device tag was updated during pairing (without a
         // restart), restart it now so future reconnections use the correct tag.
@@ -474,6 +477,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         Log.e(TAG, "Session error: ${error.message}")
         activeSession = null
         sessionThread = null
+        lastSentTextHash = null
         sendConnectionBroadcast(false)
         DebugSmokeProbe.onConnectionChanged(this, false)
 
@@ -520,12 +524,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
 
         // Broadcast pairing complete with device tag for UI
-        val deviceTagHex = E2ECrypto.deviceTag(sharedSecret).take(4)
-            .joinToString("") { "%02X".format(it) }
-            .chunked(4).joinToString(" ")
         val pairingIntent = Intent(ACTION_PAIRING_COMPLETE)
         pairingIntent.setPackage(packageName)
-        pairingIntent.putExtra(EXTRA_DEVICE_TAG, deviceTagHex)
+        pairingIntent.putExtra(EXTRA_DEVICE_TAG, E2ECrypto.formatDeviceTag(sharedSecret))
         pairingIntent.putExtra(EXTRA_DEVICE_NAME, remoteName)
         sendBroadcast(pairingIntent)
         publishDirectShareShortcut(remoteName)
@@ -578,7 +579,6 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             Log.d(TAG, "Skipping send — same text already sent")
             return
         }
-        lastSentTextHash = textHash
 
         val session = activeSession
         if (session == null) {
@@ -587,6 +587,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
 
         session.sendClipboard(plaintext)
+        lastSentTextHash = textHash
         DebugSmokeProbe.onOutboundClipboardPublished(this, text)
     }
 
@@ -670,6 +671,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         } else {
             sendConnectionBroadcast(false)
         }
+        sendPairingClearedBroadcast()
     }
 
     // ── Clipboard helpers ─────────────────────────────────────────────
@@ -779,6 +781,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         sendBroadcast(intent)
     }
 
+    private fun sendPairingClearedBroadcast() {
+        val intent = Intent(ACTION_PAIRING_CLEARED)
+        intent.setPackage(packageName)
+        sendBroadcast(intent)
+    }
+
     // ── Preferences ───────────────────────────────────────────────────
 
     private fun saveConnectedDeviceName(name: String?) {
@@ -790,7 +798,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     }
 
     private fun loadConnectedDeviceName(): String? =
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_CONNECTED_DEVICE, null)
+        DebugSmokeOverrides.connectedDeviceName(this)
+            ?: getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_CONNECTED_DEVICE, null)
 
     // ── Notification ──────────────────────────────────────────────────
 

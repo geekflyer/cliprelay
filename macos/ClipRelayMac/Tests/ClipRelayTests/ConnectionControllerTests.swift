@@ -1,10 +1,11 @@
 import XCTest
 @testable import ClipRelay
+@testable import ClipRelayCore
 
 final class ConnectionControllerTests: XCTestCase {
 
     private func makeController() -> ConnectionController {
-        let pm = PairingManager()
+        let pm = PairingManager(store: InMemoryDataStore())
         return ConnectionController(pairingManager: pm, skipCentralManager: true)
     }
 

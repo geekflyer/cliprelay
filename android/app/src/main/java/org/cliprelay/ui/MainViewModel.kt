@@ -48,8 +48,8 @@ class MainViewModel : ViewModel() {
         _imageSyncEnabled.value = imageSyncEnabled
     }
 
-    fun onPaired(deviceTag: String? = null) {
-        _state.value = AppState.Searching(deviceTag = deviceTag)
+    fun onPaired(deviceName: String? = null, deviceTag: String? = null) {
+        _state.value = AppState.Searching(deviceName = deviceName, deviceTag = deviceTag)
         _showBurst.value = true
     }
 
@@ -65,12 +65,23 @@ class MainViewModel : ViewModel() {
     fun onConnectionChanged(connected: Boolean, deviceName: String?) {
         // Don't let stale connection broadcasts override the Unpaired state.
         if (_state.value is AppState.Unpaired) return
-        val currentTag = when (val s = _state.value) {
-            is AppState.Searching -> s.deviceTag
-            is AppState.Connected -> s.deviceTag
+        val currentState = _state.value
+        val currentTag = when (currentState) {
+            is AppState.Searching -> currentState.deviceTag
+            is AppState.Connected -> currentState.deviceTag
             else -> null
         }
-        _state.value = if (connected) AppState.Connected(deviceName, currentTag) else AppState.Searching(deviceName, currentTag)
+        val currentName = when (currentState) {
+            is AppState.Searching -> currentState.deviceName
+            is AppState.Connected -> currentState.deviceName
+            else -> null
+        }
+        val resolvedName = deviceName ?: currentName
+        _state.value = if (connected) {
+            AppState.Connected(resolvedName, currentTag)
+        } else {
+            AppState.Searching(resolvedName, currentTag)
+        }
     }
 
     fun onClipboardTransfer(fromMac: Boolean) {
