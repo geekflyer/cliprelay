@@ -25,35 +25,31 @@ echo "==> Running Android unit tests"
 echo "==> Running macOS unit tests"
 swift test --package-path "$MAC_PROJECT_DIR"
 
-echo "==> Verifying macOS smoke CLI app bundle"
-"$ROOT_DIR/scripts/build-all.sh" --mac-only --smoke-cli
+echo "==> Verifying macOS smoke CLI binary"
 source "$ROOT_DIR/scripts/smoke-mac-common.sh"
 
-expected_hash="$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
-/usr/libexec/PlistBuddy -c "Set :ClipRelayGitHash stale-smoke-hash" "$SMOKE_MAC_INFO_PLIST"
-smoke_test_token="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-ensure_smoke_mac_app
-
-rebuilt_hash="$(/usr/libexec/PlistBuddy -c 'Print :ClipRelayGitHash' "$SMOKE_MAC_INFO_PLIST" 2>/dev/null || true)"
-if [[ "$rebuilt_hash" != "$expected_hash" ]]; then
-  echo "Expected stale smoke app to be rebuilt with current git hash $expected_hash, got $rebuilt_hash" >&2
+if [[ ! -x "$ROOT_DIR/dist/ClipRelaySmokeCLI" ]]; then
+  echo "Expected macOS smoke CLI at dist/ClipRelaySmokeCLI. Run scripts/build-all.sh first." >&2
   exit 1
 fi
 
+prepare_mac_smoke_keychain
+smoke_test_token="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 set +e
-run_smoke_mac_cli --smoke-import-pairing --token "$smoke_test_token" --name "Smoke Test Android" >/dev/null 2>&1
+smoke_mac_env "$ROOT_DIR/dist/ClipRelaySmokeCLI" --smoke-import-pairing --token "$smoke_test_token" --name "Smoke Test Android" >/dev/null 2>&1
 smoke_import_status=$?
-run_smoke_mac_cli --smoke-remove-pairing --token "$smoke_test_token" >/dev/null 2>&1
+smoke_mac_env "$ROOT_DIR/dist/ClipRelaySmokeCLI" --smoke-remove-pairing --token "$smoke_test_token" >/dev/null 2>&1
 smoke_remove_status=$?
 set -e
 
 if [[ "$smoke_import_status" -ne 0 ]]; then
-  echo "Expected smoke CLI release binary to import a valid token with exit 0, got $smoke_import_status" >&2
+  echo "Expected standalone smoke CLI to import a valid token with exit 0, got $smoke_import_status" >&2
   exit 1
 fi
 
 if [[ "$smoke_remove_status" -ne 0 ]]; then
-  echo "Expected smoke CLI release binary to remove a valid token with exit 0, got $smoke_remove_status" >&2
+  echo "Expected standalone smoke CLI to remove a valid token with exit 0, got $smoke_remove_status" >&2
   exit 1
 fi
 
