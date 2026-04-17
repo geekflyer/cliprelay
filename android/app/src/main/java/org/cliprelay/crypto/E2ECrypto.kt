@@ -38,6 +38,18 @@ object E2ECrypto {
         return deviceTag(hexToBytes(tokenHex))
     }
 
+    fun formatDeviceTag(secretBytes: ByteArray): String {
+        return deviceTag(secretBytes)
+            .take(4)
+            .joinToString("") { "%02X".format(it.toInt() and 0xFF) }
+            .chunked(4)
+            .joinToString(" ")
+    }
+
+    fun formatDeviceTag(tokenHex: String): String {
+        return formatDeviceTag(hexToBytes(tokenHex))
+    }
+
     fun generateX25519KeyPair(): KeyPair {
         val kpg = KeyPairGenerator.getInstance("X25519")
         return kpg.generateKeyPair()

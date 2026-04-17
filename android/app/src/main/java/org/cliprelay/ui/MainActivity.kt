@@ -115,10 +115,7 @@ class MainActivity : AppCompatActivity() {
         val isPaired = secret != null
         val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
             .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
-        val deviceTag = secret?.let { s ->
-            val hex = E2ECrypto.deviceTag(s).take(4).joinToString("") { "%02X".format(it) }
-            hex.chunked(4).joinToString(" ")
-        }
+        val deviceTag = secret?.let(E2ECrypto::formatDeviceTag)
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         val autoCopyEnabled = clipboardSettingsStore.isAutoCopyEnabled()
         val imageSyncEnabled = pairingStore.isRichMediaEnabled()

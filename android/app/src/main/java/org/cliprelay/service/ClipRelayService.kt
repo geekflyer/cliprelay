@@ -232,7 +232,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             }
             ACTION_QUERY_CONNECTION -> {
                 val connected = activeSession != null
-                val name = if (connected) loadConnectedDeviceName() else null
+                val name = if (connected || isPaired) loadConnectedDeviceName() else null
                 sendConnectionBroadcast(connected, name)
             }
         }
@@ -521,12 +521,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
 
         // Broadcast pairing complete with device tag for UI
-        val deviceTagHex = E2ECrypto.deviceTag(sharedSecret).take(4)
-            .joinToString("") { "%02X".format(it) }
-            .chunked(4).joinToString(" ")
         val pairingIntent = Intent(ACTION_PAIRING_COMPLETE)
         pairingIntent.setPackage(packageName)
-        pairingIntent.putExtra(EXTRA_DEVICE_TAG, deviceTagHex)
+        pairingIntent.putExtra(EXTRA_DEVICE_TAG, E2ECrypto.formatDeviceTag(sharedSecret))
         pairingIntent.putExtra(EXTRA_DEVICE_NAME, remoteName)
         sendBroadcast(pairingIntent)
         publishDirectShareShortcut(remoteName)

@@ -42,8 +42,8 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                             .apply()
                     }
                     DebugSmokeProbe.onPairingImported(context, normalizedToken, deviceName)
-                    sendPairingCompleteBroadcast(context, normalizedToken, deviceName)
                     reloadPairingInService(context)
+                    sendPairingCompleteBroadcast(context, normalizedToken, deviceName)
                 }.onFailure {
                     setResultCode(3)
                     return
@@ -57,13 +57,13 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                     val unpairStarted = unpairInService(context)
                     if (!unpairStarted) {
                         PairingStore(context).clear()
+                        sendPairingClearedBroadcast(context)
                     }
                     context.getSharedPreferences(ClipRelayService.PREFS_NAME, Context.MODE_PRIVATE)
                         .edit()
                         .remove(ClipRelayService.KEY_CONNECTED_DEVICE)
                         .apply()
                     DebugSmokeProbe.reset(context)
-                    sendPairingClearedBroadcast(context)
                 }.onFailure {
                     setResultCode(3)
                     return
@@ -122,14 +122,9 @@ class DebugSmokeReceiver : BroadcastReceiver() {
     }
 
     private fun sendPairingCompleteBroadcast(context: Context, token: String, deviceName: String?) {
-        val deviceTag = E2ECrypto.deviceTag(token)
-            .take(4)
-            .joinToString("") { "%02X".format(it) }
-            .chunked(4)
-            .joinToString(" ")
         val intent = Intent(ClipRelayService.ACTION_PAIRING_COMPLETE).apply {
             setPackage(context.packageName)
-            putExtra(ClipRelayService.EXTRA_DEVICE_TAG, deviceTag)
+            putExtra(ClipRelayService.EXTRA_DEVICE_TAG, E2ECrypto.formatDeviceTag(token))
             if (!deviceName.isNullOrBlank()) {
                 putExtra(ClipRelayService.EXTRA_DEVICE_NAME, deviceName)
             }
