@@ -8,6 +8,7 @@ import java.io.PipedOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 /**
@@ -1449,6 +1450,7 @@ class SessionTest {
             callback = callback,
             sharedSecretHex = testSharedSecret,
             handshakeTimeoutMs = 2000,
+            inboundImageAcceptWindowMs = 100,
             settingsProvider = sp
         )
 
@@ -1475,6 +1477,67 @@ class SessionTest {
         assertEquals(MessageType.REJECT, reject.type)
         val rejectJson = JSONObject(String(reject.payload))
         assertEquals("device_locked", rejectJson.getString("reason"))
+
+        session.close()
+        macInput.close(); toMac.close(); macOutput.close(); fromMac.close()
+    }
+
+    @Test
+    fun `handleInboundImageOffer waits briefly for device to wake before accepting`() {
+        val macInput = PipedInputStream()
+        val toMac = PipedOutputStream(macInput)
+        val macOutput = PipedOutputStream()
+        val fromMac = PipedInputStream(macOutput)
+
+        val sp = TestSettingsProvider(enabled = true, changedAt = 1000)
+        val readyLatch = CountDownLatch(1)
+        val wakeWaitStarted = CountDownLatch(1)
+        val deviceAwake = AtomicBoolean(false)
+        val callback = TestCallback()
+        callback.onReady = { readyLatch.countDown() }
+        callback.deviceAwakeProvider = {
+            wakeWaitStarted.countDown()
+            deviceAwake.get()
+        }
+
+        val session = Session(
+            input = macInput,
+            output = macOutput,
+            isInitiator = true,
+            callback = callback,
+            sharedSecretHex = testSharedSecret,
+            handshakeTimeoutMs = 2000,
+            transferTimeoutMs = 5000,
+            inboundImageAcceptWindowMs = 500,
+            settingsProvider = sp
+        )
+
+        Thread {
+            session.performHandshake()
+            session.listenForMessages()
+        }.start()
+
+        val hello = MessageCodec.decode(fromMac)
+        sendValidWelcome(toMac, hello)
+        assertTrue("Session should be ready", readyLatch.await(3, TimeUnit.SECONDS))
+
+        val offerJson = JSONObject().apply {
+            put("hash", "abc123")
+            put("size", 100)
+            put("type", "image/png")
+            put("senderIp", "127.0.0.1")
+        }
+        MessageCodec.write(toMac, Message(MessageType.OFFER, offerJson.toString().toByteArray()))
+
+        assertTrue("Session should start waiting for device wake", wakeWaitStarted.await(1, TimeUnit.SECONDS))
+        deviceAwake.set(true)
+
+        val accept = MessageCodec.decode(fromMac)
+        assertEquals(MessageType.ACCEPT, accept.type)
+
+        val acceptJson = JSONObject(String(accept.payload))
+        assertTrue("ACCEPT should have tcpHost", acceptJson.has("tcpHost"))
+        assertTrue("ACCEPT should have tcpPort", acceptJson.has("tcpPort"))
 
         session.close()
         macInput.close(); toMac.close(); macOutput.close(); fromMac.close()
@@ -1855,7 +1918,9 @@ class SessionTest {
         var onRichMediaChanged: (Boolean) -> Unit = {}
         var onImageReceived: (ByteArray, String, String) -> Unit = { _, _, _ -> }
         var onImageRejected: (String) -> Unit = {}
+        @Volatile
         var deviceAwake: Boolean = true
+        var deviceAwakeProvider: (() -> Boolean)? = null
         val knownHashes = CopyOnWriteArrayList<String>()
 
         override fun onSessionReady() = onReady()
@@ -1872,7 +1937,7 @@ class SessionTest {
             onImageReceived.invoke(data, contentType, hash)
         override fun onImageRejected(reason: String) =
             onImageRejected.invoke(reason)
-        override fun isDeviceAwake(): Boolean = deviceAwake
+        override fun isDeviceAwake(): Boolean = deviceAwakeProvider?.invoke() ?: deviceAwake
     }
 
     /** In-memory settings provider for tests. */
