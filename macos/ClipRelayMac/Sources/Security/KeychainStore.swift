@@ -3,6 +3,12 @@
 import Foundation
 import Security
 
+protocol SecureDataStore {
+    func data(for account: String) -> Data?
+    @discardableResult
+    func setData(_ data: Data, for account: String) -> Bool
+}
+
 final class KeychainStore {
     private let service: String
 
@@ -45,4 +51,25 @@ final class KeychainStore {
         return status == errSecSuccess
     }
 
+}
+
+extension KeychainStore: SecureDataStore {}
+
+final class InMemoryDataStore: SecureDataStore {
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+
+    func data(for account: String) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[account]
+    }
+
+    @discardableResult
+    func setData(_ data: Data, for account: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        values[account] = data
+        return true
+    }
 }

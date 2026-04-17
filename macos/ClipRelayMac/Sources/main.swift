@@ -18,7 +18,7 @@ private func hasAnotherRunningInstance() -> Bool {
         .contains { $0.processIdentifier != currentPID }
 }
 
-#if DEBUG
+#if SMOKE_TEST_CLI
 if let exitCode = SmokeAutomationCLI.runIfRequested(arguments: CommandLine.arguments) {
     exit(exitCode)
 }

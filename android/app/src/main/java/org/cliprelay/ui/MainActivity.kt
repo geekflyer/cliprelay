@@ -46,8 +46,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 ClipRelayService.ACTION_PAIRING_COMPLETE -> {
                     val deviceTag = intent.getStringExtra(ClipRelayService.EXTRA_DEVICE_TAG)
-                    viewModel.onPaired(deviceTag)
+                    val deviceName = intent.getStringExtra(ClipRelayService.EXTRA_DEVICE_NAME)
+                    viewModel.onPaired(deviceName, deviceTag)
                     requestBatteryOptimizationAndOnboarding()
+                }
+                ClipRelayService.ACTION_PAIRING_CLEARED -> {
+                    viewModel.onUnpaired()
                 }
                 ClipRelayService.ACTION_CLIPBOARD_TRANSFER -> {
                     val fromMac = intent.getBooleanExtra(ClipRelayService.EXTRA_FROM_MAC, true)
@@ -79,7 +83,7 @@ class MainActivity : AppCompatActivity() {
         if (result.resultCode == RESULT_OK) {
             // Don't compute device tag here — ECDH handshake hasn't completed yet.
             // The service will broadcast ACTION_PAIRING_COMPLETE with the tag.
-            viewModel.onPaired(deviceTag = null)
+            viewModel.onPaired(deviceName = null, deviceTag = null)
         }
     }
 
@@ -208,6 +212,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         val filter = IntentFilter(ClipRelayService.ACTION_CONNECTION_STATE).also {
             it.addAction(ClipRelayService.ACTION_PAIRING_COMPLETE)
+            it.addAction(ClipRelayService.ACTION_PAIRING_CLEARED)
             it.addAction(ClipRelayService.ACTION_CLIPBOARD_TRANSFER)
             it.addAction(ClipRelayService.ACTION_VERSION_MISMATCH)
             it.addAction(ClipRelayService.ACTION_RICH_MEDIA_SETTING_CHANGED)

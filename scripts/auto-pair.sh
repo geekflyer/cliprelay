@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Generates a shared pairing token and injects it into both Mac and Android for automated testing.
+# Rebuilds the local macOS app with smoke-test CLI enabled when needed.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 MAC_APP="$DIST_DIR/ClipRelay.app"
-MAC_BINARY="$MAC_APP/Contents/MacOS/ClipRelay"
 ANDROID_PKG="org.cliprelay"
 ANDROID_PREFS_DIR="/data/data/$ANDROID_PKG/shared_prefs"
+
+source "$ROOT_DIR/scripts/smoke-mac-common.sh"
 
 usage() {
     echo "Usage: $0 [--token TOKEN]"
@@ -53,19 +55,15 @@ TOKEN=$(echo "$TOKEN" | tr '[:upper:]' '[:lower:]')
 # ── Mac side ──────────────────────────────────────────────────────────
 
 echo
-echo "==> Injecting token into Mac keychain..."
+echo "==> Importing token into Mac smoke CLI..."
 
 # Kill existing Mac app
 pkill -f ClipRelay 2>/dev/null || true
 sleep 0.5
 
-if [[ ! -x "$MAC_BINARY" ]]; then
-    echo "Error: Mac binary not found at $MAC_BINARY. Run scripts/build-all.sh first." >&2
-    exit 1
-fi
-
-"$MAC_BINARY" --smoke-import-pairing --token "$TOKEN" --name "Android"
-echo "Mac pairing token injected."
+ensure_primary_mac_app
+run_smoke_mac_cli --smoke-import-pairing --token "$TOKEN" --name "Android"
+echo "Mac pairing token imported."
 
 # ── Android side ──────────────────────────────────────────────────────
 
@@ -97,7 +95,7 @@ echo
 echo "==> Restarting both apps..."
 
 # Start Mac app
-open "$MAC_APP"
+start_primary_mac_app
 echo "Mac app started."
 
 # Bring Android app to foreground

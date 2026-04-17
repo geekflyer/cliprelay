@@ -56,15 +56,16 @@ final class PairedDeviceTests: XCTestCase {
         XCTAssertEqual(decoded[0].richMediaEnabledChangedAt, 42)
     }
 
-    // MARK: - PairingManager integration (uses real Keychain)
+    private func makeManager() -> PairingManager {
+        PairingManager(store: InMemoryDataStore())
+    }
+
+    // MARK: - PairingManager integration
 
     func testSetRichMediaEnabledUpdatesDevice() {
-        let manager = PairingManager()
+        let manager = makeManager()
         let secret = "ff" + String(repeating: "00", count: 31)
         let device = PairedDevice(sharedSecret: secret, displayName: "RichMediaTest", datePaired: Date())
-
-        // Clean up any leftover from previous test runs
-        manager.removeDevice(secret: secret)
 
         manager.addDevice(device)
 
@@ -77,16 +78,12 @@ final class PairedDeviceTests: XCTestCase {
         XCTAssertTrue(found!.richMediaEnabled)
         XCTAssertEqual(found!.richMediaEnabledChangedAt, now)
 
-        // Clean up
-        manager.removeDevice(secret: secret)
     }
 
     func testClearRichMediaBySettingFalse() {
-        let manager = PairingManager()
+        let manager = makeManager()
         let secret = "ee" + String(repeating: "00", count: 31)
         let device = PairedDevice(sharedSecret: secret, displayName: "ClearTest", datePaired: Date())
-
-        manager.removeDevice(secret: secret)
         manager.addDevice(device)
 
         let t1 = Int64(Date().timeIntervalSince1970)
@@ -99,7 +96,5 @@ final class PairedDeviceTests: XCTestCase {
         XCTAssertNotNil(found)
         XCTAssertFalse(found!.richMediaEnabled)
         XCTAssertEqual(found!.richMediaEnabledChangedAt, t2)
-
-        manager.removeDevice(secret: secret)
     }
 }

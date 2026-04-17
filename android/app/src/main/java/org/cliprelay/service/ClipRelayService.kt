@@ -51,6 +51,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val ACTION_QUERY_CONNECTION = "org.cliprelay.action.QUERY_CONNECTION"
         const val ACTION_CLIPBOARD_TRANSFER = "org.cliprelay.action.CLIPBOARD_TRANSFER"
         const val ACTION_PAIRING_COMPLETE = "org.cliprelay.action.PAIRING_COMPLETE"
+        const val ACTION_PAIRING_CLEARED = "org.cliprelay.action.PAIRING_CLEARED"
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_CONNECTED = "extra_connected"
         const val EXTRA_DEVICE_NAME = "extra_device_name"
@@ -670,6 +671,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         } else {
             sendConnectionBroadcast(false)
         }
+        sendPairingClearedBroadcast()
     }
 
     // ── Clipboard helpers ─────────────────────────────────────────────
@@ -776,6 +778,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         intent.setPackage(packageName)
         intent.putExtra(EXTRA_CONNECTED, connected)
         if (deviceName != null) intent.putExtra(EXTRA_DEVICE_NAME, deviceName)
+        sendBroadcast(intent)
+    }
+
+    private fun sendPairingClearedBroadcast() {
+        val intent = Intent(ACTION_PAIRING_CLEARED)
+        intent.setPackage(packageName)
         sendBroadcast(intent)
     }
 

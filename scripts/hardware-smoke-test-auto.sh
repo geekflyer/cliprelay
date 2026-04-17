@@ -6,7 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 ANDROID_APP_ID="org.cliprelay"
 MAC_APP_PATH="$DIST_DIR/ClipRelay.app"
-MAC_BIN="$MAC_APP_PATH/Contents/MacOS/ClipRelay"
+
+source "$ROOT_DIR/scripts/smoke-mac-common.sh"
 
 ANDROID_SERIAL=""
 WIRELESS_DEBUG=false
@@ -14,7 +15,6 @@ WIRELESS_ENDPOINT=""
 ADB_PAIR_ENDPOINT=""
 ADB_PAIR_CODE=""
 TIMEOUT_SEC=90
-BLE_CONNECT_TIMEOUT_MAX_SEC=10
 KEEP_PAIRING=false
 PAIR_TOKEN=""
 CONNECTION_STABILITY_SECONDS=8
@@ -46,7 +46,8 @@ Runs a near-fully automated BLE smoke test on debug builds:
 Notes:
   - Requires an attached Android device via USB debugging or wireless debugging
   - Requires debug APK installed (for debug smoke receiver and probe state)
-  - BLE connection waits are capped at 10 seconds
+  - Rebuilds the local macOS app with smoke-test CLI enabled if the current dist app lacks it
+  - BLE connection waits use the configured timeout
   - Cleans up the temporary pairing token on both devices at the end (unless --keep-pairing is set)
 EOF
 }
@@ -245,7 +246,11 @@ cleanup_smoke_pairing() {
   fi
 
   echo "- Cleaning up smoke pairing token"
-  "$MAC_BIN" --smoke-remove-pairing --token "$PAIR_TOKEN" >/dev/null 2>&1 || true
+  run_smoke_mac_cli --smoke-remove-pairing --token "$PAIR_TOKEN" >/dev/null 2>&1 || true
+  if [[ -d "$MAC_APP_PATH" ]]; then
+    pkill -f "ClipRelay.app/Contents/MacOS/ClipRelay" >/dev/null 2>&1 || true
+    start_primary_mac_app >/dev/null 2>&1 || true
+  fi
   "${ADB[@]}" shell am broadcast \
     -n org.cliprelay/.debug.DebugSmokeReceiver \
     -a org.cliprelay.debug.CLEAR_PAIRING \
@@ -582,15 +587,30 @@ start_mac_app() {
     return
   fi
 
-  open "$MAC_APP_PATH"
+  if ! start_primary_mac_app; then
+    echo "Check macOS logs: /usr/bin/log show --last 5m --style compact --predicate 'process == \"ClipRelay\"'" >&2
+    exit 1
+  fi
+}
 
-  local attempts=0
-  until pgrep -f "ClipRelay.app/Contents/MacOS/ClipRelay" >/dev/null 2>&1; do
-    attempts=$((attempts + 1))
-    if (( attempts >= 20 )); then
-      echo "ClipRelay app did not stay running after launch." >&2
-      echo "Check macOS logs: /usr/bin/log show --last 5m --style compact --predicate 'process == \"ClipRelay\"'" >&2
-      exit 1
+wait_for_bluetooth_setting() {
+  local expected="$1"
+  local timeout="$2"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  while true; do
+    local value
+    value="$("${ADB[@]}" shell settings get global bluetooth_on 2>/dev/null | tr -d '\r')"
+    if [[ "$value" == "$expected" ]]; then
+      return 0
+    fi
+
+    local now_ts
+    now_ts="$(date +%s)"
+    if (( now_ts - start_ts >= timeout )); then
+      echo "Timed out waiting for bluetooth_on=$expected (last='$value')" >&2
+      return 1
     fi
     sleep 1
   done
@@ -598,22 +618,21 @@ start_mac_app() {
 
 toggle_bluetooth() {
   if "${ADB[@]}" shell cmd bluetooth_manager disable >/dev/null 2>&1; then
-    if ! "${ADB[@]}" shell cmd bluetooth_manager wait-for-state:STATE_OFF >/dev/null 2>&1; then
-      return 1
-    fi
+    "${ADB[@]}" shell cmd bluetooth_manager wait-for-state:STATE_OFF >/dev/null 2>&1 || true
+    wait_for_bluetooth_setting "0" 15 || return 1
     if ! "${ADB[@]}" shell cmd bluetooth_manager enable >/dev/null 2>&1; then
       return 1
     fi
-    if ! "${ADB[@]}" shell cmd bluetooth_manager wait-for-state:STATE_ON >/dev/null 2>&1; then
-      return 1
-    fi
-    return 0
+    "${ADB[@]}" shell cmd bluetooth_manager wait-for-state:STATE_ON >/dev/null 2>&1 || true
+    wait_for_bluetooth_setting "1" 15
+    return $?
   fi
 
   if "${ADB[@]}" shell svc bluetooth disable >/dev/null 2>&1; then
-    sleep 3
-    "${ADB[@]}" shell svc bluetooth enable >/dev/null 2>&1
-    return 0
+    wait_for_bluetooth_setting "0" 15 || return 1
+    "${ADB[@]}" shell svc bluetooth enable >/dev/null 2>&1 || return 1
+    wait_for_bluetooth_setting "1" 15
+    return $?
   fi
 
   return 1
@@ -641,20 +660,9 @@ select_target_device
 echo "- Using adb device: $ANDROID_SERIAL"
 
 BLE_CONNECT_TIMEOUT_SEC="$TIMEOUT_SEC"
-if (( BLE_CONNECT_TIMEOUT_SEC > BLE_CONNECT_TIMEOUT_MAX_SEC )); then
-  BLE_CONNECT_TIMEOUT_SEC="$BLE_CONNECT_TIMEOUT_MAX_SEC"
-fi
 
-if [[ ! -d "$MAC_APP_PATH" ]]; then
-  echo "Missing macOS app bundle: $MAC_APP_PATH" >&2
-  echo "Build first: ./scripts/build-all.sh" >&2
-  exit 1
-fi
-
-if [[ ! -x "$MAC_BIN" ]]; then
-  echo "Missing macOS binary: $MAC_BIN" >&2
-  exit 1
-fi
+ensure_primary_mac_app
+ensure_smoke_mac_app
 
 if [[ ! -f "$DIST_DIR/cliprelay-debug.apk" ]]; then
   echo "Missing Android APK: $DIST_DIR/cliprelay-debug.apk" >&2
@@ -683,14 +691,13 @@ echo "- Android device: ${ANDROID_MODEL}"
 echo "- Importing fresh pairing token"
 
 pkill -f "ClipRelay.app/Contents/MacOS/ClipRelay" >/dev/null 2>&1 || true
-"$MAC_BIN" --smoke-import-pairing --token "$PAIR_TOKEN" --name "$ANDROID_MODEL" >/dev/null
+run_smoke_mac_cli --smoke-import-pairing --token "$PAIR_TOKEN" --name "$ANDROID_MODEL" >/dev/null
 
 "${ADB[@]}" shell am force-stop "$ANDROID_APP_ID" >/dev/null 2>&1 || true
-start_android_app
-sleep 2
-
 broadcast_debug_action "org.cliprelay.debug.IMPORT_PAIRING" --es token "$PAIR_TOKEN" --es device_name "$MAC_NAME"
 broadcast_debug_action "org.cliprelay.debug.RESET_PROBE"
+start_android_app
+sleep 2
 
 start_mac_app
 

@@ -19,7 +19,7 @@ final class TelemetryManager {
     private var timer: Timer?
 
     private static let checkinURL = URL(string: "https://updates.cliprelay.org/v1/checkin")!
-    private static let keychainAccount = "telemetry_install_id"
+    private static let defaultsKey = "telemetry_install_id"
 
     init(stateProvider: @escaping () -> CheckinState) {
         self.stateProvider = stateProvider
@@ -93,17 +93,22 @@ final class TelemetryManager {
     }
 
     private static func resolveInstallId() -> String {
-        let store = KeychainStore(service: "org.cliprelay")
-        if let existing = store.data(for: keychainAccount),
-           let id = String(data: existing, encoding: .utf8), !id.isEmpty {
+        resolveInstallId(defaults: .standard, legacyStore: KeychainStore(service: "org.cliprelay"))
+    }
+
+    static func resolveInstallId(defaults: UserDefaults, legacyStore: SecureDataStore) -> String {
+        if let id = defaults.string(forKey: defaultsKey), !id.isEmpty {
             return id
         }
-        let newId = UUID().uuidString
-        if let data = newId.data(using: .utf8) {
-            if !store.setData(data, for: keychainAccount) {
-                logger.warning("[Telemetry] Failed to persist install ID — will reset on next launch")
-            }
+
+        if let existing = legacyStore.data(for: "telemetry_install_id"),
+           let id = String(data: existing, encoding: .utf8), !id.isEmpty {
+            defaults.set(id, forKey: defaultsKey)
+            return id
         }
+
+        let newId = UUID().uuidString
+        defaults.set(newId, forKey: defaultsKey)
         logger.notice("[Telemetry] Generated new install ID")
         return newId
     }

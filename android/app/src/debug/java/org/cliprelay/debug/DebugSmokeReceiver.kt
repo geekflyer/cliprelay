@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import org.cliprelay.crypto.E2ECrypto
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.service.ClipRelayService
 
@@ -41,6 +42,7 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                             .apply()
                     }
                     DebugSmokeProbe.onPairingImported(context, normalizedToken, deviceName)
+                    sendPairingCompleteBroadcast(context, normalizedToken, deviceName)
                     reloadPairingInService(context)
                 }.onFailure {
                     setResultCode(3)
@@ -61,6 +63,7 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                         .remove(ClipRelayService.KEY_CONNECTED_DEVICE)
                         .apply()
                     DebugSmokeProbe.reset(context)
+                    sendPairingClearedBroadcast(context)
                 }.onFailure {
                     setResultCode(3)
                     return
@@ -116,5 +119,28 @@ class DebugSmokeReceiver : BroadcastReceiver() {
             ContextCompat.startForegroundService(context, unpairIntent)
             true
         }.getOrDefault(false)
+    }
+
+    private fun sendPairingCompleteBroadcast(context: Context, token: String, deviceName: String?) {
+        val deviceTag = E2ECrypto.deviceTag(token)
+            .take(4)
+            .joinToString("") { "%02X".format(it) }
+            .chunked(4)
+            .joinToString(" ")
+        val intent = Intent(ClipRelayService.ACTION_PAIRING_COMPLETE).apply {
+            setPackage(context.packageName)
+            putExtra(ClipRelayService.EXTRA_DEVICE_TAG, deviceTag)
+            if (!deviceName.isNullOrBlank()) {
+                putExtra(ClipRelayService.EXTRA_DEVICE_NAME, deviceName)
+            }
+        }
+        context.sendBroadcast(intent)
+    }
+
+    private fun sendPairingClearedBroadcast(context: Context) {
+        val intent = Intent(ClipRelayService.ACTION_PAIRING_CLEARED).apply {
+            setPackage(context.packageName)
+        }
+        context.sendBroadcast(intent)
     }
 }

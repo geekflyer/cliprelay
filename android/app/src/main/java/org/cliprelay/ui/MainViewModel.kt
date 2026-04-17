@@ -48,8 +48,8 @@ class MainViewModel : ViewModel() {
         _imageSyncEnabled.value = imageSyncEnabled
     }
 
-    fun onPaired(deviceTag: String? = null) {
-        _state.value = AppState.Searching(deviceTag = deviceTag)
+    fun onPaired(deviceName: String? = null, deviceTag: String? = null) {
+        _state.value = AppState.Searching(deviceName = deviceName, deviceTag = deviceTag)
         _showBurst.value = true
     }
 

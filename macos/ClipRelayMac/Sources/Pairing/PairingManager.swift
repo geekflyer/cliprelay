@@ -37,11 +37,15 @@ struct PairedDevice: Codable, Equatable {
 final class PairingManager {
     private static let keychainAccount = "paired_devices"
     private static let pendingDisplayNamePrefix = "Pending pairing"
-    private let keychain = KeychainStore(service: "cliprelay")
+    private let store: SecureDataStore
     private var tagCache: [String: Data] = [:]
 
     /// Ephemeral ECDH key pair for in-progress pairing. Lives only during pairing window.
     private(set) var ephemeralPrivateKey: Curve25519.KeyAgreement.PrivateKey?
+
+    init(store: SecureDataStore = KeychainStore(service: "cliprelay")) {
+        self.store = store
+    }
 
     func generateKeyPair() -> Curve25519.KeyAgreement.PrivateKey {
         let key = Curve25519.KeyAgreement.PrivateKey()
@@ -54,7 +58,7 @@ final class PairingManager {
     }
 
     func loadDevices() -> [PairedDevice] {
-        guard let data = keychain.data(for: Self.keychainAccount) else { return [] }
+        guard let data = store.data(for: Self.keychainAccount) else { return [] }
         return (try? JSONDecoder().decode([PairedDevice].self, from: data)) ?? []
     }
 
@@ -120,7 +124,7 @@ final class PairingManager {
     private func persist(_ devices: [PairedDevice]) {
         tagCache.removeAll()
         guard let data = try? JSONEncoder().encode(devices) else { return }
-        keychain.setData(data, for: Self.keychainAccount)
+        store.setData(data, for: Self.keychainAccount)
     }
 
 }

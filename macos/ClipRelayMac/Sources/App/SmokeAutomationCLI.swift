@@ -1,7 +1,9 @@
 // CLI subcommands for automated smoke testing (import/remove pairing tokens from command line).
+// The entry point is only reachable when main.swift is built with SMOKE_TEST_CLI enabled.
 
 import Foundation
 
+#if SMOKE_TEST_CLI
 enum SmokeAutomationCLI {
     static func runIfRequested(arguments: [String]) -> Int32? {
         if arguments.contains("--smoke-import-pairing") {
@@ -32,7 +34,6 @@ enum SmokeAutomationCLI {
             displayName: displayName,
             datePaired: Date()
         )
-
         PairingManager().addDevice(paired)
         print("Imported pairing token for \(displayName)")
         return 0
@@ -70,3 +71,4 @@ enum SmokeAutomationCLI {
         }
     }
 }
+#endif
