@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
+import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -25,7 +26,6 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
 
     private var callback: AdvertiseCallback? = null
     private var shouldAdvertise = false
-    private var includeDeviceName = true
     private var retryAttempt = 0
     private val handler = Handler(Looper.getMainLooper())
     private val retryRunnable = Runnable {
@@ -77,56 +77,18 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
             .addServiceUuid(serviceUuid)
             .build()
 
-        // Scan response: device tag + PSM as manufacturer data, plus device name.
-        // Manufacturer data: 2 (company ID) + 8 (tag) + 2 (PSM) = 12 bytes + overhead ~12 bytes.
-        // Device name: up to ~15 chars. Prefer to include the real device name when
-        // it fits; otherwise truncate the UTF-8 bytes and embed the truncated name
-        // into the manufacturer payload so the receiver can still see a short name.
+        // Scan response: device tag + PSM as manufacturer data.
+        // We intentionally do NOT include the local device name since BLE scan responses have a
+        // strict 31-byte budget and long Bluetooth names can prevent advertising from starting.
         val scanResponseBuilder = AdvertiseData.Builder()
-        var nameBytesToEmbed: ByteArray? = null
-        var effectiveIncludeDeviceName = includeDeviceName
-        if (effectiveIncludeDeviceName) {
-            val adapterName = try {
-                btManager.adapter.name
-            } catch (e: SecurityException) {
-                Log.e(TAG, "Permission denied while getting adapter name", e)
-                null
-            }
-            if (!adapterName.isNullOrEmpty()) {
-                val nameBytes = adapterName.toByteArray(Charsets.UTF_8)
-                val deviceNameByteLimit = 15
-                val truncatedNameByteLimit = 10
-                if (nameBytes.size > deviceNameByteLimit) {
-                    // Too long to include as the local name field; instead embed a
-                    // truncated UTF-8 prefix in manufacturer data and disable the
-                    // system device name to avoid payload-too-large errors.
-                    effectiveIncludeDeviceName = false
-                    // Truncate by bytes; this may cut a UTF-8 sequence, but it's
-                    // acceptable for a short display name.
-                    nameBytesToEmbed = nameBytes.copyOfRange(0, truncatedNameByteLimit)
-                    Log.w(
-                        TAG,
-                        "Device name (${nameBytes.size} bytes) truncated to ${nameBytesToEmbed.size} bytes for advertisement"
-                    )
-                }
-            }
-        }
-        scanResponseBuilder.setIncludeDeviceName(effectiveIncludeDeviceName)
+            .setIncludeDeviceName(false)
         val tag = deviceTag
         if (tag != null) {
-            // Pack: [device_tag: N bytes][psm: 2 bytes big-endian][optional truncated name]
-            val nameLen = nameBytesToEmbed?.size ?: 0
-            val payload = ByteArray(tag.size + 2 + nameLen)
-            var offset = 0
-            System.arraycopy(tag, 0, payload, offset, tag.size)
-            offset += tag.size
-            payload[offset] = (psm shr 8).toByte()
-            offset += 1
-            payload[offset] = (psm and 0xFF).toByte()
-            offset += 1
-            if (nameLen > 0) {
-                nameBytesToEmbed?.copyInto(payload, destinationOffset = offset, startIndex = 0, endIndex = nameLen)
-            }
+            // Pack: [device_tag: 8 bytes][psm: 2 bytes big-endian]
+            val payload = ByteArray(tag.size + 2)
+            System.arraycopy(tag, 0, payload, 0, tag.size)
+            payload[tag.size] = (psm shr 8).toByte()
+            payload[tag.size + 1] = (psm and 0xFF).toByte()
             // 0xFFFF = Bluetooth SIG reserved for testing/development
             scanResponseBuilder.addManufacturerData(0xFFFF, payload)
         }
@@ -142,16 +104,7 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
                 callback = null
                 if (!shouldAdvertise) return
 
-                if (
-                    errorCode == ADVERTISE_FAILED_DATA_TOO_LARGE &&
-                        includeDeviceName
-                ) {
-                    includeDeviceName = false
-                    retryAttempt = 0
-                    Log.w(TAG, "BLE advertise payload too large; retrying without device name")
-                } else {
-                    Log.e(TAG, "BLE advertise start failed: $errorCode")
-                }
+                Log.e(TAG, "BLE advertise start failed: $errorCode")
                 scheduleRetry("start failure: $errorCode")
             }
         }
@@ -168,7 +121,6 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
     fun stop() {
         shouldAdvertise = false
         retryAttempt = 0
-        includeDeviceName = true
         handler.removeCallbacks(retryRunnable)
         handler.removeCallbacks(healthCheckRunnable)
         stopAdvertisingInternal()
@@ -181,7 +133,7 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
 
     /**
      * Stop and re-start the advertisement without changing [shouldAdvertise].
-     * Used by the periodic health check to recover from silently killed ads.
+     * Used by the periodic health-check to recover from silently killed ads.
      */
     private fun cycleAdvertisement() {
         stopAdvertisingInternal()
@@ -192,11 +144,7 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
     private fun stopAdvertisingInternal() {
         val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val instance = btManager?.adapter?.bluetoothLeAdvertiser
-        try {
-            callback?.let { instance?.stopAdvertising(it) }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "BLE stopAdvertising threw SecurityException", e)
-        }
+        callback?.let { instance?.stopAdvertising(it) }
         callback = null
     }
 

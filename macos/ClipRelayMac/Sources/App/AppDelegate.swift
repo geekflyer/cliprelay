@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notificationManager.requestAuthorization()
         pairingManager.removePendingDevices()
         enableLaunchAtLoginIfFirstRun()
+        installSleepWakeObservers()
 
         updaterDriverDelegate.onUpdateAvailabilityChanged = { [weak self] in
             guard let self else { return }
@@ -127,6 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         bluetoothOffDebounceTimer?.invalidate()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         telemetryManager?.stop()
         clipboardMonitor?.stop()
         connectionController?.disconnect()
@@ -183,6 +185,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Bluetooth Alert
+
+    private func installSleepWakeObservers() {
+        // `Timer` deadlines survive sleep: after a long sleep the debounce can fire immediately on wake,
+        // before CoreBluetooth delivers `.poweredOn`. Cancel on sleep so wake uses fresh callbacks only.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemWillSleep),
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleSystemWillSleep(_ notification: Notification) {
+        bluetoothOffDebounceTimer?.invalidate()
+        bluetoothOffDebounceTimer = nil
+        statusBarController.setBluetoothWarning(nil)
+    }
 
     private func showBluetoothAlert(message: String, info: String) {
         let alert = NSAlert()
