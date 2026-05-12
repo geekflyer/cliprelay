@@ -73,6 +73,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val EXTRA_NOTIFICATION_TITLE = "extra_notification_title"
         const val EXTRA_NOTIFICATION_TEXT = "extra_notification_text"
         const val EXTRA_NOTIFICATION_TIME = "extra_notification_time"
+        const val EXTRA_NOTIFICATION_ICON = "extra_notification_icon"
 
         const val PREFS_NAME = "cliprelay_state"
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
@@ -234,7 +235,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 val title = intent.getStringExtra(EXTRA_NOTIFICATION_TITLE) ?: return START_STICKY
                 val text = intent.getStringExtra(EXTRA_NOTIFICATION_TEXT) ?: ""
                 val time = intent.getLongExtra(EXTRA_NOTIFICATION_TIME, System.currentTimeMillis())
-                activeSession?.sendNotification(appName, title, text, time)
+                val iconBase64 = intent.getStringExtra(EXTRA_NOTIFICATION_ICON)
+                Log.d(TAG, "Relaying notification from $appName: $title")
+                activeSession?.sendNotification(appName, title, text, time, iconBase64)
                 return START_STICKY
             }
             ACTION_PUSH_TEXT -> {

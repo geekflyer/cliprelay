@@ -397,13 +397,14 @@ class Session(
      * Queue a notification for sending to the Mac. Thread-safe.
      * The message is encrypted with the session key and sent without any response expected.
      */
-    fun sendNotification(appName: String, title: String, text: String, time: Long) {
+    fun sendNotification(appName: String, title: String, text: String, time: Long, iconBase64: String? = null) {
         if (closed.get()) return
         val json = JSONObject().apply {
             put("appName", appName)
             put("title", title)
             put("text", text)
             put("time", time)
+            if (iconBase64 != null) put("iconPng", iconBase64)
         }
         notificationQueue.put(json)
     }
@@ -415,8 +416,7 @@ class Session(
             Log.w(tag, "Failed to encrypt notification: ${e.message}")
             return
         }
-        val msg = Message(MessageType.NOTIFICATION, encrypted)
-        MessageCodec.write(output, msg)
+        MessageCodec.write(output, Message(MessageType.NOTIFICATION, encrypted))
     }
 
     // ── Outbound image transfer ─────────────────────────────────────
