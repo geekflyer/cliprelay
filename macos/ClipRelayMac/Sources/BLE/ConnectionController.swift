@@ -69,6 +69,7 @@ protocol ConnectionControllerDelegate: AnyObject {
     func didSyncClipboard(hash: String)
     func didChangeImageSyncSetting(enabled: Bool)
     func imageTransferFailed(reason: String)
+    func didReceiveAndroidNotification(appName: String, title: String, text: String)
 }
 
 // MARK: - ConnectionController
@@ -912,6 +913,13 @@ extension ConnectionController {
             self?.delegate?.imageTransferFailed(reason: reason)
         }
     }
+
+    fileprivate func handleAndroidNotification(appName: String, title: String, text: String) {
+        log("Received notification from \(appName): \(title)")
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.didReceiveAndroidNotification(appName: appName, title: title, text: text)
+        }
+    }
 }
 
 // MARK: - SessionAdapter
@@ -986,5 +994,9 @@ private class SessionAdapter: NSObject, SessionDelegate {
 
     func session(_ session: Session, alreadyHasHash hash: String) -> Bool {
         return lastTextHash == hash
+    }
+
+    func session(_ session: Session, didReceiveAndroidNotification appName: String, title: String, text: String, time: Int64) {
+        dispatch { $0.handleAndroidNotification(appName: appName, title: title, text: text) }
     }
 }

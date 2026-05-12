@@ -37,6 +37,7 @@ import org.cliprelay.protocol.SessionCallback
 import org.cliprelay.protocol.SessionMode
 import org.cliprelay.protocol.VersionMismatchException
 import org.cliprelay.settings.ClipboardSettingsStore
+import org.cliprelay.settings.NotificationSettingsStore
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.Executors
@@ -67,6 +68,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val ACTION_RICH_MEDIA_SETTING_CHANGED = "org.cliprelay.action.RICH_MEDIA_SETTING_CHANGED"
         const val EXTRA_RICH_MEDIA_ENABLED = "extra_rich_media_enabled"
 
+        const val ACTION_PUSH_NOTIFICATION = "org.cliprelay.action.PUSH_NOTIFICATION"
+        const val EXTRA_NOTIFICATION_APP = "extra_notification_app"
+        const val EXTRA_NOTIFICATION_TITLE = "extra_notification_title"
+        const val EXTRA_NOTIFICATION_TEXT = "extra_notification_text"
+        const val EXTRA_NOTIFICATION_TIME = "extra_notification_time"
+
         const val PREFS_NAME = "cliprelay_state"
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
 
@@ -96,6 +103,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     // Support
     private lateinit var clipboardWriter: ClipboardWriter
     private lateinit var clipboardSettingsStore: ClipboardSettingsStore
+    private lateinit var notificationSettingsStore: NotificationSettingsStore
     private lateinit var pairingStore: PairingStore
     private val executor = Executors.newSingleThreadExecutor()
     private val clipboardAutoClearHandler = Handler(Looper.getMainLooper())
@@ -139,6 +147,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         super.onCreate()
         clipboardWriter = ClipboardWriter(this)
         clipboardSettingsStore = ClipboardSettingsStore(this)
+        notificationSettingsStore = NotificationSettingsStore(this)
         pairingStore = PairingStore(this)
 
         loadPairingState()
@@ -219,6 +228,14 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                         pushImageToMac(imagePath, mimeType)
                     }
                 }
+            }
+            ACTION_PUSH_NOTIFICATION -> {
+                val appName = intent.getStringExtra(EXTRA_NOTIFICATION_APP) ?: return START_STICKY
+                val title = intent.getStringExtra(EXTRA_NOTIFICATION_TITLE) ?: return START_STICKY
+                val text = intent.getStringExtra(EXTRA_NOTIFICATION_TEXT) ?: ""
+                val time = intent.getLongExtra(EXTRA_NOTIFICATION_TIME, System.currentTimeMillis())
+                activeSession?.sendNotification(appName, title, text, time)
+                return START_STICKY
             }
             ACTION_PUSH_TEXT -> {
                 clearGhostActivityInFlight()

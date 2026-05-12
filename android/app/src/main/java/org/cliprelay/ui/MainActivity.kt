@@ -29,12 +29,15 @@ import org.cliprelay.pairing.PairingStore
 import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.service.ClipboardAccessibilityService
 import org.cliprelay.service.ClipRelayService
+import org.cliprelay.service.NotificationRelayService
 import org.cliprelay.settings.ClipboardSettingsStore
+import org.cliprelay.settings.NotificationSettingsStore
 
 class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private lateinit var clipboardSettingsStore: ClipboardSettingsStore
+    private lateinit var notificationSettingsStore: NotificationSettingsStore
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -105,6 +108,7 @@ class MainActivity : AppCompatActivity() {
         requestRuntimePermissions()
         ensureServiceRunning()
         clipboardSettingsStore = ClipboardSettingsStore(this)
+        notificationSettingsStore = NotificationSettingsStore(this)
 
         val pairingStore = PairingStore(this)
         val secret = pairingStore.loadSharedSecret()
@@ -118,7 +122,8 @@ class MainActivity : AppCompatActivity() {
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         val autoCopyEnabled = clipboardSettingsStore.isAutoCopyEnabled()
         val imageSyncEnabled = pairingStore.isRichMediaEnabled()
-        viewModel.initState(isPaired, deviceName, deviceTag, autoClearEnabled, autoCopyEnabled, imageSyncEnabled)
+        val notificationSyncEnabled = notificationSettingsStore.isNotificationSyncEnabled()
+        viewModel.initState(isPaired, deviceName, deviceTag, autoClearEnabled, autoCopyEnabled, imageSyncEnabled, notificationSyncEnabled)
 
         setContent {
             val state by viewModel.state.collectAsState()
@@ -127,6 +132,8 @@ class MainActivity : AppCompatActivity() {
             val autoCopyEnabled by viewModel.autoCopyEnabled.collectAsState()
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
             val imageSyncEnabled by viewModel.imageSyncEnabled.collectAsState()
+            val notificationSyncEnabled by viewModel.notificationSyncEnabled.collectAsState()
+            val notificationListenerEnabled by viewModel.notificationListenerEnabled.collectAsState()
             val showVersionMismatch by viewModel.showVersionMismatch.collectAsState()
             var showAccessibilityDisclosure by remember { mutableStateOf(false) }
 
@@ -158,6 +165,8 @@ class MainActivity : AppCompatActivity() {
                 autoCopyEnabled = autoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
+                notificationSyncEnabled = notificationSyncEnabled,
+                notificationListenerEnabled = notificationListenerEnabled,
                 onPairClick = {
                     scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
                 },
@@ -191,6 +200,16 @@ class MainActivity : AppCompatActivity() {
                     configIntent.action = ClipRelayService.ACTION_SEND_CONFIG_UPDATE
                     startServiceSafely(configIntent)
                 },
+                onNotificationSyncSettingChanged = { enabled ->
+                    viewModel.onNotificationSyncSettingChanged(enabled)
+                    notificationSettingsStore.setNotificationSyncEnabled(enabled)
+                    if (enabled && !NotificationRelayService.isListenerEnabled(this)) {
+                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    }
+                },
+                onNotificationListenerFixClick = {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                },
                 onAutoCopyFixClick = {
                     showAccessibilityDisclosure = true
                 },
@@ -220,6 +239,7 @@ class MainActivity : AppCompatActivity() {
         )
         viewModel.onAccessibilityStateChanged(isAccessibilityServiceEnabled())
         viewModel.onImageSyncSettingChanged(PairingStore(this).isRichMediaEnabled())
+        viewModel.onNotificationListenerStateChanged(NotificationRelayService.isListenerEnabled(this))
         val queryIntent = Intent(this, ClipRelayService::class.java)
         queryIntent.action = ClipRelayService.ACTION_QUERY_CONNECTION
         startServiceSafely(queryIntent)

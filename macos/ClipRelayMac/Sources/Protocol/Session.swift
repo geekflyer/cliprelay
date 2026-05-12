@@ -27,6 +27,7 @@ protocol SessionDelegate: AnyObject {
     func session(_ session: Session, didChangeRichMediaSetting enabled: Bool)
     func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String)
     func session(_ session: Session, imageWasRejected reason: String)
+    func session(_ session: Session, didReceiveAndroidNotification appName: String, title: String, text: String, time: Int64)
 }
 
 extension SessionDelegate {
@@ -34,6 +35,7 @@ extension SessionDelegate {
     func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String) {}
     func session(_ session: Session, imageWasRejected reason: String) {}
     func session(_ session: Session, imageSendFailed reason: String) {}
+    func session(_ session: Session, didReceiveAndroidNotification appName: String, title: String, text: String, time: Int64) {}
 }
 
 // MARK: - Session Errors
@@ -344,6 +346,8 @@ final class Session {
             }
         case .configUpdate:
             handleConfigUpdate(msg)
+        case .notification:
+            handleAndroidNotification(msg)
         case .reject:
             break // handled in later task
         case .error:
@@ -381,6 +385,22 @@ final class Session {
         queueLock.lock()
         configUpdateQueue.append(msg)
         queueLock.unlock()
+    }
+
+    // MARK: - Inbound Android Notification
+
+    private func handleAndroidNotification(_ msg: Message) {
+        guard let key = sessionKey else { return }
+        guard let plaintext = try? E2ECrypto.open(msg.payload, key: key),
+              let json = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
+              let appName = json["appName"] as? String,
+              let title = json["title"] as? String else {
+            logger.warning("Received malformed notification message")
+            return
+        }
+        let text = json["text"] as? String ?? ""
+        let time = (json["time"] as? NSNumber)?.int64Value ?? 0
+        delegate?.session(self, didReceiveAndroidNotification: appName, title: title, text: text, time: time)
     }
 
     // MARK: - Outbound Transfer

@@ -31,6 +31,12 @@ class MainViewModel : ViewModel() {
     private val _imageSyncEnabled = MutableStateFlow(false)
     val imageSyncEnabled: StateFlow<Boolean> = _imageSyncEnabled.asStateFlow()
 
+    private val _notificationSyncEnabled = MutableStateFlow(false)
+    val notificationSyncEnabled: StateFlow<Boolean> = _notificationSyncEnabled.asStateFlow()
+
+    private val _notificationListenerEnabled = MutableStateFlow(false)
+    val notificationListenerEnabled: StateFlow<Boolean> = _notificationListenerEnabled.asStateFlow()
+
     private val _autoCopyAccessibilityEnabled = MutableStateFlow(false)
     val autoCopyAccessibilityEnabled: StateFlow<Boolean> = _autoCopyAccessibilityEnabled.asStateFlow()
 
@@ -41,11 +47,12 @@ class MainViewModel : ViewModel() {
     private val _clipboardTransfer = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val clipboardTransfer: SharedFlow<Boolean> = _clipboardTransfer
 
-    fun initState(isPaired: Boolean, deviceName: String? = null, deviceTag: String? = null, autoClearEnabled: Boolean = false, autoCopyEnabled: Boolean = false, imageSyncEnabled: Boolean = false) {
+    fun initState(isPaired: Boolean, deviceName: String? = null, deviceTag: String? = null, autoClearEnabled: Boolean = false, autoCopyEnabled: Boolean = false, imageSyncEnabled: Boolean = false, notificationSyncEnabled: Boolean = false) {
         _state.value = if (isPaired) AppState.Searching(deviceName, deviceTag) else AppState.Unpaired
         _autoClearEnabled.value = autoClearEnabled
         _autoCopyEnabled.value = autoCopyEnabled
         _imageSyncEnabled.value = imageSyncEnabled
+        _notificationSyncEnabled.value = notificationSyncEnabled
     }
 
     fun onPaired(deviceTag: String? = null) {
@@ -87,6 +94,14 @@ class MainViewModel : ViewModel() {
 
     fun onImageSyncSettingChanged(enabled: Boolean) {
         _imageSyncEnabled.value = enabled
+    }
+
+    fun onNotificationSyncSettingChanged(enabled: Boolean) {
+        _notificationSyncEnabled.value = enabled
+    }
+
+    fun onNotificationListenerStateChanged(enabled: Boolean) {
+        _notificationListenerEnabled.value = enabled
     }
 
     fun onAccessibilityStateChanged(enabled: Boolean) {

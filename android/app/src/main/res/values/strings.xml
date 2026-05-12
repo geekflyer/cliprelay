@@ -43,6 +43,10 @@
     <string name="auto_copy_needs_accessibility">Not working — tap to enable Accessibility permission</string>
     <string name="image_sync_setting_title">Image sync (experimental)</string>
     <string name="image_sync_setting_subtitle">Sync clipboard images. Requires devices to be on the same Wi-Fi.</string>
+    <string name="notification_sync_setting_title">Notification sync</string>
+    <string name="notification_sync_setting_subtitle_on">Mirroring phone notifications to Mac</string>
+    <string name="notification_sync_setting_subtitle_off">Mirror phone notifications to your Mac</string>
+    <string name="notification_sync_needs_permission">Not working — tap to grant Notification Access</string>
     <string name="accessibility_disclosure_title">Accessibility Permission</string>
     <string name="accessibility_disclosure_body">ClipRelay uses Android\'s Accessibility Service to detect when you copy text, so it can automatically send your clipboard to your paired Mac.\n\nThis permission allows ClipRelay to monitor tap actions only. It does not read, collect, or store any screen content or personal data.</string>
     <string name="accessibility_disclosure_allow">Allow</string>

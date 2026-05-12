@@ -93,6 +93,9 @@ class Session(
     /** Queue of outbound CONFIG_UPDATE messages. */
     private val configUpdateQueue = LinkedBlockingQueue<Message>()
 
+    /** Queue of outbound notification payloads (already-serialized JSON). */
+    private val notificationQueue = LinkedBlockingQueue<JSONObject>()
+
     /** Active TCP image receiver, if any (for cancellation on new inbound offer). */
     private var activeReceiver: TcpImageReceiver? = null
 
@@ -263,6 +266,13 @@ class Session(
                     continue
                 }
 
+                // Check for queued notification sends (fire-and-forget)
+                val notifItem = notificationQueue.poll()
+                if (notifItem != null) {
+                    doSendNotification(notifItem)
+                    continue
+                }
+
                 // Check for queued image transfers
                 val imageItem = imageQueue.poll()
                 if (imageItem != null) {
@@ -379,6 +389,34 @@ class Session(
             }
             else -> throw ProtocolException("Expected ACCEPT or DONE, got ${response.type}")
         }
+    }
+
+    // ── Outbound notification (fire-and-forget) ──────────────────────
+
+    /**
+     * Queue a notification for sending to the Mac. Thread-safe.
+     * The message is encrypted with the session key and sent without any response expected.
+     */
+    fun sendNotification(appName: String, title: String, text: String, time: Long) {
+        if (closed.get()) return
+        val json = JSONObject().apply {
+            put("appName", appName)
+            put("title", title)
+            put("text", text)
+            put("time", time)
+        }
+        notificationQueue.put(json)
+    }
+
+    private fun doSendNotification(json: JSONObject) {
+        val key = sessionKey ?: return
+        val plaintext = json.toString().toByteArray(Charsets.UTF_8)
+        val encrypted = try { E2ECrypto.seal(plaintext, key) } catch (e: Exception) {
+            Log.w(tag, "Failed to encrypt notification: ${e.message}")
+            return
+        }
+        val msg = Message(MessageType.NOTIFICATION, encrypted)
+        MessageCodec.write(output, msg)
     }
 
     // ── Outbound image transfer ─────────────────────────────────────

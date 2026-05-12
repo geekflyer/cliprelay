@@ -29,4 +29,23 @@ final class ReceiveNotificationManager {
         )
         UNUserNotificationCenter.current().add(request)
     }
+
+    func postAndroidNotification(appName: String, title: String, text: String) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "[\(appName)] \(title)"
+        if !text.isEmpty {
+            content.body = String(text.prefix(200))
+        }
+        content.sound = .default
+
+        // Use a unique identifier per-app so notifications don't collapse across apps
+        let identifier = "android-notification-\(appName)-\(UUID().uuidString)"
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
 }

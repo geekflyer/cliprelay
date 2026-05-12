@@ -356,4 +356,8 @@ extension AppDelegate: ConnectionControllerDelegate {
     func imageTransferFailed(reason: String) {
         // Logged by ConnectionController
     }
+
+    func didReceiveAndroidNotification(appName: String, title: String, text: String) {
+        notificationManager.postAndroidNotification(appName: appName, title: title, text: text)
+    }
 }
