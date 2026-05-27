@@ -34,10 +34,19 @@ class NotificationRelayService : NotificationListenerService() {
         if (sbn.isOngoing) return
 
         val extras = sbn.notification.extras
-        val title = extras.getCharSequence("android.title")?.toString()?.takeIf { it.isNotBlank() }
+        val rawTitle = extras.getCharSequence("android.title")?.toString()?.takeIf { it.isNotBlank() }
             ?: return
         val text = extractFullText(extras)
         val appName = resolveAppLabel(sbn.packageName)
+
+        // Some apps (e.g. Outlook) set android.title = app name and put the
+        // real subject/sender in android.subText. Use subText as title in that case.
+        val subText = extras.getCharSequence("android.subText")?.toString()?.trim()
+        val title = if (rawTitle.equals(appName, ignoreCase = true) && !subText.isNullOrBlank()) {
+            subText
+        } else {
+            rawTitle
+        }
 
         Log.d(TAG, "Relaying: app=$appName title=$title")
 
@@ -61,14 +70,15 @@ class NotificationRelayService : NotificationListenerService() {
      * Extracts the richest available text from notification extras.
      *
      * Priority:
-     *  1. android.messages  – MessagingStyle (WhatsApp, Telegram, Signal, etc.)
-     *                         Gives individual messages with sender names.
-     *  2. android.bigText   – BigTextStyle (Gmail, news apps, etc.)
-     *                         Gives the full expanded body.
-     *  3. android.text      – Basic fallback (one-line preview).
+     *  1. android.messages    – MessagingStyle (WhatsApp, Telegram, Signal…)
+     *  2. android.text.lines  – InboxStyle (Outlook, Gmail multi-email…)
+     *                           Each line is typically "Sender  Subject".
+     *  3. android.bigText     – BigTextStyle (Gmail single email, news…)
+     *  4. android.subText     – Account/context line many apps set
+     *  5. android.text        – Basic one-line fallback
      */
     private fun extractFullText(extras: android.os.Bundle): String {
-        // 1. MessagingStyle: extract the last few individual messages
+        // 1. MessagingStyle: individual chat messages with sender names
         @Suppress("DEPRECATION")
         val msgArray = extras.getParcelableArray("android.messages")
         if (msgArray != null && msgArray.isNotEmpty()) {
@@ -82,12 +92,27 @@ class NotificationRelayService : NotificationListenerService() {
             if (lines.isNotEmpty()) return lines.joinToString("\n")
         }
 
-        // 2. BigTextStyle: full expanded body
+        // 2. InboxStyle: array of lines (Outlook shows "Sender  Subject" per line)
+        val inboxLines = extras.getCharSequenceArray("android.text.lines")
+        if (!inboxLines.isNullOrEmpty()) {
+            val text = inboxLines.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotBlank() } }
+                .joinToString("\n")
+            if (text.isNotBlank()) return text
+        }
+
+        // 3. BigTextStyle: full expanded body
         val bigText = extras.getCharSequence("android.bigText")?.toString()?.trim()
         if (!bigText.isNullOrBlank()) return bigText
 
-        // 3. Basic text fallback
-        return extras.getCharSequence("android.text")?.toString() ?: ""
+        // 4. Combine subText + basic text (some apps put context in subText)
+        val subText = extras.getCharSequence("android.subText")?.toString()?.trim()
+        val basicText = extras.getCharSequence("android.text")?.toString()?.trim() ?: ""
+        return when {
+            !subText.isNullOrBlank() && basicText.isNotBlank() && subText != basicText ->
+                "$basicText\n$subText"
+            !subText.isNullOrBlank() -> subText
+            else -> basicText
+        }
     }
 
     private fun resolveAppLabel(pkg: String): String = try {

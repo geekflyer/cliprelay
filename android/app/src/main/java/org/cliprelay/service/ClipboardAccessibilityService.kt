@@ -132,13 +132,21 @@ class ClipboardAccessibilityService : AccessibilityService() {
         if ((notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
 
         val extras = notification.extras ?: return
-        val title = extras.getCharSequence("android.title")?.toString()?.takeIf { it.isNotBlank() } ?: return
+        val rawTitle = extras.getCharSequence("android.title")?.toString()?.takeIf { it.isNotBlank() } ?: return
         val text = extractFullText(extras)
 
         val appName = try {
             val info = packageManager.getApplicationInfo(pkg, 0)
             packageManager.getApplicationLabel(info).toString()
         } catch (_: Exception) { pkg }
+
+        // Use subText as title when the title is just the app name (e.g. Outlook)
+        val subText = extras.getCharSequence("android.subText")?.toString()?.trim()
+        val title = if (rawTitle.equals(appName, ignoreCase = true) && !subText.isNullOrBlank()) {
+            subText
+        } else {
+            rawTitle
+        }
 
         val json = JSONObject().apply {
             put("appName", appName)
@@ -156,7 +164,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
     }
 
     private fun extractFullText(extras: android.os.Bundle): String {
-        // 1. MessagingStyle messages (WhatsApp, Telegram, Signal…)
+        // 1. MessagingStyle: individual chat messages (WhatsApp, Telegram, Signal…)
         @Suppress("DEPRECATION")
         val msgArray = extras.getParcelableArray("android.messages")
         if (msgArray != null && msgArray.isNotEmpty()) {
@@ -169,11 +177,25 @@ class ClipboardAccessibilityService : AccessibilityService() {
             }
             if (lines.isNotEmpty()) return lines.joinToString("\n")
         }
-        // 2. BigTextStyle full body
+        // 2. InboxStyle lines (Outlook, Gmail multi-email — "Sender  Subject" per line)
+        val inboxLines = extras.getCharSequenceArray("android.text.lines")
+        if (!inboxLines.isNullOrEmpty()) {
+            val text = inboxLines.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotBlank() } }
+                .joinToString("\n")
+            if (text.isNotBlank()) return text
+        }
+        // 3. BigTextStyle full body
         val bigText = extras.getCharSequence("android.bigText")?.toString()?.trim()
         if (!bigText.isNullOrBlank()) return bigText
-        // 3. Basic fallback
-        return extras.getCharSequence("android.text")?.toString() ?: ""
+        // 4. Combine subText + basic text
+        val subText = extras.getCharSequence("android.subText")?.toString()?.trim()
+        val basicText = extras.getCharSequence("android.text")?.toString()?.trim() ?: ""
+        return when {
+            !subText.isNullOrBlank() && basicText.isNotBlank() && subText != basicText ->
+                "$basicText\n$subText"
+            !subText.isNullOrBlank() -> subText
+            else -> basicText
+        }
     }
 
     private fun renderIconBase64(pkg: String): String? = try {
