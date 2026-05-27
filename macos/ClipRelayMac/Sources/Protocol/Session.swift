@@ -390,16 +390,25 @@ final class Session {
     // MARK: - Inbound Android Notification
 
     private func handleAndroidNotification(_ msg: Message) {
-        guard let key = sessionKey else { return }
-        guard let plaintext = try? E2ECrypto.open(msg.payload, key: key),
-              let json = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
-              let appName = json["appName"] as? String,
-              let title = json["title"] as? String else {
-            logger.warning("Received malformed notification message")
+        guard let key = sessionKey else {
+            logger.warning("[Notif] No session key")
+            return
+        }
+        guard let plaintext = try? E2ECrypto.open(msg.payload, key: key) else {
+            logger.warning("[Notif] Decryption failed")
+            return
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any] else {
+            logger.warning("[Notif] JSON parse failed")
+            return
+        }
+        guard let appName = json["appName"] as? String, let title = json["title"] as? String else {
+            logger.warning("[Notif] Missing appName or title in JSON: \(json.keys.joined(separator: ","))")
             return
         }
         let text = json["text"] as? String ?? ""
         let time = (json["time"] as? NSNumber)?.int64Value ?? 0
+        logger.info("[Notif] Dispatching to delegate: \(appName) / \(title)")
         delegate?.session(self, didReceiveAndroidNotification: appName, title: title, text: text, time: time)
     }
 
