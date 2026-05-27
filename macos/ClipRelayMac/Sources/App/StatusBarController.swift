@@ -297,15 +297,25 @@ final class StatusBarController {
 
                 let sub = NSMenu()
 
-                // Block app
-                let blockItem = NSMenuItem(
-                    title: "Block \(record.appName)",
+                // Block whole app
+                let blockAppItem = NSMenuItem(
+                    title: "Block App (\(record.appName))",
                     action: #selector(handleBlockApp(_:)),
                     keyEquivalent: ""
                 )
-                blockItem.target = self
-                blockItem.representedObject = record.appName
-                sub.addItem(blockItem)
+                blockAppItem.target = self
+                blockAppItem.representedObject = record.appName
+                sub.addItem(blockAppItem)
+
+                // Block by keyword — pre-filled with notification title (usually the sender name)
+                let blockKwItem = NSMenuItem(
+                    title: "Block by Keyword\u{2026}",
+                    action: #selector(handleBlockByKeyword(_:)),
+                    keyEquivalent: ""
+                )
+                blockKwItem.target = self
+                blockKwItem.representedObject = record.title  // pre-fill with title
+                sub.addItem(blockKwItem)
 
                 sub.addItem(NSMenuItem.separator())
 
@@ -335,29 +345,53 @@ final class StatusBarController {
         menu.addItem(NSMenuItem.separator())
     }
 
-    // MARK: - Blocked apps section
+    // MARK: - Blocked apps + keywords section
 
     private func renderBlockedAppsSection() {
-        let blocked = NotificationFilterStore.shared.blockedApps
-        guard !blocked.isEmpty else { return }
+        let blockedApps     = NotificationFilterStore.shared.blockedApps
+        let blockedKeywords = NotificationFilterStore.shared.blockedKeywords
+        guard !blockedApps.isEmpty || !blockedKeywords.isEmpty else { return }
 
-        let header = NSMenuItem(title: "Blocked Apps", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
+        if !blockedApps.isEmpty {
+            let header = NSMenuItem(title: "Blocked Apps", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
 
-        for appName in blocked {
-            let item = NSMenuItem(title: "  \(appName)", action: nil, keyEquivalent: "")
-            let sub = NSMenu()
-            let unblockItem = NSMenuItem(
-                title: "Unblock \(appName)",
-                action: #selector(handleUnblockApp(_:)),
-                keyEquivalent: ""
-            )
-            unblockItem.target = self
-            unblockItem.representedObject = appName
-            sub.addItem(unblockItem)
-            item.submenu = sub
-            menu.addItem(item)
+            for appName in blockedApps {
+                let item = NSMenuItem(title: "  \(appName)", action: nil, keyEquivalent: "")
+                let sub = NSMenu()
+                let unblockItem = NSMenuItem(
+                    title: "Unblock",
+                    action: #selector(handleUnblockApp(_:)),
+                    keyEquivalent: ""
+                )
+                unblockItem.target = self
+                unblockItem.representedObject = appName
+                sub.addItem(unblockItem)
+                item.submenu = sub
+                menu.addItem(item)
+            }
+        }
+
+        if !blockedKeywords.isEmpty {
+            let header = NSMenuItem(title: "Blocked Keywords", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+
+            for kw in blockedKeywords {
+                let item = NSMenuItem(title: "  \"\(kw)\"", action: nil, keyEquivalent: "")
+                let sub = NSMenu()
+                let removeItem = NSMenuItem(
+                    title: "Remove",
+                    action: #selector(handleRemoveKeyword(_:)),
+                    keyEquivalent: ""
+                )
+                removeItem.target = self
+                removeItem.representedObject = kw
+                sub.addItem(removeItem)
+                item.submenu = sub
+                menu.addItem(item)
+            }
         }
 
         menu.addItem(NSMenuItem.separator())
@@ -390,11 +424,54 @@ final class StatusBarController {
         renderMenu()
     }
 
+    @objc private func handleBlockByKeyword(_ sender: NSMenuItem) {
+        // Pre-fill the prompt with the notification title (typically the sender's name).
+        // The user trims it to exactly the word/phrase they want to block.
+        let suggestion = sender.representedObject as? String ?? ""
+
+        let alert = NSAlert()
+        alert.messageText = "Block by Keyword"
+        alert.informativeText = "Notifications whose title or body contains this word or phrase will be hidden. Edit the text below if needed:"
+        alert.addButton(withTitle: "Block")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = suggestion
+        field.placeholderString = "e.g. John, promo, deal"
+        alert.accessoryView = field
+
+        // Show as a floating alert (no parent window for menu bar apps).
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let kw = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !kw.isEmpty else { return }
+
+        // Enable filtering if currently off
+        if NotificationFilterStore.shared.filterMode == .off {
+            NotificationFilterStore.shared.filterMode = .blocklist
+        }
+        var list = NotificationFilterStore.shared.blockedKeywords
+        if !list.contains(where: { $0.lowercased() == kw.lowercased() }) {
+            list.append(kw)
+            NotificationFilterStore.shared.blockedKeywords = list
+        }
+        renderMenu()
+    }
+
     @objc private func handleUnblockApp(_ sender: NSMenuItem) {
         guard let appName = sender.representedObject as? String else { return }
         var list = NotificationFilterStore.shared.blockedApps
         list.removeAll { $0.lowercased() == appName.lowercased() }
         NotificationFilterStore.shared.blockedApps = list
+        renderMenu()
+    }
+
+    @objc private func handleRemoveKeyword(_ sender: NSMenuItem) {
+        guard let kw = sender.representedObject as? String else { return }
+        var list = NotificationFilterStore.shared.blockedKeywords
+        list.removeAll { $0.lowercased() == kw.lowercased() }
+        NotificationFilterStore.shared.blockedKeywords = list
         renderMenu()
     }
 
