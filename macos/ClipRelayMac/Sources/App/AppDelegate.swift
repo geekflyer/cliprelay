@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let clipboardWriter = ClipboardWriter()
     private let notificationManager = ReceiveNotificationManager()
     private let pairingWindowController = PairingWindowController()
+    private let filterWindowController = FilterWindowController()
 
     override init() {
         updaterController = SPUStandardUpdaterController(
@@ -93,6 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if self?.connectionController?.isConnected == true { return "connected" }
             let isPaired = !(self?.pairingManager.loadDevices().isEmpty ?? true)
             return isPaired ? "searching" : "unpaired"
+        }
+        statusBarController.onShowNotificationFilters = { [weak self] in
+            self?.filterWindowController.showWindow()
         }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()
@@ -357,7 +361,7 @@ extension AppDelegate: ConnectionControllerDelegate {
         // Logged by ConnectionController
     }
 
-    func didReceiveAndroidNotification(appName: String, title: String, text: String) {
-        notificationManager.postAndroidNotification(appName: appName, title: title, text: text)
+    func didReceiveAndroidNotification(appName: String, title: String, text: String, iconData: Data?) {
+        notificationManager.postAndroidNotification(appName: appName, title: title, text: text, iconData: iconData)
     }
 }

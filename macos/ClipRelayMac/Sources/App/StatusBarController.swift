@@ -14,6 +14,7 @@ final class StatusBarController {
     var isImageSyncEnabled: (() -> Bool)?
     var isDeviceConnected: (() -> Bool)?
     var bleStateProvider: (() -> String)?
+    var onShowNotificationFilters: (() -> Void)?
 
     private var availableUpdateVersion: String?
 
@@ -140,6 +141,14 @@ final class StatusBarController {
         )
         pairItem.target = self
         menu.addItem(pairItem)
+
+        let filterItem = NSMenuItem(
+            title: "Notification Filters\u{2026}",
+            action: #selector(handleNotificationFilters),
+            keyEquivalent: ""
+        )
+        filterItem.target = self
+        menu.addItem(filterItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -301,6 +310,11 @@ final class StatusBarController {
     @objc
     private func handlePairNewDevice() {
         onPairNewDeviceRequested?()
+    }
+
+    @objc
+    private func handleNotificationFilters() {
+        onShowNotificationFilters?()
     }
 
     @objc
