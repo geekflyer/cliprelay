@@ -4,9 +4,12 @@ import Foundation
 import os
 import UserNotifications
 
-private let notifLogger = Logger(subsystem: "org.cliprelay", category: "Notifications")
+private let notifLogger = Logger(subsystem: "com.andromeda.NotiSync", category: "Notifications")
 
 final class ReceiveNotificationManager {
+    /// Called on the main thread whenever a new notification is appended to NotificationLog.
+    var onNotificationLogged: (() -> Void)?
+
     func requestAuthorization() {
         guard Bundle.main.bundleIdentifier != nil else {
             notifLogger.error("No bundle identifier — skipping notification auth")
@@ -53,6 +56,10 @@ final class ReceiveNotificationManager {
             return
         }
 
+        // Record in the recent-notifications log (used by menu bar history).
+        NotificationLog.shared.append(appName: appName, title: title, body: text)
+        DispatchQueue.main.async { self.onNotificationLogged?() }
+
         let content = UNMutableNotificationContent()
         content.title = title.isEmpty ? appName : title
         if !title.isEmpty && !appName.isEmpty {
@@ -68,7 +75,6 @@ final class ReceiveNotificationManager {
                 try iconData.write(to: tmpURL)
                 let attachment = try UNNotificationAttachment(identifier: "icon", url: tmpURL, options: nil)
                 content.attachments = [attachment]
-                try? FileManager.default.removeItem(at: tmpURL)
             } catch {
                 notifLogger.warning("Could not attach icon: \(error)")
             }

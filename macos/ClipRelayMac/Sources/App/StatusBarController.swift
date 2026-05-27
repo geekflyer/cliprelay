@@ -4,6 +4,7 @@ import AppKit
 import Foundation
 import QuartzCore
 import Sparkle
+import UserNotifications
 
 final class StatusBarController {
     var onPairNewDeviceRequested: (() -> Void)?
@@ -15,6 +16,9 @@ final class StatusBarController {
     var isDeviceConnected: (() -> Bool)?
     var bleStateProvider: (() -> String)?
     var onShowNotificationFilters: (() -> Void)?
+
+    /// Called by AppDelegate when a new Android notification is logged.
+    func refreshMenu() { renderMenu() }
 
     private var availableUpdateVersion: String?
 
@@ -42,10 +46,21 @@ final class StatusBarController {
     }
 
     private func loadStatusBarIcon() -> NSImage? {
-        if let bundlePath = Bundle.main.path(forResource: "StatusBarIcon", ofType: "png") {
-            let image = NSImage(contentsOfFile: bundlePath)
-            image?.size = NSSize(width: 18, height: 18)
+        // NSImage(named:) searches the bundle by name regardless of extension
+        // (Xcode converts PNG → TIFF at build time, so path-based .png lookup fails)
+        if let image = NSImage(named: "StatusBarIcon") {
+            image.size = NSSize(width: 18, height: 18)
             return image
+        }
+        // Fallback: explicit path search for png or tiff
+        for ext in ["tiff", "png"] {
+            for dir in [Optional<String>.none, "Resources"] {
+                if let path = Bundle.main.path(forResource: "StatusBarIcon", ofType: ext, inDirectory: dir) {
+                    let image = NSImage(contentsOfFile: path)
+                    image?.size = NSSize(width: 18, height: 18)
+                    return image
+                }
+            }
         }
         return nil
     }
@@ -142,6 +157,16 @@ final class StatusBarController {
         pairItem.target = self
         menu.addItem(pairItem)
 
+        menu.addItem(NSMenuItem.separator())
+
+        let testNotifItem = NSMenuItem(
+            title: "Send Test Notification",
+            action: #selector(handleTestNotification),
+            keyEquivalent: ""
+        )
+        testNotifItem.target = self
+        menu.addItem(testNotifItem)
+
         let filterItem = NSMenuItem(
             title: "Notification Filters\u{2026}",
             action: #selector(handleNotificationFilters),
@@ -151,6 +176,8 @@ final class StatusBarController {
         menu.addItem(filterItem)
 
         menu.addItem(NSMenuItem.separator())
+        renderRecentNotificationsSection()
+        renderBlockedAppsSection()
 
         let launchItem = NSMenuItem(
             title: "Launch at Login",
@@ -250,6 +277,138 @@ final class StatusBarController {
         statusItem.menu = menu
     }
 
+    // MARK: - Recent notifications section
+
+    private func renderRecentNotificationsSection() {
+        let header = NSMenuItem(title: "Recent Notifications", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        let records = NotificationLog.shared.records
+        if records.isEmpty {
+            let empty = NSMenuItem(title: "  No notifications yet", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        } else {
+            for record in records {
+                // Compose display title: "AppName — Notification title"
+                let displayTitle = composeNotifTitle(appName: record.appName, title: record.title)
+                let item = NSMenuItem(title: displayTitle, action: nil, keyEquivalent: "")
+
+                let sub = NSMenu()
+
+                // Block app
+                let blockItem = NSMenuItem(
+                    title: "Block \(record.appName)",
+                    action: #selector(handleBlockApp(_:)),
+                    keyEquivalent: ""
+                )
+                blockItem.target = self
+                blockItem.representedObject = record.appName
+                sub.addItem(blockItem)
+
+                sub.addItem(NSMenuItem.separator())
+
+                // Copy notification body
+                let copyItem = NSMenuItem(
+                    title: "Copy Text",
+                    action: #selector(handleCopyNotification(_:)),
+                    keyEquivalent: ""
+                )
+                copyItem.target = self
+                copyItem.representedObject = record.body.isEmpty ? record.title : "\(record.title)\n\(record.body)"
+                sub.addItem(copyItem)
+
+                item.submenu = sub
+                menu.addItem(item)
+            }
+
+            let clearItem = NSMenuItem(
+                title: "Clear History",
+                action: #selector(handleClearNotificationHistory),
+                keyEquivalent: ""
+            )
+            clearItem.target = self
+            menu.addItem(clearItem)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+    }
+
+    // MARK: - Blocked apps section
+
+    private func renderBlockedAppsSection() {
+        let blocked = NotificationFilterStore.shared.blockedApps
+        guard !blocked.isEmpty else { return }
+
+        let header = NSMenuItem(title: "Blocked Apps", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        for appName in blocked {
+            let item = NSMenuItem(title: "  \(appName)", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            let unblockItem = NSMenuItem(
+                title: "Unblock \(appName)",
+                action: #selector(handleUnblockApp(_:)),
+                keyEquivalent: ""
+            )
+            unblockItem.target = self
+            unblockItem.representedObject = appName
+            sub.addItem(unblockItem)
+            item.submenu = sub
+            menu.addItem(item)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+    }
+
+    private func composeNotifTitle(appName: String, title: String) -> String {
+        let combined = title.isEmpty ? appName : "\(appName) — \(title)"
+        let limit = 55
+        if combined.count > limit {
+            return String(combined.prefix(limit)) + "…"
+        }
+        return combined
+    }
+
+    // MARK: - Block / unblock actions
+
+    @objc private func handleBlockApp(_ sender: NSMenuItem) {
+        guard let appName = sender.representedObject as? String else { return }
+        // Switch to blocklist mode if currently off
+        if NotificationFilterStore.shared.filterMode == .off {
+            NotificationFilterStore.shared.filterMode = .blocklist
+        }
+        if NotificationFilterStore.shared.filterMode == .blocklist {
+            var list = NotificationFilterStore.shared.blockedApps
+            if !list.contains(where: { $0.lowercased() == appName.lowercased() }) {
+                list.append(appName)
+                NotificationFilterStore.shared.blockedApps = list
+            }
+        }
+        renderMenu()
+    }
+
+    @objc private func handleUnblockApp(_ sender: NSMenuItem) {
+        guard let appName = sender.representedObject as? String else { return }
+        var list = NotificationFilterStore.shared.blockedApps
+        list.removeAll { $0.lowercased() == appName.lowercased() }
+        NotificationFilterStore.shared.blockedApps = list
+        renderMenu()
+    }
+
+    @objc private func handleCopyNotification(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc private func handleClearNotificationHistory() {
+        NotificationLog.shared.clear()
+        renderMenu()
+    }
+
     private func renderTrustedDevicesSection() {
         let header = NSMenuItem(title: "Paired Devices", action: nil, keyEquivalent: "")
         header.isEnabled = false
@@ -310,11 +469,6 @@ final class StatusBarController {
     @objc
     private func handlePairNewDevice() {
         onPairNewDeviceRequested?()
-    }
-
-    @objc
-    private func handleNotificationFilters() {
-        onShowNotificationFilters?()
     }
 
     @objc
@@ -420,6 +574,39 @@ final class StatusBarController {
     private func handleForgetDevice(_ sender: NSMenuItem) {
         guard let token = sender.representedObject as? String else { return }
         onForgetDeviceRequested?(token)
+    }
+
+    @objc
+    private func handleNotificationFilters() {
+        onShowNotificationFilters?()
+    }
+
+    @objc
+    private func handleTestNotification() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            DispatchQueue.main.async {
+                if let error {
+                    let alert = NSAlert()
+                    alert.messageText = "Notification permission error"
+                    alert.informativeText = error.localizedDescription
+                    alert.runModal()
+                    return
+                }
+                if granted {
+                    let content = UNMutableNotificationContent()
+                    content.title = "NotiSync Test"
+                    content.body = "Notifications are working! Android notifications will appear here."
+                    content.sound = .default
+                    let request = UNNotificationRequest(identifier: "test-\(Date().timeIntervalSince1970)", content: content, trigger: nil)
+                    UNUserNotificationCenter.current().add(request)
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "Notifications denied"
+                    alert.informativeText = "Please enable notifications for NotiSync in System Settings → Notifications."
+                    alert.runModal()
+                }
+            }
+        }
     }
 }
 

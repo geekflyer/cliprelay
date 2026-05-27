@@ -38,6 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let bluetoothOffDebounceDelay: TimeInterval = 60.0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Hide from Dock — menu-bar-only app.
+        NSApplication.shared.setActivationPolicy(.accessory)
+
         // Start the Sparkle updater now that the app is fully launched.
         // Creating the controller with startingUpdater:false in init() and
         // deferring start to here avoids a race where the updater's scheduled
@@ -47,7 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updaterController.updater.checkForUpdatesInBackground()
         }
 
-        UNUserNotificationCenter.current().delegate = updaterDriverDelegate
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().delegate = updaterDriverDelegate
+        }
         notificationManager.requestAuthorization()
         pairingManager.removePendingDevices()
         enableLaunchAtLoginIfFirstRun()
@@ -67,20 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.forgetDevice(token: token)
         }
         statusBarController.onToggleLaunchAtLogin = {
-            let service = SMAppService.mainApp
-            do {
-                if service.status == .enabled {
-                    try service.unregister()
-                } else {
-                    try service.register()
-                }
-            } catch {
-                appLogger.error("[App] Failed to toggle launch at login: \(error.localizedDescription)")
-            }
+            // SMAppService requires a notarized Developer ID signature — not available
+            // in ad-hoc builds. Use System Settings > General > Login Items instead.
         }
-        statusBarController.isLaunchAtLoginEnabled = {
-            SMAppService.mainApp.status == .enabled
-        }
+        statusBarController.isLaunchAtLoginEnabled = { false }
         statusBarController.onToggleImageSync = { [weak self] in
             self?.connectionController?.toggleImageSync()
         }
@@ -97,6 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusBarController.onShowNotificationFilters = { [weak self] in
             self?.filterWindowController.showWindow()
+        }
+        notificationManager.onNotificationLogged = { [weak self] in
+            self?.statusBarController.refreshMenu()
         }
         pairingWindowController.onDidClose = { [weak self] in
             self?.handlePairingWindowClosed()
@@ -141,15 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Launch at Login
 
     private func enableLaunchAtLoginIfFirstRun() {
-        let key = "hasEnabledLaunchAtLogin"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
-        do {
-            try SMAppService.mainApp.register()
-            appLogger.notice("[App] Launch at login enabled on first run")
-        } catch {
-            appLogger.error("[App] Failed to enable launch at login: \(error.localizedDescription)")
-        }
+        // SMAppService requires a notarized Developer ID signature.
+        // For ad-hoc builds, add ClipRelay manually via System Settings > General > Login Items.
     }
 
     // MARK: - Pairing
