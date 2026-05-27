@@ -129,7 +129,15 @@ class ClipboardAccessibilityService : AccessibilityService() {
         @Suppress("DEPRECATION")
         val notification = event.parcelableData as? Notification ?: return
         if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0) return
-        if ((notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+
+        val isGroupSummary = (notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0
+
+        // Email apps (e.g. Outlook) send all useful content in the GROUP_SUMMARY using
+        // InboxStyle (android.textLines). Individual child notifications are delivered
+        // with only the privacy-redacted public version, making them useless.
+        // Allow GROUP_SUMMARY through for email category; skip it for everything else.
+        val isEmail = notification.category == Notification.CATEGORY_EMAIL
+        if (isGroupSummary && !isEmail) return
 
         val extras = notification.extras ?: return
         val rawTitle = extras.getCharSequence("android.title")?.toString()?.takeIf { it.isNotBlank() } ?: return
@@ -140,7 +148,13 @@ class ClipboardAccessibilityService : AccessibilityService() {
             packageManager.getApplicationLabel(info).toString()
         } catch (_: Exception) { pkg }
 
-        // Use subText as title when the title is just the app name (e.g. Outlook)
+        // Samsung delivers the privacy-redacted public version of VISIBILITY_PRIVATE
+        // notifications to the AccessibilityService. Detect this by checking whether
+        // the title is just the app name AND the text is suspiciously short.
+        // These carry no useful content so we skip them.
+        if (rawTitle.equals(appName, ignoreCase = true) && text.length < 20) return
+
+        // Use subText as title when the title equals the app name (Outlook pattern)
         val subText = extras.getCharSequence("android.subText")?.toString()?.trim()
         val title = if (rawTitle.equals(appName, ignoreCase = true) && !subText.isNullOrBlank()) {
             subText
@@ -178,7 +192,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
             if (lines.isNotEmpty()) return lines.joinToString("\n")
         }
         // 2. InboxStyle lines (Outlook, Gmail multi-email — "Sender  Subject" per line)
-        val inboxLines = extras.getCharSequenceArray("android.text.lines")
+        val inboxLines = extras.getCharSequenceArray("android.textLines")
         if (!inboxLines.isNullOrEmpty()) {
             val text = inboxLines.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotBlank() } }
                 .joinToString("\n")

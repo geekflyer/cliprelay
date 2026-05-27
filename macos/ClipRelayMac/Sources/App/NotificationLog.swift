@@ -37,6 +37,12 @@ final class NotificationLog {
         save()
     }
 
+    /// Remove a single notification by its timestamp (used for "Mark as Read").
+    func remove(byTime time: TimeInterval) {
+        records.removeAll { $0.time == time }
+        save()
+    }
+
     func clear() {
         records = []
         UserDefaults.standard.removeObject(forKey: defaultsKey)

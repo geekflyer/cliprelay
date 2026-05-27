@@ -291,11 +291,33 @@ final class StatusBarController {
             menu.addItem(empty)
         } else {
             for record in records {
-                // Compose display title: "AppName — Notification title"
+                // ── Title row ──────────────────────────────────────────────
                 let displayTitle = composeNotifTitle(appName: record.appName, title: record.title)
                 let item = NSMenuItem(title: displayTitle, action: nil, keyEquivalent: "")
 
                 let sub = NSMenu()
+
+                // Mark as Read — removes this notification from the list
+                let markReadItem = NSMenuItem(
+                    title: "Mark as Read",
+                    action: #selector(handleMarkAsRead(_:)),
+                    keyEquivalent: ""
+                )
+                markReadItem.target = self
+                markReadItem.representedObject = record.time
+                sub.addItem(markReadItem)
+
+                sub.addItem(NSMenuItem.separator())
+
+                // Block by keyword — pre-filled with the title (usually sender name)
+                let blockKwItem = NSMenuItem(
+                    title: "Block by Keyword\u{2026}",
+                    action: #selector(handleBlockByKeyword(_:)),
+                    keyEquivalent: ""
+                )
+                blockKwItem.target = self
+                blockKwItem.representedObject = record.title
+                sub.addItem(blockKwItem)
 
                 // Block whole app
                 let blockAppItem = NSMenuItem(
@@ -307,19 +329,9 @@ final class StatusBarController {
                 blockAppItem.representedObject = record.appName
                 sub.addItem(blockAppItem)
 
-                // Block by keyword — pre-filled with notification title (usually the sender name)
-                let blockKwItem = NSMenuItem(
-                    title: "Block by Keyword\u{2026}",
-                    action: #selector(handleBlockByKeyword(_:)),
-                    keyEquivalent: ""
-                )
-                blockKwItem.target = self
-                blockKwItem.representedObject = record.title  // pre-fill with title
-                sub.addItem(blockKwItem)
-
                 sub.addItem(NSMenuItem.separator())
 
-                // Copy notification body
+                // Copy full text to clipboard
                 let copyItem = NSMenuItem(
                     title: "Copy Text",
                     action: #selector(handleCopyNotification(_:)),
@@ -331,15 +343,30 @@ final class StatusBarController {
 
                 item.submenu = sub
                 menu.addItem(item)
+
+                // ── Body preview row (greyed, smaller) ─────────────────────
+                if !record.body.isEmpty {
+                    let preview = bodyPreview(record.body)
+                    let bodyItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                    bodyItem.attributedTitle = NSAttributedString(
+                        string: "    \(preview)",
+                        attributes: [
+                            .foregroundColor: NSColor.secondaryLabelColor,
+                            .font: NSFont.systemFont(ofSize: 11),
+                        ]
+                    )
+                    bodyItem.isEnabled = false
+                    menu.addItem(bodyItem)
+                }
             }
 
-            let clearItem = NSMenuItem(
-                title: "Clear History",
+            let markAllItem = NSMenuItem(
+                title: "Mark All as Read",
                 action: #selector(handleClearNotificationHistory),
                 keyEquivalent: ""
             )
-            clearItem.target = self
-            menu.addItem(clearItem)
+            markAllItem.target = self
+            menu.addItem(markAllItem)
         }
 
         menu.addItem(NSMenuItem.separator())
@@ -404,6 +431,26 @@ final class StatusBarController {
             return String(combined.prefix(limit)) + "…"
         }
         return combined
+    }
+
+    /// Returns a single-line body preview capped at 70 characters.
+    private func bodyPreview(_ body: String) -> String {
+        // Show only the first line to keep the menu compact.
+        let firstLine = body.components(separatedBy: "\n").first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? body
+        let trimmed = firstLine.trimmingCharacters(in: .whitespaces)
+        let limit = 70
+        if trimmed.count > limit {
+            return String(trimmed.prefix(limit)) + "…"
+        }
+        return trimmed
+    }
+
+    // MARK: - Mark as read
+
+    @objc private func handleMarkAsRead(_ sender: NSMenuItem) {
+        guard let time = sender.representedObject as? TimeInterval else { return }
+        NotificationLog.shared.remove(byTime: time)
+        renderMenu()
     }
 
     // MARK: - Block / unblock actions

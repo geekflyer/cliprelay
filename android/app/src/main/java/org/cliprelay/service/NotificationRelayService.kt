@@ -71,7 +71,7 @@ class NotificationRelayService : NotificationListenerService() {
      *
      * Priority:
      *  1. android.messages    – MessagingStyle (WhatsApp, Telegram, Signal…)
-     *  2. android.text.lines  – InboxStyle (Outlook, Gmail multi-email…)
+     *  2. android.textLines  – InboxStyle (Outlook, Gmail multi-email…)
      *                           Each line is typically "Sender  Subject".
      *  3. android.bigText     – BigTextStyle (Gmail single email, news…)
      *  4. android.subText     – Account/context line many apps set
@@ -93,7 +93,7 @@ class NotificationRelayService : NotificationListenerService() {
         }
 
         // 2. InboxStyle: array of lines (Outlook shows "Sender  Subject" per line)
-        val inboxLines = extras.getCharSequenceArray("android.text.lines")
+        val inboxLines = extras.getCharSequenceArray("android.textLines")
         if (!inboxLines.isNullOrEmpty()) {
             val text = inboxLines.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotBlank() } }
                 .joinToString("\n")
