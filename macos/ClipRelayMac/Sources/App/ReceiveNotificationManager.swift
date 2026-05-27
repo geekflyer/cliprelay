@@ -65,7 +65,9 @@ final class ReceiveNotificationManager {
         if !title.isEmpty && !appName.isEmpty {
             content.subtitle = appName
         }
-        content.body = String(text.prefix(200))
+        // No hard truncation — let macOS decide how much to surface in the banner.
+        // Notification Centre shows the full body on expand.
+        content.body = text
         content.sound = .default
 
         if let iconData {
@@ -80,7 +82,10 @@ final class ReceiveNotificationManager {
             }
         }
 
-        let identifier = "android-notification-\(appName)-\(title)".hash.description
+        // Include the body in the hash so two messages from the same contact
+        // (same app + same title) each get their own notification instead of
+        // the second replacing the first.
+        let identifier = "android-\(appName)-\(title)-\(text.prefix(80))".hash.description
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { error in
             if let error {

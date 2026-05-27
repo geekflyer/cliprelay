@@ -23,6 +23,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.cliprelay.settings.ClipboardSettingsStore
 import org.cliprelay.settings.NotificationSettingsStore
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
 class ClipboardAccessibilityService : AccessibilityService() {
@@ -34,9 +35,6 @@ class ClipboardAccessibilityService : AccessibilityService() {
     @Volatile
     private var copyToolbarVisible = false
 
-    // Dedup: track last notification key to avoid sending duplicates
-    private var lastNotifKey = ""
-
     override fun onServiceConnected() {
         super.onServiceConnected()
         settingsStore = ClipboardSettingsStore(this)
@@ -47,61 +45,19 @@ class ClipboardAccessibilityService : AccessibilityService() {
         if (event == null) return
 
         when (event.eventType) {
-            AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> handleNotificationEvent(event)
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                if (::settingsStore.isInitialized && settingsStore.isAutoCopyEnabled()) handleClickEvent(event)
+            AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> {
+                if (::notificationSettingsStore.isInitialized && notificationSettingsStore.isNotificationSyncEnabled()) {
+                    handleNotificationEvent(event)
+                }
             }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                if (::settingsStore.isInitialized && settingsStore.isAutoCopyEnabled()) handleWindowStateChanged(event)
+            else -> {
+                if (!::settingsStore.isInitialized || !settingsStore.isAutoCopyEnabled()) return
+                when (event.eventType) {
+                    AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClickEvent(event)
+                    AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
+                }
             }
         }
-    }
-
-    // ── TYPE_NOTIFICATION_STATE_CHANGED detection ────────────────────
-
-    private val BLOCKED_PACKAGES = setOf("android", "com.android.systemui", "org.cliprelay")
-
-    private fun handleNotificationEvent(event: AccessibilityEvent) {
-        if (!::notificationSettingsStore.isInitialized) return
-        if (!notificationSettingsStore.isNotificationSyncEnabled()) return
-
-        val pkg = event.packageName?.toString() ?: return
-        if (pkg in BLOCKED_PACKAGES) return
-
-        // Extract notification from parcelableData if available
-        val notification = event.parcelableData as? Notification
-        val extras = notification?.extras
-
-        val title = extras?.getCharSequence("android.title")?.toString()
-            ?: event.text?.firstOrNull()?.toString()
-            ?: return
-
-        val text = extras?.getCharSequence("android.text")?.toString()
-            ?: event.text?.drop(1)?.joinToString(" ")
-            ?: ""
-
-        // Deduplicate: skip if same pkg+title+text as last event
-        val key = "$pkg|$title|$text"
-        if (key == lastNotifKey) return
-        lastNotifKey = key
-
-        val appName = try {
-            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-        } catch (_: Exception) { pkg }
-
-        val iconBase64 = getAppIconBase64(pkg)
-
-        Log.d(TAG, "Notification via a11y: $appName / $title")
-
-        val intent = Intent(this, ClipRelayService::class.java).apply {
-            action = ClipRelayService.ACTION_PUSH_NOTIFICATION
-            putExtra(ClipRelayService.EXTRA_NOTIFICATION_APP, appName)
-            putExtra(ClipRelayService.EXTRA_NOTIFICATION_TITLE, title)
-            putExtra(ClipRelayService.EXTRA_NOTIFICATION_TEXT, text)
-            putExtra(ClipRelayService.EXTRA_NOTIFICATION_TIME, System.currentTimeMillis())
-            if (iconBase64 != null) putExtra(ClipRelayService.EXTRA_NOTIFICATION_ICON, iconBase64)
-        }
-        startService(intent)
     }
 
     // ── TYPE_VIEW_CLICKED detection (most apps) ──────────────────────
@@ -164,6 +120,73 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return text in COPY_WORDS
     }
 
+    // ── TYPE_NOTIFICATION_STATE_CHANGED (Samsung workaround) ─────────
+
+    private fun handleNotificationEvent(event: AccessibilityEvent) {
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg == packageName || pkg == "android" || pkg == "com.android.systemui") return
+
+        @Suppress("DEPRECATION")
+        val notification = event.parcelableData as? Notification ?: return
+        if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0) return
+        if ((notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+
+        val extras = notification.extras ?: return
+        val title = extras.getCharSequence("android.title")?.toString()?.takeIf { it.isNotBlank() } ?: return
+        val text = extractFullText(extras)
+
+        val appName = try {
+            val info = packageManager.getApplicationInfo(pkg, 0)
+            packageManager.getApplicationLabel(info).toString()
+        } catch (_: Exception) { pkg }
+
+        val json = JSONObject().apply {
+            put("appName", appName)
+            put("title", title)
+            put("text", text)
+            put("time", event.eventTime)
+            renderIconBase64(pkg)?.let { put("iconPng", it) }
+        }
+
+        val intent = Intent(this, ClipRelayService::class.java).apply {
+            action = ClipRelayService.ACTION_PUSH_NOTIFICATION
+            putExtra(ClipRelayService.EXTRA_NOTIFICATION_PAYLOAD, json.toString().toByteArray(Charsets.UTF_8))
+        }
+        startService(intent)
+    }
+
+    private fun extractFullText(extras: android.os.Bundle): String {
+        // 1. MessagingStyle messages (WhatsApp, Telegram, Signal…)
+        @Suppress("DEPRECATION")
+        val msgArray = extras.getParcelableArray("android.messages")
+        if (msgArray != null && msgArray.isNotEmpty()) {
+            val lines = msgArray.takeLast(10).mapNotNull { msg ->
+                val bundle = msg as? android.os.Bundle ?: return@mapNotNull null
+                val sender = bundle.getCharSequence("sender")?.toString()?.takeIf { it.isNotBlank() }
+                val msgText = bundle.getCharSequence("text")?.toString()?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+                if (sender != null) "$sender: $msgText" else msgText
+            }
+            if (lines.isNotEmpty()) return lines.joinToString("\n")
+        }
+        // 2. BigTextStyle full body
+        val bigText = extras.getCharSequence("android.bigText")?.toString()?.trim()
+        if (!bigText.isNullOrBlank()) return bigText
+        // 3. Basic fallback
+        return extras.getCharSequence("android.text")?.toString() ?: ""
+    }
+
+    private fun renderIconBase64(pkg: String): String? = try {
+        val drawable = packageManager.getApplicationIcon(pkg)
+        val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, 64, 64)
+        drawable.draw(canvas)
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream)
+        Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
+    } catch (_: Exception) { null }
+
     companion object {
         private const val TAG = "ClipboardA11y"
 
@@ -193,18 +216,6 @@ class ClipboardAccessibilityService : AccessibilityService() {
             "कॉपी करें",                     // Hindi
         )
     }
-
-    private fun getAppIconBase64(pkg: String): String? = try {
-        val drawable = packageManager.getApplicationIcon(pkg)
-        val size = 64
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, size, size)
-        drawable.draw(canvas)
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream)
-        Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-    } catch (_: Exception) { null }
 
     private fun notifyService() {
         val intent = Intent(this, ClipRelayService::class.java).apply {
