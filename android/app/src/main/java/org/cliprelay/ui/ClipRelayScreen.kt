@@ -88,12 +88,16 @@ fun ClipRelayScreen(
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
+    notificationSyncEnabled: Boolean = false,
+    notificationListenerEnabled: Boolean = false,
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
     onBurstShown: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
+    onNotificationSyncSettingChanged: (Boolean) -> Unit = {},
+    onNotificationListenerFixClick: () -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {},
     onHelpClick: () -> Unit = {},
     onSupportLinkClick: (String) -> Unit = {},
@@ -172,11 +176,15 @@ fun ClipRelayScreen(
                 autoCopyEnabled = autoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
+                notificationSyncEnabled = notificationSyncEnabled,
+                notificationListenerEnabled = notificationListenerEnabled,
                 onPairClick = onPairClick,
                 onUnpairClick = onUnpairClick,
                 onAutoClearSettingChanged = onAutoClearSettingChanged,
                 onAutoCopySettingChanged = onAutoCopySettingChanged,
                 onImageSyncSettingChanged = onImageSyncSettingChanged,
+                onNotificationSyncSettingChanged = onNotificationSyncSettingChanged,
+                onNotificationListenerFixClick = onNotificationListenerFixClick,
                 onAutoCopyFixClick = onAutoCopyFixClick
             )
             Spacer(modifier = Modifier.weight(1f))
@@ -289,11 +297,15 @@ private fun MainCard(
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
+    notificationSyncEnabled: Boolean = false,
+    notificationListenerEnabled: Boolean = false,
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
+    onNotificationSyncSettingChanged: (Boolean) -> Unit = {},
+    onNotificationListenerFixClick: () -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {}
 ) {
     val isPaired = state !is AppState.Unpaired
@@ -556,6 +568,13 @@ private fun MainCard(
                 onEnabledChange = onImageSyncSettingChanged
             )
             Spacer(modifier = Modifier.height(8.dp))
+            NotificationSyncSettingRow(
+                enabled = notificationSyncEnabled,
+                listenerGranted = notificationListenerEnabled,
+                onEnabledChange = onNotificationSyncSettingChanged,
+                onFixClick = onNotificationListenerFixClick
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             AutoCopySettingRow(
                 enabled = autoCopyEnabled,
                 accessibilityEnabled = autoCopyAccessibilityEnabled,
@@ -744,6 +763,90 @@ private fun ImageSyncSettingRow(
                 text = stringResource(R.string.image_sync_setting_subtitle),
                 fontSize = 12.sp,
                 color = Color(0x80000000),
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Switch(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Teal,
+                checkedTrackColor = Aqua.copy(alpha = 0.45f),
+                checkedBorderColor = Aqua.copy(alpha = 0.60f),
+                uncheckedThumbColor = Color(0xFF7A7A7A),
+                uncheckedTrackColor = Color(0x15000000),
+                uncheckedBorderColor = Color(0x40000000)
+            )
+        )
+    }
+}
+
+@Composable
+private fun NotificationSyncSettingRow(
+    enabled: Boolean,
+    listenerGranted: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    onFixClick: () -> Unit = {}
+) {
+    val isBroken = enabled && !listenerGranted
+    val warningColor = Color(0xFFE57373)
+
+    val toggleBg = if (enabled) Color(0x1400FFD5) else Color(0x08000000)
+    val toggleBorder = when {
+        isBroken -> warningColor.copy(alpha = 0.5f)
+        enabled -> Color(0x2B00FFD5)
+        else -> Color(0x14000000)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(toggleBg)
+            .border(if (isBroken) 2.dp else 1.dp, toggleBorder, RoundedCornerShape(18.dp))
+            .then(
+                if (isBroken)
+                    Modifier.clickable(onClick = onFixClick)
+                else
+                    Modifier.toggleable(
+                        value = enabled,
+                        role = Role.Switch,
+                        onValueChange = onEnabledChange
+                    )
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (isBroken) {
+            Text(
+                text = "⚠️",
+                fontSize = 24.sp,
+                modifier = Modifier.padding(end = 10.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.notification_sync_setting_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xCC000000)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (isBroken)
+                    stringResource(R.string.notification_sync_needs_permission)
+                else if (enabled)
+                    stringResource(R.string.notification_sync_setting_subtitle_on)
+                else
+                    stringResource(R.string.notification_sync_setting_subtitle_off),
+                fontSize = 12.sp,
+                fontWeight = if (isBroken) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (isBroken) warningColor else Color(0x80000000),
                 lineHeight = 16.sp
             )
         }

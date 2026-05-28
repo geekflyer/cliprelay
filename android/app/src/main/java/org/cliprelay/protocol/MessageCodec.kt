@@ -19,7 +19,9 @@ enum class MessageType(val byte: Byte) {
     DONE(0x13),
     CONFIG_UPDATE(0x14),
     REJECT(0x15),
-    ERROR(0x16);
+    ERROR(0x16),
+    NOTIFICATION(0x20),
+    NOTIFICATION_ACTION(0x21);
 
     companion object {
         fun fromByte(b: Byte): MessageType =

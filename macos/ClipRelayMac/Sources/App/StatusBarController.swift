@@ -4,6 +4,7 @@ import AppKit
 import Foundation
 import QuartzCore
 import Sparkle
+import UserNotifications
 
 final class StatusBarController {
     var onPairNewDeviceRequested: (() -> Void)?
@@ -14,6 +15,13 @@ final class StatusBarController {
     var isImageSyncEnabled: (() -> Bool)?
     var isDeviceConnected: (() -> Bool)?
     var bleStateProvider: (() -> String)?
+    var onShowNotificationFilters: (() -> Void)?
+    /// Called when the user fires a notification action from the Mac menu.
+    /// Parameters: (notificationKey, actionIndex, replyText?)
+    var sendNotificationAction: ((String, Int, String?) -> Void)?
+
+    /// Called by AppDelegate when a new Android notification is logged.
+    func refreshMenu() { renderMenu() }
 
     private var availableUpdateVersion: String?
 
@@ -41,10 +49,21 @@ final class StatusBarController {
     }
 
     private func loadStatusBarIcon() -> NSImage? {
-        if let bundlePath = Bundle.main.path(forResource: "StatusBarIcon", ofType: "png") {
-            let image = NSImage(contentsOfFile: bundlePath)
-            image?.size = NSSize(width: 18, height: 18)
+        // NSImage(named:) searches the bundle by name regardless of extension
+        // (Xcode converts PNG → TIFF at build time, so path-based .png lookup fails)
+        if let image = NSImage(named: "StatusBarIcon") {
+            image.size = NSSize(width: 18, height: 18)
             return image
+        }
+        // Fallback: explicit path search for png or tiff
+        for ext in ["tiff", "png"] {
+            for dir in [Optional<String>.none, "Resources"] {
+                if let path = Bundle.main.path(forResource: "StatusBarIcon", ofType: ext, inDirectory: dir) {
+                    let image = NSImage(contentsOfFile: path)
+                    image?.size = NSSize(width: 18, height: 18)
+                    return image
+                }
+            }
         }
         return nil
     }
@@ -143,6 +162,26 @@ final class StatusBarController {
 
         menu.addItem(NSMenuItem.separator())
 
+        let testNotifItem = NSMenuItem(
+            title: "Send Test Notification",
+            action: #selector(handleTestNotification),
+            keyEquivalent: ""
+        )
+        testNotifItem.target = self
+        menu.addItem(testNotifItem)
+
+        let filterItem = NSMenuItem(
+            title: "Notification Filters\u{2026}",
+            action: #selector(handleNotificationFilters),
+            keyEquivalent: ""
+        )
+        filterItem.target = self
+        menu.addItem(filterItem)
+
+        menu.addItem(NSMenuItem.separator())
+        renderRecentNotificationsSection()
+        renderBlockedAppsSection()
+
         let launchItem = NSMenuItem(
             title: "Launch at Login",
             action: #selector(handleToggleLaunchAtLogin),
@@ -239,6 +278,319 @@ final class StatusBarController {
         ))
 
         statusItem.menu = menu
+    }
+
+    // MARK: - Recent notifications section
+
+    private func renderRecentNotificationsSection() {
+        let header = NSMenuItem(title: "Recent Notifications", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        let records = NotificationLog.shared.records
+        if records.isEmpty {
+            let empty = NSMenuItem(title: "  No notifications yet", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        } else {
+            for record in records {
+                // ── Title row ──────────────────────────────────────────────
+                let displayTitle = composeNotifTitle(appName: record.appName, title: record.title)
+                let item = NSMenuItem(title: displayTitle, action: nil, keyEquivalent: "")
+
+                let sub = NSMenu()
+
+                // Mark as Read — removes this notification from the local list
+                let markReadItem = NSMenuItem(
+                    title: "Mark as Read",
+                    action: #selector(handleMarkAsRead(_:)),
+                    keyEquivalent: ""
+                )
+                markReadItem.target = self
+                markReadItem.representedObject = record.time
+                sub.addItem(markReadItem)
+
+                // Dynamic actions forwarded from Android (Reply, Mark as read, Delete, etc.)
+                if !record.actions.isEmpty && !record.notificationKey.isEmpty {
+                    sub.addItem(NSMenuItem.separator())
+                    for action in record.actions {
+                        let actionItem = NSMenuItem(
+                            title: action.title.isEmpty ? "Action \(action.index)" : action.title,
+                            action: #selector(handleRemoteAction(_:)),
+                            keyEquivalent: ""
+                        )
+                        actionItem.target = self
+                        // representedObject: (notificationKey, actionIndex, hasReply, record.time)
+                        actionItem.representedObject = [
+                            "key": record.notificationKey,
+                            "index": action.index,
+                            "hasReply": action.hasReply,
+                            "time": record.time
+                        ] as [String: Any]
+                        sub.addItem(actionItem)
+                    }
+                }
+
+                sub.addItem(NSMenuItem.separator())
+
+                // Block by keyword — pre-filled with the title (usually sender name)
+                let blockKwItem = NSMenuItem(
+                    title: "Block by Keyword\u{2026}",
+                    action: #selector(handleBlockByKeyword(_:)),
+                    keyEquivalent: ""
+                )
+                blockKwItem.target = self
+                blockKwItem.representedObject = record.title
+                sub.addItem(blockKwItem)
+
+                // Block whole app
+                let blockAppItem = NSMenuItem(
+                    title: "Block App (\(record.appName))",
+                    action: #selector(handleBlockApp(_:)),
+                    keyEquivalent: ""
+                )
+                blockAppItem.target = self
+                blockAppItem.representedObject = record.appName
+                sub.addItem(blockAppItem)
+
+                sub.addItem(NSMenuItem.separator())
+
+                // Copy full text to clipboard
+                let copyItem = NSMenuItem(
+                    title: "Copy Text",
+                    action: #selector(handleCopyNotification(_:)),
+                    keyEquivalent: ""
+                )
+                copyItem.target = self
+                copyItem.representedObject = record.body.isEmpty ? record.title : "\(record.title)\n\(record.body)"
+                sub.addItem(copyItem)
+
+                item.submenu = sub
+                menu.addItem(item)
+
+                // ── Body preview row (greyed, smaller) ─────────────────────
+                if !record.body.isEmpty {
+                    let preview = bodyPreview(record.body)
+                    let bodyItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                    bodyItem.attributedTitle = NSAttributedString(
+                        string: "    \(preview)",
+                        attributes: [
+                            .foregroundColor: NSColor.secondaryLabelColor,
+                            .font: NSFont.systemFont(ofSize: 11),
+                        ]
+                    )
+                    bodyItem.isEnabled = false
+                    menu.addItem(bodyItem)
+                }
+            }
+
+            let markAllItem = NSMenuItem(
+                title: "Mark All as Read",
+                action: #selector(handleClearNotificationHistory),
+                keyEquivalent: ""
+            )
+            markAllItem.target = self
+            menu.addItem(markAllItem)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+    }
+
+    // MARK: - Blocked apps + keywords section
+
+    private func renderBlockedAppsSection() {
+        let blockedApps     = NotificationFilterStore.shared.blockedApps
+        let blockedKeywords = NotificationFilterStore.shared.blockedKeywords
+        guard !blockedApps.isEmpty || !blockedKeywords.isEmpty else { return }
+
+        if !blockedApps.isEmpty {
+            let header = NSMenuItem(title: "Blocked Apps", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+
+            for appName in blockedApps {
+                let item = NSMenuItem(title: "  \(appName)", action: nil, keyEquivalent: "")
+                let sub = NSMenu()
+                let unblockItem = NSMenuItem(
+                    title: "Unblock",
+                    action: #selector(handleUnblockApp(_:)),
+                    keyEquivalent: ""
+                )
+                unblockItem.target = self
+                unblockItem.representedObject = appName
+                sub.addItem(unblockItem)
+                item.submenu = sub
+                menu.addItem(item)
+            }
+        }
+
+        if !blockedKeywords.isEmpty {
+            let header = NSMenuItem(title: "Blocked Keywords", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+
+            for kw in blockedKeywords {
+                let item = NSMenuItem(title: "  \"\(kw)\"", action: nil, keyEquivalent: "")
+                let sub = NSMenu()
+                let removeItem = NSMenuItem(
+                    title: "Remove",
+                    action: #selector(handleRemoveKeyword(_:)),
+                    keyEquivalent: ""
+                )
+                removeItem.target = self
+                removeItem.representedObject = kw
+                sub.addItem(removeItem)
+                item.submenu = sub
+                menu.addItem(item)
+            }
+        }
+
+        menu.addItem(NSMenuItem.separator())
+    }
+
+    private func composeNotifTitle(appName: String, title: String) -> String {
+        let combined = title.isEmpty ? appName : "\(appName) — \(title)"
+        let limit = 55
+        if combined.count > limit {
+            return String(combined.prefix(limit)) + "…"
+        }
+        return combined
+    }
+
+    /// Returns a single-line body preview capped at 70 characters.
+    private func bodyPreview(_ body: String) -> String {
+        // Show only the first line to keep the menu compact.
+        let firstLine = body.components(separatedBy: "\n").first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? body
+        let trimmed = firstLine.trimmingCharacters(in: .whitespaces)
+        let limit = 70
+        if trimmed.count > limit {
+            return String(trimmed.prefix(limit)) + "…"
+        }
+        return trimmed
+    }
+
+    // MARK: - Mark as read
+
+    @objc private func handleMarkAsRead(_ sender: NSMenuItem) {
+        guard let time = sender.representedObject as? TimeInterval else { return }
+        NotificationLog.shared.remove(byTime: time)
+        renderMenu()
+    }
+
+    // MARK: - Remote action (fires an Android notification action)
+
+    @objc private func handleRemoteAction(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let key      = info["key"]   as? String,
+              let index    = info["index"] as? Int,
+              let hasReply = info["hasReply"] as? Bool,
+              let time     = info["time"]  as? TimeInterval else { return }
+
+        if hasReply {
+            // Show a text field for composing a reply
+            let alert = NSAlert()
+            alert.messageText = sender.title
+            alert.informativeText = "Type your reply:"
+            alert.addButton(withTitle: "Send")
+            alert.addButton(withTitle: "Cancel")
+
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+            field.placeholderString = "Reply…"
+            alert.accessoryView = field
+
+            NSApp.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            let reply = field.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !reply.isEmpty else { return }
+
+            sendNotificationAction?(key, index, reply)
+        } else {
+            sendNotificationAction?(key, index, nil)
+        }
+
+        // Remove from local history after firing
+        NotificationLog.shared.remove(byTime: time)
+        renderMenu()
+    }
+
+    // MARK: - Block / unblock actions
+
+    @objc private func handleBlockApp(_ sender: NSMenuItem) {
+        guard let appName = sender.representedObject as? String else { return }
+        // Switch to blocklist mode if currently off
+        if NotificationFilterStore.shared.filterMode == .off {
+            NotificationFilterStore.shared.filterMode = .blocklist
+        }
+        if NotificationFilterStore.shared.filterMode == .blocklist {
+            var list = NotificationFilterStore.shared.blockedApps
+            if !list.contains(where: { $0.lowercased() == appName.lowercased() }) {
+                list.append(appName)
+                NotificationFilterStore.shared.blockedApps = list
+            }
+        }
+        renderMenu()
+    }
+
+    @objc private func handleBlockByKeyword(_ sender: NSMenuItem) {
+        // Pre-fill the prompt with the notification title (typically the sender's name).
+        // The user trims it to exactly the word/phrase they want to block.
+        let suggestion = sender.representedObject as? String ?? ""
+
+        let alert = NSAlert()
+        alert.messageText = "Block by Keyword"
+        alert.informativeText = "Notifications whose title or body contains this word or phrase will be hidden. Edit the text below if needed:"
+        alert.addButton(withTitle: "Block")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = suggestion
+        field.placeholderString = "e.g. John, promo, deal"
+        alert.accessoryView = field
+
+        // Show as a floating alert (no parent window for menu bar apps).
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let kw = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !kw.isEmpty else { return }
+
+        // Enable filtering if currently off
+        if NotificationFilterStore.shared.filterMode == .off {
+            NotificationFilterStore.shared.filterMode = .blocklist
+        }
+        var list = NotificationFilterStore.shared.blockedKeywords
+        if !list.contains(where: { $0.lowercased() == kw.lowercased() }) {
+            list.append(kw)
+            NotificationFilterStore.shared.blockedKeywords = list
+        }
+        renderMenu()
+    }
+
+    @objc private func handleUnblockApp(_ sender: NSMenuItem) {
+        guard let appName = sender.representedObject as? String else { return }
+        var list = NotificationFilterStore.shared.blockedApps
+        list.removeAll { $0.lowercased() == appName.lowercased() }
+        NotificationFilterStore.shared.blockedApps = list
+        renderMenu()
+    }
+
+    @objc private func handleRemoveKeyword(_ sender: NSMenuItem) {
+        guard let kw = sender.representedObject as? String else { return }
+        var list = NotificationFilterStore.shared.blockedKeywords
+        list.removeAll { $0.lowercased() == kw.lowercased() }
+        NotificationFilterStore.shared.blockedKeywords = list
+        renderMenu()
+    }
+
+    @objc private func handleCopyNotification(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc private func handleClearNotificationHistory() {
+        NotificationLog.shared.clear()
+        renderMenu()
     }
 
     private func renderTrustedDevicesSection() {
@@ -406,6 +758,39 @@ final class StatusBarController {
     private func handleForgetDevice(_ sender: NSMenuItem) {
         guard let token = sender.representedObject as? String else { return }
         onForgetDeviceRequested?(token)
+    }
+
+    @objc
+    private func handleNotificationFilters() {
+        onShowNotificationFilters?()
+    }
+
+    @objc
+    private func handleTestNotification() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            DispatchQueue.main.async {
+                if let error {
+                    let alert = NSAlert()
+                    alert.messageText = "Notification permission error"
+                    alert.informativeText = error.localizedDescription
+                    alert.runModal()
+                    return
+                }
+                if granted {
+                    let content = UNMutableNotificationContent()
+                    content.title = "NotiSync Test"
+                    content.body = "Notifications are working! Android notifications will appear here."
+                    content.sound = .default
+                    let request = UNNotificationRequest(identifier: "test-\(Date().timeIntervalSince1970)", content: content, trigger: nil)
+                    UNUserNotificationCenter.current().add(request)
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "Notifications denied"
+                    alert.informativeText = "Please enable notifications for NotiSync in System Settings → Notifications."
+                    alert.runModal()
+                }
+            }
+        }
     }
 }
 

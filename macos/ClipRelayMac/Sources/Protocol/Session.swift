@@ -27,6 +27,8 @@ protocol SessionDelegate: AnyObject {
     func session(_ session: Session, didChangeRichMediaSetting enabled: Bool)
     func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String)
     func session(_ session: Session, imageWasRejected reason: String)
+    func session(_ session: Session, didReceiveNotification appName: String, title: String, text: String,
+                 iconData: Data?, notificationKey: String, actions: [NotificationAction])
 }
 
 extension SessionDelegate {
@@ -34,6 +36,8 @@ extension SessionDelegate {
     func session(_ session: Session, didReceiveImage data: Data, contentType: String, hash: String) {}
     func session(_ session: Session, imageWasRejected reason: String) {}
     func session(_ session: Session, imageSendFailed reason: String) {}
+    func session(_ session: Session, didReceiveNotification appName: String, title: String, text: String,
+                 iconData: Data?, notificationKey: String, actions: [NotificationAction]) {}
 }
 
 // MARK: - Session Errors
@@ -99,6 +103,8 @@ final class Session {
     /// Queue of outbound image transfers: (imageData, contentType).
     private var imageQueue: [(Data, String)] = []
     private var configUpdateQueue: [Message] = []
+    /// Queue of outbound notification action messages (Mac → Android).
+    private var notificationActionQueue: [Message] = []
     private let queueLock = NSLock()
 
     /// Active TCP image receiver, if any (for cancellation on new inbound offer).
@@ -287,6 +293,12 @@ final class Session {
                     continue
                 }
 
+                // Drain any queued notification action messages (Mac → Android)
+                if let actionMsg = dequeueNotificationAction() {
+                    try writeMessage(actionMsg)
+                    continue
+                }
+
                 // Check for queued image transfers
                 if let imageItem = dequeueImage() {
                     try doSendImage(imageItem.0, contentType: imageItem.1)
@@ -344,6 +356,8 @@ final class Session {
             }
         case .configUpdate:
             handleConfigUpdate(msg)
+        case .notification:
+            handleInboundNotification(msg)
         case .reject:
             break // handled in later task
         case .error:
@@ -380,6 +394,64 @@ final class Session {
         let msg = Message(type: .configUpdate, payload: data)
         queueLock.lock()
         configUpdateQueue.append(msg)
+        queueLock.unlock()
+    }
+
+    // MARK: - Inbound Notification
+
+    private func handleInboundNotification(_ msg: Message) {
+        logger.info("Received notification message from Android (\(msg.payload.count) bytes)")
+        guard let key = sessionKey else {
+            logger.warning("No session key for notification decryption")
+            return
+        }
+        guard let plaintext = try? E2ECrypto.open(msg.payload, key: key) else {
+            logger.warning("Failed to decrypt notification payload")
+            return
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any] else {
+            logger.warning("Failed to parse notification JSON")
+            return
+        }
+        let appName         = json["appName"] as? String ?? ""
+        let title           = json["title"]   as? String ?? ""
+        let text            = json["text"]    as? String ?? ""
+        let iconData        = (json["iconPng"] as? String).flatMap { Data(base64Encoded: $0) }
+        let notificationKey = json["notificationKey"] as? String ?? ""
+
+        // Parse actions array: [{index, title, hasReply}, ...]
+        var actions: [NotificationAction] = []
+        if let rawActions = json["actions"] as? [[String: Any]] {
+            actions = rawActions.compactMap { raw in
+                guard let index = raw["index"] as? Int,
+                      let title = raw["title"] as? String else { return nil }
+                let hasReply = raw["hasReply"] as? Bool ?? false
+                return NotificationAction(index: index, title: title, hasReply: hasReply)
+            }
+        }
+
+        logger.info("Dispatching notification: appName=\(appName) title=\(title) actions=\(actions.count)")
+        delegate?.session(self, didReceiveNotification: appName, title: title, text: text,
+                          iconData: iconData, notificationKey: notificationKey, actions: actions)
+    }
+
+    // MARK: - Outbound Notification Action (Mac → Android)
+
+    /// Queue a notification action fire command for sending to Android. Thread-safe.
+    func sendNotificationAction(notificationKey: String, actionIndex: Int, replyText: String? = nil) {
+        guard !closed, let key = sessionKey else { return }
+        var payload: [String: Any] = [
+            "notificationKey": notificationKey,
+            "actionIndex": actionIndex
+        ]
+        if let reply = replyText, !reply.isEmpty {
+            payload["replyText"] = reply
+        }
+        guard let plaintext = try? JSONSerialization.data(withJSONObject: payload),
+              let encrypted = try? E2ECrypto.seal(plaintext, key: key) else { return }
+        let msg = Message(type: .notificationAction, payload: encrypted)
+        queueLock.lock()
+        notificationActionQueue.append(msg)
         queueLock.unlock()
     }
 
@@ -423,6 +495,13 @@ final class Session {
         defer { queueLock.unlock() }
         if outboundQueue.isEmpty { return nil }
         return outboundQueue.removeFirst()
+    }
+
+    private func dequeueNotificationAction() -> Message? {
+        queueLock.lock()
+        defer { queueLock.unlock() }
+        if notificationActionQueue.isEmpty { return nil }
+        return notificationActionQueue.removeFirst()
     }
 
     private func doSendClipboard(_ plaintext: Data) throws {

@@ -15,6 +15,8 @@ enum MessageType: UInt8 {
     case configUpdate = 0x14
     case reject = 0x15
     case error = 0x16
+    case notification = 0x20
+    case notificationAction = 0x21
 }
 
 struct Message {
@@ -140,7 +142,9 @@ enum MessageCodec {
         var totalRead = 0
 
         while totalRead < count {
-            let read = stream.read(&buffer + totalRead, maxLength: count - totalRead)
+            let read = buffer.withUnsafeMutableBufferPointer { ptr in
+                stream.read(ptr.baseAddress! + totalRead, maxLength: count - totalRead)
+            }
             if read <= 0 {
                 throw onFail
             }
