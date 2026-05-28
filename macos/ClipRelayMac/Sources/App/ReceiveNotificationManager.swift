@@ -49,7 +49,8 @@ final class ReceiveNotificationManager {
         UNUserNotificationCenter.current().add(request)
     }
 
-    func postAndroidNotification(appName: String, title: String, text: String, iconData: Data?) {
+    func postAndroidNotification(appName: String, title: String, text: String, iconData: Data?,
+                                  notificationKey: String = "", actions: [NotificationAction] = []) {
         guard Bundle.main.bundleIdentifier != nil else { return }
         guard NotificationFilterStore.shared.shouldShow(appName: appName, title: title, body: text) else {
             notifLogger.debug("Notification from \(appName) suppressed by filter")
@@ -57,7 +58,8 @@ final class ReceiveNotificationManager {
         }
 
         // Record in the recent-notifications log (used by menu bar history).
-        NotificationLog.shared.append(appName: appName, title: title, body: text)
+        NotificationLog.shared.append(appName: appName, title: title, body: text,
+                                       notificationKey: notificationKey, actions: actions)
         DispatchQueue.main.async { self.onNotificationLogged?() }
 
         let content = UNMutableNotificationContent()

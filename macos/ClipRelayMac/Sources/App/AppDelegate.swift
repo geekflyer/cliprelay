@@ -93,6 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController.onShowNotificationFilters = { [weak self] in
             self?.filterWindowController.showWindow()
         }
+        statusBarController.sendNotificationAction = { [weak self] key, index, replyText in
+            self?.connectionController?.sendNotificationAction(notificationKey: key, actionIndex: index, replyText: replyText)
+        }
         notificationManager.onNotificationLogged = { [weak self] in
             self?.statusBarController.refreshMenu()
         }
@@ -352,7 +355,9 @@ extension AppDelegate: ConnectionControllerDelegate {
         // Logged by ConnectionController
     }
 
-    func didReceiveAndroidNotification(appName: String, title: String, text: String, iconData: Data?) {
-        notificationManager.postAndroidNotification(appName: appName, title: title, text: text, iconData: iconData)
+    func didReceiveAndroidNotification(appName: String, title: String, text: String, iconData: Data?,
+                                        notificationKey: String, actions: [NotificationAction]) {
+        notificationManager.postAndroidNotification(appName: appName, title: title, text: text, iconData: iconData,
+                                                     notificationKey: notificationKey, actions: actions)
     }
 }

@@ -69,7 +69,8 @@ protocol ConnectionControllerDelegate: AnyObject {
     func didSyncClipboard(hash: String)
     func didChangeImageSyncSetting(enabled: Bool)
     func imageTransferFailed(reason: String)
-    func didReceiveAndroidNotification(appName: String, title: String, text: String)
+    func didReceiveAndroidNotification(appName: String, title: String, text: String, iconData: Data?,
+                                       notificationKey: String, actions: [NotificationAction])
 }
 
 // MARK: - ConnectionController
@@ -914,10 +915,23 @@ extension ConnectionController {
         }
     }
 
-    fileprivate func handleAndroidNotification(appName: String, title: String, text: String) {
-        log("Received notification from \(appName): \(title)")
+    fileprivate func handleNotificationReceived(appName: String, title: String, text: String,
+                                                 iconData: Data?, notificationKey: String, actions: [NotificationAction]) {
         DispatchQueue.main.async { [weak self] in
-            self?.delegate?.didReceiveAndroidNotification(appName: appName, title: title, text: text)
+            self?.delegate?.didReceiveAndroidNotification(appName: appName, title: title, text: text,
+                                                          iconData: iconData, notificationKey: notificationKey, actions: actions)
+        }
+    }
+
+    /// Fire a notification action on the Android phone (e.g. Reply, Mark as read).
+    /// Safe to call from any thread.
+    func sendNotificationAction(notificationKey: String, actionIndex: Int, replyText: String? = nil) {
+        queue.async { [self] in
+            guard case .ready(let session, _, _) = state else {
+                log("sendNotificationAction: not connected")
+                return
+            }
+            session.sendNotificationAction(notificationKey: notificationKey, actionIndex: actionIndex, replyText: replyText)
         }
     }
 }
@@ -992,11 +1006,13 @@ private class SessionAdapter: NSObject, SessionDelegate {
         dispatch { $0.handleImageTransferFailed(reason: "send failed: \(reason)") }
     }
 
-    func session(_ session: Session, alreadyHasHash hash: String) -> Bool {
-        return lastTextHash == hash
+    func session(_ session: Session, didReceiveNotification appName: String, title: String, text: String,
+                 iconData: Data?, notificationKey: String, actions: [NotificationAction]) {
+        dispatch { $0.handleNotificationReceived(appName: appName, title: title, text: text,
+                                                  iconData: iconData, notificationKey: notificationKey, actions: actions) }
     }
 
-    func session(_ session: Session, didReceiveAndroidNotification appName: String, title: String, text: String, time: Int64) {
-        dispatch { $0.handleAndroidNotification(appName: appName, title: title, text: text) }
+    func session(_ session: Session, alreadyHasHash hash: String) -> Bool {
+        return lastTextHash == hash
     }
 }

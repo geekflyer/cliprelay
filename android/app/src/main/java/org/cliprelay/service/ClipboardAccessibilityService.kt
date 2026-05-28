@@ -23,8 +23,10 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.cliprelay.settings.ClipboardSettingsStore
 import org.cliprelay.settings.NotificationSettingsStore
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.ConcurrentHashMap
 
 class ClipboardAccessibilityService : AccessibilityService() {
 
@@ -162,12 +164,32 @@ class ClipboardAccessibilityService : AccessibilityService() {
             rawTitle
         }
 
+        // Generate a synthetic key — AccessibilityService doesn't have sbn.key
+        val notifKey = "${pkg}-${event.eventTime}"
+
         val json = JSONObject().apply {
             put("appName", appName)
             put("title", title)
             put("text", text)
             put("time", event.eventTime)
+            put("notificationKey", notifKey)
             renderIconBase64(pkg)?.let { put("iconPng", it) }
+        }
+
+        // Serialize and store notification actions for later firing from Mac
+        val actions = notification.actions
+        if (!actions.isNullOrEmpty()) {
+            pendingActions[notifKey] = actions
+            val actionsJson = JSONArray()
+            actions.forEachIndexed { index, action ->
+                val hasReply = action.remoteInputs?.any { it.allowFreeFormInput } == true
+                actionsJson.put(JSONObject().apply {
+                    put("index", index)
+                    put("title", action.title?.toString() ?: "")
+                    put("hasReply", hasReply)
+                })
+            }
+            json.put("actions", actionsJson)
         }
 
         val intent = Intent(this, ClipRelayService::class.java).apply {
@@ -225,6 +247,13 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "ClipboardA11y"
+
+        /**
+         * Stores Notification.Action objects keyed by a synthetic key ("pkg-eventTime") so that
+         * ClipRelayService can fire them when the Mac sends a NOTIFICATION_ACTION message.
+         * This is the Samsung fallback path — NotificationListenerService is not used.
+         */
+        val pendingActions = ConcurrentHashMap<String, Array<out Notification.Action>>()
 
         private val COPY_WORDS = setOf(
             "copy", "copy text",           // English

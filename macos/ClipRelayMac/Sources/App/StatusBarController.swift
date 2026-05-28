@@ -16,6 +16,9 @@ final class StatusBarController {
     var isDeviceConnected: (() -> Bool)?
     var bleStateProvider: (() -> String)?
     var onShowNotificationFilters: (() -> Void)?
+    /// Called when the user fires a notification action from the Mac menu.
+    /// Parameters: (notificationKey, actionIndex, replyText?)
+    var sendNotificationAction: ((String, Int, String?) -> Void)?
 
     /// Called by AppDelegate when a new Android notification is logged.
     func refreshMenu() { renderMenu() }
@@ -297,7 +300,7 @@ final class StatusBarController {
 
                 let sub = NSMenu()
 
-                // Mark as Read — removes this notification from the list
+                // Mark as Read — removes this notification from the local list
                 let markReadItem = NSMenuItem(
                     title: "Mark as Read",
                     action: #selector(handleMarkAsRead(_:)),
@@ -306,6 +309,27 @@ final class StatusBarController {
                 markReadItem.target = self
                 markReadItem.representedObject = record.time
                 sub.addItem(markReadItem)
+
+                // Dynamic actions forwarded from Android (Reply, Mark as read, Delete, etc.)
+                if !record.actions.isEmpty && !record.notificationKey.isEmpty {
+                    sub.addItem(NSMenuItem.separator())
+                    for action in record.actions {
+                        let actionItem = NSMenuItem(
+                            title: action.title.isEmpty ? "Action \(action.index)" : action.title,
+                            action: #selector(handleRemoteAction(_:)),
+                            keyEquivalent: ""
+                        )
+                        actionItem.target = self
+                        // representedObject: (notificationKey, actionIndex, hasReply, record.time)
+                        actionItem.representedObject = [
+                            "key": record.notificationKey,
+                            "index": action.index,
+                            "hasReply": action.hasReply,
+                            "time": record.time
+                        ] as [String: Any]
+                        sub.addItem(actionItem)
+                    }
+                }
 
                 sub.addItem(NSMenuItem.separator())
 
@@ -449,6 +473,42 @@ final class StatusBarController {
 
     @objc private func handleMarkAsRead(_ sender: NSMenuItem) {
         guard let time = sender.representedObject as? TimeInterval else { return }
+        NotificationLog.shared.remove(byTime: time)
+        renderMenu()
+    }
+
+    // MARK: - Remote action (fires an Android notification action)
+
+    @objc private func handleRemoteAction(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let key      = info["key"]   as? String,
+              let index    = info["index"] as? Int,
+              let hasReply = info["hasReply"] as? Bool,
+              let time     = info["time"]  as? TimeInterval else { return }
+
+        if hasReply {
+            // Show a text field for composing a reply
+            let alert = NSAlert()
+            alert.messageText = sender.title
+            alert.informativeText = "Type your reply:"
+            alert.addButton(withTitle: "Send")
+            alert.addButton(withTitle: "Cancel")
+
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+            field.placeholderString = "Reply…"
+            alert.accessoryView = field
+
+            NSApp.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            let reply = field.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !reply.isEmpty else { return }
+
+            sendNotificationAction?(key, index, reply)
+        } else {
+            sendNotificationAction?(key, index, nil)
+        }
+
+        // Remove from local history after firing
         NotificationLog.shared.remove(byTime: time)
         renderMenu()
     }

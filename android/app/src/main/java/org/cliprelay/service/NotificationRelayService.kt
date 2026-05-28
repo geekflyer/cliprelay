@@ -10,14 +10,23 @@ import android.service.notification.StatusBarNotification
 import android.util.Base64
 import android.util.Log
 import org.cliprelay.settings.NotificationSettingsStore
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.ConcurrentHashMap
 
 class NotificationRelayService : NotificationListenerService() {
 
     companion object {
         private const val TAG = "NotiSync.Relay"
         private const val ICON_SIZE_PX = 64
+
+        /**
+         * Stores Notification.Action objects keyed by StatusBarNotification.key so that
+         * ClipRelayService can fire them when the Mac sends a NOTIFICATION_ACTION message.
+         * Entries are cleaned up in onNotificationRemoved.
+         */
+        val pendingActions = ConcurrentHashMap<String, Array<out Notification.Action>>()
     }
 
     private lateinit var settingsStore: NotificationSettingsStore
@@ -55,8 +64,25 @@ class NotificationRelayService : NotificationListenerService() {
             put("title", title)
             put("text", text)
             put("time", sbn.postTime)
+            put("notificationKey", sbn.key)
             val icon = renderIconBase64(sbn.packageName)
             if (icon != null) put("iconPng", icon)
+        }
+
+        // Serialize and store notification actions for later firing from Mac
+        val actions = sbn.notification.actions
+        if (!actions.isNullOrEmpty()) {
+            pendingActions[sbn.key] = actions
+            val actionsJson = JSONArray()
+            actions.forEachIndexed { index, action ->
+                val hasReply = action.remoteInputs?.any { it.allowFreeFormInput } == true
+                actionsJson.put(JSONObject().apply {
+                    put("index", index)
+                    put("title", action.title?.toString() ?: "")
+                    put("hasReply", hasReply)
+                })
+            }
+            json.put("actions", actionsJson)
         }
 
         val intent = Intent(this, ClipRelayService::class.java).apply {
@@ -64,6 +90,10 @@ class NotificationRelayService : NotificationListenerService() {
             putExtra(ClipRelayService.EXTRA_NOTIFICATION_PAYLOAD, json.toString().toByteArray(Charsets.UTF_8))
         }
         startService(intent)
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        pendingActions.remove(sbn.key)
     }
 
     /**

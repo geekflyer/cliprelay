@@ -41,6 +41,7 @@ import org.cliprelay.settings.NotificationSettingsStore
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import android.app.RemoteInput
 
 class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     companion object {
@@ -69,6 +70,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val EXTRA_RICH_MEDIA_ENABLED = "extra_rich_media_enabled"
 
         const val ACTION_PUSH_NOTIFICATION = "org.cliprelay.action.PUSH_NOTIFICATION"
+        /** JSON byte array payload: {appName, title, text, time, notificationKey?, actions?, iconPng?} */
+        const val EXTRA_NOTIFICATION_PAYLOAD = "extra_notification_payload"
+        // Legacy individual-field extras (kept for source compatibility but no longer used at runtime)
         const val EXTRA_NOTIFICATION_APP = "extra_notification_app"
         const val EXTRA_NOTIFICATION_TITLE = "extra_notification_title"
         const val EXTRA_NOTIFICATION_TEXT = "extra_notification_text"
@@ -231,13 +235,23 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 }
             }
             ACTION_PUSH_NOTIFICATION -> {
-                val appName = intent.getStringExtra(EXTRA_NOTIFICATION_APP) ?: return START_STICKY
-                val title = intent.getStringExtra(EXTRA_NOTIFICATION_TITLE) ?: return START_STICKY
-                val text = intent.getStringExtra(EXTRA_NOTIFICATION_TEXT) ?: ""
-                val time = intent.getLongExtra(EXTRA_NOTIFICATION_TIME, System.currentTimeMillis())
-                val iconBase64 = intent.getStringExtra(EXTRA_NOTIFICATION_ICON)
-                Log.d(TAG, "Relaying notification from $appName: $title")
-                activeSession?.sendNotification(appName, title, text, time, iconBase64)
+                val payloadBytes = intent.getByteArrayExtra(EXTRA_NOTIFICATION_PAYLOAD)
+                if (payloadBytes != null) {
+                    try {
+                        val json = org.json.JSONObject(String(payloadBytes, Charsets.UTF_8))
+                        val appName = json.optString("appName").takeIf { it.isNotBlank() } ?: return START_STICKY
+                        val title   = json.optString("title").takeIf { it.isNotBlank() } ?: return START_STICKY
+                        val text    = json.optString("text")
+                        val time    = json.optLong("time", System.currentTimeMillis())
+                        val iconBase64 = if (json.has("iconPng")) json.optString("iconPng") else null
+                        val notifKey   = if (json.has("notificationKey")) json.optString("notificationKey") else null
+                        val actionsJson = if (json.has("actions")) json.optJSONArray("actions") else null
+                        Log.d(TAG, "Relaying notification from $appName: $title (key=$notifKey, actions=${actionsJson?.length() ?: 0})")
+                        activeSession?.sendNotification(appName, title, text, time, iconBase64, notifKey, actionsJson)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse notification payload: ${e.message}")
+                    }
+                }
                 return START_STICKY
             }
             ACTION_PUSH_TEXT -> {
@@ -580,6 +594,40 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         val km = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
         return pm.isInteractive && !km.isDeviceLocked
+    }
+
+    override fun onNotificationActionFired(notificationKey: String, actionIndex: Int, replyText: String?) {
+        // Look up stored actions from whichever service captured this notification
+        val actions = NotificationRelayService.pendingActions[notificationKey]
+            ?: ClipboardAccessibilityService.pendingActions[notificationKey]
+        val action = actions?.getOrNull(actionIndex)
+        if (action == null) {
+            Log.w(TAG, "No action found for key=$notificationKey index=$actionIndex")
+            return
+        }
+        try {
+            if (replyText != null) {
+                // Find the first free-form RemoteInput (reply box)
+                val remoteInput = action.remoteInputs?.firstOrNull { it.allowFreeFormInput }
+                if (remoteInput != null) {
+                    val fillIn = android.content.Intent()
+                    val bundle = android.os.Bundle()
+                    bundle.putCharSequence(remoteInput.resultKey, replyText)
+                    RemoteInput.addResultsToIntent(arrayOf(remoteInput), fillIn, bundle)
+                    action.actionIntent.send(this, 0, fillIn)
+                } else {
+                    // Fallback: fire without reply text
+                    action.actionIntent.send()
+                }
+            } else {
+                action.actionIntent.send()
+            }
+            Log.d(TAG, "Fired action '${action.title}' for $notificationKey")
+        } catch (e: android.app.PendingIntent.CanceledException) {
+            Log.w(TAG, "Notification action already cancelled for $notificationKey")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to fire notification action: ${e.message}")
+        }
     }
 
     // ── Outbound (Android → Mac) ─────────────────────────────────────

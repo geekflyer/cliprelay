@@ -337,10 +337,39 @@ class Session(
                 }
             }
             MessageType.CONFIG_UPDATE -> handleConfigUpdate(msg)
+            MessageType.NOTIFICATION_ACTION -> handleInboundNotificationAction(msg)
             MessageType.REJECT -> { /* handled in later task */ }
             MessageType.ERROR -> { /* handled in later task */ }
             else -> Log.w(tag, "Ignoring unexpected message type: ${msg.type}")
         }
+    }
+
+    private fun handleInboundNotificationAction(msg: Message) {
+        val key = sessionKey ?: run {
+            Log.w(tag, "[Action] No session key")
+            return
+        }
+        val plaintext = try {
+            E2ECrypto.open(msg.payload, key)
+        } catch (e: Exception) {
+            Log.w(tag, "[Action] Decryption failed: ${e.message}")
+            return
+        }
+        val json = try {
+            JSONObject(String(plaintext, Charsets.UTF_8))
+        } catch (_: Exception) {
+            Log.w(tag, "[Action] JSON parse failed")
+            return
+        }
+        val notificationKey = json.optString("notificationKey")
+        val actionIndex = json.optInt("actionIndex", -1)
+        val replyText = if (json.has("replyText")) json.optString("replyText").takeIf { it.isNotEmpty() } else null
+        if (notificationKey.isEmpty() || actionIndex < 0) {
+            Log.w(tag, "[Action] Missing notificationKey or actionIndex")
+            return
+        }
+        Log.d(tag, "[Action] Firing action $actionIndex for $notificationKey")
+        callback.onNotificationActionFired(notificationKey, actionIndex, replyText)
     }
 
     // ── Outbound transfer ────────────────────────────────────────────
@@ -397,7 +426,15 @@ class Session(
      * Queue a notification for sending to the Mac. Thread-safe.
      * The message is encrypted with the session key and sent without any response expected.
      */
-    fun sendNotification(appName: String, title: String, text: String, time: Long, iconBase64: String? = null) {
+    fun sendNotification(
+        appName: String,
+        title: String,
+        text: String,
+        time: Long,
+        iconBase64: String? = null,
+        notificationKey: String? = null,
+        actions: org.json.JSONArray? = null
+    ) {
         if (closed.get()) return
         val json = JSONObject().apply {
             put("appName", appName)
@@ -405,6 +442,8 @@ class Session(
             put("text", text)
             put("time", time)
             if (iconBase64 != null) put("iconPng", iconBase64)
+            if (notificationKey != null) put("notificationKey", notificationKey)
+            if (actions != null && actions.length() > 0) put("actions", actions)
         }
         notificationQueue.put(json)
     }
@@ -912,4 +951,6 @@ interface SessionCallback {
     fun onImageRejected(reason: String) {}
     fun onImageSendFailed(reason: String) {}
     fun isDeviceAwake(): Boolean = true
+    /** Called when the Mac fires a notification action (reply, mark as read, etc.) */
+    fun onNotificationActionFired(notificationKey: String, actionIndex: Int, replyText: String?) {}
 }
