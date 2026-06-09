@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -88,6 +89,9 @@ fun ClipRelayScreen(
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
+    pairingFailed: Boolean = false,
+    onPairingCancelClick: () -> Unit = {},
+    onPairingErrorDismiss: () -> Unit = {},
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
     onBurstShown: () -> Unit,
@@ -172,6 +176,9 @@ fun ClipRelayScreen(
                 autoCopyEnabled = autoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
+                pairingFailed = pairingFailed,
+                onPairingCancelClick = onPairingCancelClick,
+                onPairingErrorDismiss = onPairingErrorDismiss,
                 onPairClick = onPairClick,
                 onUnpairClick = onUnpairClick,
                 onAutoClearSettingChanged = onAutoClearSettingChanged,
@@ -182,7 +189,12 @@ fun ClipRelayScreen(
             Spacer(modifier = Modifier.weight(1f))
             FooterSection(
                 isPaired = isPaired,
-                bleState = if (isConnected) "connected" else if (isPaired) "searching" else "unpaired",
+                bleState = when {
+                    isConnected -> "connected"
+                    state is AppState.Searching -> "searching"
+                    state is AppState.Pairing -> "searching"
+                    else -> "unpaired"
+                },
                 onHelpClick = onHelpClick,
                 onSupportLinkClick = onSupportLinkClick,
             )
@@ -208,6 +220,12 @@ private fun StatusChip(state: AppState) {
             dot = Color(0x33000000),
             text = Color(0x73000000),
             label = "Not paired"
+        )
+        is AppState.Pairing -> ChipStyle(
+            bg = Color(0x1400FFD5),
+            dot = Color(0xFFBDBDBD),
+            text = Teal,
+            label = "Pairing…"
         )
         is AppState.Searching -> ChipStyle(
             bg = Color(0x1400FFD5),
@@ -235,8 +253,8 @@ private fun StatusChip(state: AppState) {
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Animated dot for Searching state
-        if (state is AppState.Searching) {
+        // Animated dot for Searching/Pairing states
+        if (state is AppState.Searching || state is AppState.Pairing) {
             BlinkingDot(color = dotColor)
         } else {
             Box(
@@ -289,6 +307,9 @@ private fun MainCard(
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
+    pairingFailed: Boolean = false,
+    onPairingCancelClick: () -> Unit = {},
+    onPairingErrorDismiss: () -> Unit = {},
     onPairClick: () -> Unit,
     onUnpairClick: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
@@ -302,6 +323,7 @@ private fun MainCard(
     val cardTopColor by animateColorAsState(
         targetValue = when (state) {
             is AppState.Unpaired -> Color.White
+            is AppState.Pairing -> Color(0xFFF5FFFC)
             is AppState.Searching -> Color(0xFFF5FFFC)
             is AppState.Connected -> Color(0xFFF0FFFC)
         },
@@ -312,6 +334,7 @@ private fun MainCard(
     val borderColor by animateColorAsState(
         targetValue = when (state) {
             is AppState.Unpaired -> Color(0x1400FFD5)
+            is AppState.Pairing -> Color(0x1F00FFD5)
             is AppState.Searching -> Color(0x1F00FFD5)
             is AppState.Connected -> Color(0x3300FFD5)
         },
@@ -495,8 +518,23 @@ private fun MainCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Action button
-            if (!isPaired) {
+            // Action area
+            if (state is AppState.Pairing) {
+                PairingStatusRow(
+                    stage = state.stage,
+                    onCancelClick = onPairingCancelClick
+                )
+            } else if (state is AppState.Unpaired) {
+                if (pairingFailed) {
+                    PairingFailedCard(
+                        onTryAgain = {
+                            onPairingErrorDismiss()
+                            onPairClick()
+                        },
+                        onDismiss = onPairingErrorDismiss
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
                 Button(
                     onClick = onPairClick,
                     modifier = Modifier.fillMaxWidth(),
@@ -562,6 +600,85 @@ private fun MainCard(
                 onEnabledChange = onAutoCopySettingChanged,
                 onFixClick = onAutoCopyFixClick
             )
+        }
+    }
+}
+
+@Composable
+private fun PairingStatusRow(
+    stage: PairingStage,
+    onCancelClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0x1400FFD5))
+                .border(1.dp, Color(0x2B00FFD5), RoundedCornerShape(18.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = Teal
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = when (stage) {
+                    PairingStage.Connecting -> "Connecting to your Mac…"
+                    PairingStage.ExchangingKeys -> "Exchanging keys…"
+                },
+                color = Teal,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        TextButton(onClick = onCancelClick) {
+            Text(
+                text = "Cancel",
+                color = Teal.copy(alpha = 0.6f),
+                fontSize = 13.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun PairingFailedCard(
+    onTryAgain: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0x14FF5252))
+            .border(1.dp, Color(0x29FF5252), RoundedCornerShape(18.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Text(
+            text = "Couldn't reach your Mac",
+            color = Color(0xFFB71C1C),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Make sure ClipRelay is open on your Mac and Bluetooth is on, then try again.",
+            color = Color(0xCC7F0000),
+            fontSize = 12.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = onDismiss) {
+                Text(text = "Dismiss", fontSize = 13.sp, color = Color(0x99000000))
+            }
+            TextButton(onClick = onTryAgain) {
+                Text(text = "Try again", fontSize = 13.sp, color = Color(0xFFB71C1C), fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

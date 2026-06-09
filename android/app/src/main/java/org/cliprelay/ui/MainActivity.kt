@@ -49,6 +49,16 @@ class MainActivity : AppCompatActivity() {
                     viewModel.onPaired(deviceTag)
                     requestBatteryOptimizationAndOnboarding()
                 }
+                ClipRelayService.ACTION_PAIRING_STATUS -> {
+                    when (intent.getStringExtra(ClipRelayService.EXTRA_PAIRING_STAGE)) {
+                        ClipRelayService.PAIRING_STAGE_CONNECTING ->
+                            viewModel.onPairingStatus(PairingStage.Connecting)
+                        ClipRelayService.PAIRING_STAGE_EXCHANGING_KEYS ->
+                            viewModel.onPairingStatus(PairingStage.ExchangingKeys)
+                        ClipRelayService.PAIRING_STAGE_FAILED ->
+                            viewModel.onPairingFailed()
+                    }
+                }
                 ClipRelayService.ACTION_CLIPBOARD_TRANSFER -> {
                     val fromMac = intent.getBooleanExtra(ClipRelayService.EXTRA_FROM_MAC, true)
                     viewModel.onClipboardTransfer(fromMac)
@@ -77,9 +87,10 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            // Don't compute device tag here — ECDH handshake hasn't completed yet.
-            // The service will broadcast ACTION_PAIRING_COMPLETE with the tag.
-            viewModel.onPaired(deviceTag = null)
+            // The service broadcasts pairing progress (CONNECTING → EXCHANGING_KEYS →
+            // PAIRING_COMPLETE/FAILED); set Connecting optimistically since the
+            // CONNECTING broadcast may fire before this activity resumes.
+            viewModel.onPairingStarted()
         }
     }
 
@@ -128,6 +139,7 @@ class MainActivity : AppCompatActivity() {
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
             val imageSyncEnabled by viewModel.imageSyncEnabled.collectAsState()
             val showVersionMismatch by viewModel.showVersionMismatch.collectAsState()
+            val pairingFailed by viewModel.pairingFailed.collectAsState()
             var showAccessibilityDisclosure by remember { mutableStateOf(false) }
 
             if (showVersionMismatch) {
@@ -158,6 +170,16 @@ class MainActivity : AppCompatActivity() {
                 autoCopyEnabled = autoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
+                pairingFailed = pairingFailed,
+                onPairingCancelClick = {
+                    viewModel.onPairingCancelled()
+                    val cancelIntent = Intent(this, ClipRelayService::class.java)
+                    cancelIntent.action = ClipRelayService.ACTION_CANCEL_PAIRING
+                    startServiceSafely(cancelIntent)
+                },
+                onPairingErrorDismiss = {
+                    viewModel.onPairingFailedDismissed()
+                },
                 onPairClick = {
                     scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
                 },
@@ -208,6 +230,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         val filter = IntentFilter(ClipRelayService.ACTION_CONNECTION_STATE).also {
             it.addAction(ClipRelayService.ACTION_PAIRING_COMPLETE)
+            it.addAction(ClipRelayService.ACTION_PAIRING_STATUS)
             it.addAction(ClipRelayService.ACTION_CLIPBOARD_TRANSFER)
             it.addAction(ClipRelayService.ACTION_VERSION_MISMATCH)
             it.addAction(ClipRelayService.ACTION_RICH_MEDIA_SETTING_CHANGED)

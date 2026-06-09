@@ -9,8 +9,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+enum class PairingStage { Connecting, ExchangingKeys }
+
 sealed class AppState {
     object Unpaired : AppState()
+    data class Pairing(val stage: PairingStage) : AppState()
     data class Searching(val deviceName: String? = null, val deviceTag: String? = null) : AppState()
     data class Connected(val deviceName: String?, val deviceTag: String? = null) : AppState()
 }
@@ -37,6 +40,9 @@ class MainViewModel : ViewModel() {
     private val _showVersionMismatch = MutableStateFlow(false)
     val showVersionMismatch: StateFlow<Boolean> = _showVersionMismatch.asStateFlow()
 
+    private val _pairingFailed = MutableStateFlow(false)
+    val pairingFailed: StateFlow<Boolean> = _pairingFailed.asStateFlow()
+
     // Emits true = Mac→Android, false = Android→Mac
     private val _clipboardTransfer = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val clipboardTransfer: SharedFlow<Boolean> = _clipboardTransfer
@@ -50,7 +56,33 @@ class MainViewModel : ViewModel() {
 
     fun onPaired(deviceTag: String? = null) {
         _state.value = AppState.Searching(deviceTag = deviceTag)
+        _pairingFailed.value = false
         _showBurst.value = true
+    }
+
+    fun onPairingStarted() {
+        _state.value = AppState.Pairing(PairingStage.Connecting)
+        _pairingFailed.value = false
+    }
+
+    fun onPairingStatus(stage: PairingStage) {
+        if (_state.value !is AppState.Pairing) return
+        _state.value = AppState.Pairing(stage)
+    }
+
+    fun onPairingFailed() {
+        if (_state.value !is AppState.Pairing) return
+        _state.value = AppState.Unpaired
+        _pairingFailed.value = true
+    }
+
+    fun onPairingCancelled() {
+        _state.value = AppState.Unpaired
+        _pairingFailed.value = false
+    }
+
+    fun onPairingFailedDismissed() {
+        _pairingFailed.value = false
     }
 
     fun onBurstShown() {
@@ -63,8 +95,10 @@ class MainViewModel : ViewModel() {
     }
 
     fun onConnectionChanged(connected: Boolean, deviceName: String?) {
-        // Don't let stale connection broadcasts override the Unpaired state.
+        // Don't let stale connection broadcasts override the Unpaired state,
+        // and don't let "disconnected" answers kick us out of an in-progress pairing.
         if (_state.value is AppState.Unpaired) return
+        if (_state.value is AppState.Pairing && !connected) return
         val currentTag = when (val s = _state.value) {
             is AppState.Searching -> s.deviceTag
             is AppState.Connected -> s.deviceTag
