@@ -87,9 +87,11 @@ Lifecycle:
 
 ### Strings
 
-New: `pairing_connecting` ("Connecting to your Mac…"), `pairing_exchanging_keys`
-("Exchanging keys…"), `pairing_chip` ("Pairing…"), `pairing_failed_title`,
-`pairing_failed_body`, `pairing_try_again`, `pairing_cancel`.
+`ClipRelayScreen.kt` hardcodes its user-facing strings in composables (e.g.
+"Searching for Mac", "Pair with Mac"); the new strings follow that idiom:
+"Pairing…", "Connecting to your Mac…", "Exchanging keys…",
+"Couldn't reach your Mac" / "Make sure ClipRelay is open on your Mac and
+Bluetooth is on, then try again.", "Try again", "Dismiss", "Cancel".
 
 ## Error Handling
 
