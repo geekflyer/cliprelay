@@ -51,6 +51,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val ACTION_QUERY_CONNECTION = "org.cliprelay.action.QUERY_CONNECTION"
         const val ACTION_CLIPBOARD_TRANSFER = "org.cliprelay.action.CLIPBOARD_TRANSFER"
         const val ACTION_PAIRING_COMPLETE = "org.cliprelay.action.PAIRING_COMPLETE"
+        const val ACTION_PAIRING_STATUS = "org.cliprelay.action.PAIRING_STATUS"
+        const val ACTION_CANCEL_PAIRING = "org.cliprelay.action.CANCEL_PAIRING"
+        const val EXTRA_PAIRING_STAGE = "extra_pairing_stage"
+        const val PAIRING_STAGE_CONNECTING = "CONNECTING"
+        const val PAIRING_STAGE_EXCHANGING_KEYS = "EXCHANGING_KEYS"
+        const val PAIRING_STAGE_FAILED = "FAILED"
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_CONNECTED = "extra_connected"
         const val EXTRA_DEVICE_NAME = "extra_device_name"
@@ -73,6 +79,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
         private const val CLIPBOARD_DEBOUNCE_MS = 200L
+        private const val PAIRING_TIMEOUT_MS = 20_000L
     }
 
     // BLE components
@@ -109,6 +116,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private var pairingInProgress = false
     private var pendingPairingKeyPair: java.security.KeyPair? = null
     private var pendingMacPublicKeyRaw: ByteArray? = null
+    private val pairingTimeoutHandler = Handler(Looper.getMainLooper())
+    private var pairingTimeoutRunnable: Runnable? = null
 
     // Auto-copy state (guards for ghost activity launches)
     @Volatile
@@ -162,6 +171,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     override fun onDestroy() {
         isDestroyed = true
         clipboardAutoClearHandler.removeCallbacksAndMessages(null)
+        clearPairingTimeout()
         unregisterReceiver(bluetoothStateReceiver)
         executor.shutdownNow()
         stopBleComponents()
@@ -178,6 +188,10 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             }
             ACTION_START_PAIRING -> {
                 handleStartPairing()
+                return START_STICKY
+            }
+            ACTION_CANCEL_PAIRING -> {
+                cancelPairing(broadcastFailed = false)
                 return START_STICKY
             }
             ACTION_RELOAD_PAIRING -> {
@@ -368,6 +382,10 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     override fun onClientConnected(socket: BluetoothSocket) {
         Log.w(TAG, "L2CAP client connected")
 
+        if (pairingInProgress) {
+            sendPairingStatus(PAIRING_STAGE_EXCHANGING_KEYS)
+        }
+
         // Tear down previous session
         activeSession?.close()
         sessionThread?.let { thread ->
@@ -492,6 +510,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     override fun onPairingComplete(sharedSecret: ByteArray, remoteName: String?) {
         val secretHex = sharedSecret.joinToString("") { "%02x".format(it) }
         Log.w(TAG, "ECDH pairing complete, storing shared secret")
+        clearPairingTimeout()
 
         // Store the shared secret
         pairingStore.saveSharedSecret(secretHex)
@@ -637,6 +656,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         val macPubKeyHex = prefs.getString("pending_pairing_pubkey", null) ?: return
         val macPubKeyRaw = E2ECrypto.hexToBytes(macPubKeyHex)
 
+        // Replace any pairing already in flight (e.g. user re-scanned).
+        clearPairingTimeout()
+
         // Generate ephemeral X25519 key pair
         val keyPair = E2ECrypto.generateX25519KeyPair()
 
@@ -652,11 +674,60 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             stopBleComponents(broadcastDisconnected = false)
         }
         ensureBleComponentsState()
+
+        if (!bleStarted) {
+            // BLE startup failed (e.g. Bluetooth off) — fail fast instead of
+            // letting the user stare at "Connecting…" for the full timeout.
+            cancelPairing(broadcastFailed = true)
+            return
+        }
+
+        sendPairingStatus(PAIRING_STAGE_CONNECTING)
+        pairingTimeoutRunnable = Runnable {
+            if (pairingInProgress) {
+                Log.w(TAG, "Pairing timed out after ${PAIRING_TIMEOUT_MS}ms")
+                cancelPairing(broadcastFailed = true)
+            }
+        }.also { pairingTimeoutHandler.postDelayed(it, PAIRING_TIMEOUT_MS) }
+    }
+
+    private fun sendPairingStatus(stage: String) {
+        val intent = Intent(ACTION_PAIRING_STATUS)
+        intent.setPackage(packageName)
+        intent.putExtra(EXTRA_PAIRING_STAGE, stage)
+        sendBroadcast(intent)
+    }
+
+    private fun clearPairingTimeout() {
+        pairingTimeoutRunnable?.let { pairingTimeoutHandler.removeCallbacks(it) }
+        pairingTimeoutRunnable = null
+    }
+
+    // Aborts an in-progress pairing: stops advertising, clears pending keys/prefs.
+    // broadcastFailed=true for timeouts/errors (UI shows the error card);
+    // false for user-initiated cancel (UI already knows).
+    private fun cancelPairing(broadcastFailed: Boolean) {
+        clearPairingTimeout()
+        if (!pairingInProgress) return
+        Log.w(TAG, "Pairing cancelled (broadcastFailed=$broadcastFailed)")
+        pairingInProgress = false
+        pendingPairingKeyPair = null
+        pendingMacPublicKeyRaw = null
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .remove("pending_pairing_pubkey")
+            .apply()
+        if (broadcastFailed) {
+            // Broadcast FAILED before tearing down BLE so the ViewModel is already
+            // in Unpaired state when the disconnected broadcast arrives.
+            sendPairingStatus(PAIRING_STAGE_FAILED)
+        }
+        stopBleComponents(broadcastDisconnected = false)
     }
 
     // ── Unpair ────────────────────────────────────────────────────────
 
     private fun handleUnpairRequest() {
+        cancelPairing(broadcastFailed = false)
         val hadConnection = bleStarted
 
         pairingStore.clear()

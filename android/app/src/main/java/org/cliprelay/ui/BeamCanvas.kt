@@ -34,6 +34,7 @@ fun BeamCanvas(
 ) {
     when (state) {
         is AppState.Unpaired -> UnpairedBeam(modifier)
+        is AppState.Pairing -> SearchingBeam(modifier)
         is AppState.Searching -> SearchingBeam(modifier)
         is AppState.Connected -> ConnectedBeam(clipboardTransferFlow, modifier)
     }
