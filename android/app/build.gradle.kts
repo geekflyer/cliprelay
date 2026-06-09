@@ -176,7 +176,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
-    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // Quickie: CameraX + bundled ML Kit QR scanner, no Google Play services required.
+    implementation("io.github.g00fy2.quickie:quickie-bundled:1.12.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
