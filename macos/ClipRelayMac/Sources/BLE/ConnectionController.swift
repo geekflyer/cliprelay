@@ -478,9 +478,14 @@ extension ConnectionController {
 
     // MARK: Device Management
 
-    func forgetDevice(token: String) {
+    func forgetDevice(token: String, completion: (() -> Void)? = nil) {
         queue.async { [self] in
             pairingManager.removeDevice(secret: token)
+            defer {
+                if let completion {
+                    DispatchQueue.main.async(execute: completion)
+                }
+            }
             switch state {
             case .ready(_, let t, _) where t == token:
                 transitionToIdle(reason: "device forgotten", reconnect: false)
