@@ -371,7 +371,7 @@ class ConnectionController: NSObject {
 
     private func pairedDeviceTags() -> [(token: String, tag: Data)] {
         pairingManager.loadDevices().compactMap { device in
-            guard let tag = pairingManager.deviceTag(for: device.sharedSecret) else { return nil }
+            guard let tag = pairingManager.scanTag(for: device) else { return nil }
             return (token: device.sharedSecret, tag: tag)
         }
     }
@@ -823,7 +823,8 @@ extension ConnectionController {
                 let updated = PairedDevice(sharedSecret: existing.sharedSecret, displayName: name,
                                            datePaired: existing.datePaired,
                                            richMediaEnabled: existing.richMediaEnabled,
-                                           richMediaEnabledChangedAt: existing.richMediaEnabledChangedAt)
+                                           richMediaEnabledChangedAt: existing.richMediaEnabledChangedAt,
+                                           advertTagHex: existing.advertTagHex)
                 pairingManager.addDevice(updated)
             }
         }
@@ -884,7 +885,11 @@ extension ConnectionController {
     fileprivate func handlePairingComplete(sharedSecret: Data, remoteName: String?) {
         let secretHex = sharedSecret.map { String(format: "%02x", $0) }.joined()
         log("Pairing complete")
-        let device = PairedDevice(sharedSecret: secretHex, displayName: remoteName ?? "Android", datePaired: Date())
+        // The phone's stable identity tag arrived in KEY_EXCHANGE (nil on the
+        // phone's first pairing — it then advertises the secret-derived tag).
+        let advertTagHex = activeSession(from: state)?.remoteAdvertTagHex
+        let device = PairedDevice(sharedSecret: secretHex, displayName: remoteName ?? "Android",
+                                  datePaired: Date(), advertTagHex: advertTagHex)
         pairingManager.addDevice(device)
         pairingManager.clearEphemeralKey()
         // Wire settings provider (hold strong ref via settingsProviderRef so weak var isn't immediately nil)

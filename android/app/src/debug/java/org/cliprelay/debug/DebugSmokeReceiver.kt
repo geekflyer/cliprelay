@@ -30,7 +30,7 @@ class DebugSmokeReceiver : BroadcastReceiver() {
                 val deviceName = intent.getStringExtra(EXTRA_DEVICE_NAME)
 
                 runCatching {
-                    if (!PairingStore(context).saveSharedSecret(normalizedToken)) {
+                    if (!PairingStore(context).addPairedMac(normalizedToken, deviceName)) {
                         setResultCode(3)
                         return
                     }

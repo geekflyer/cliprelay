@@ -13,14 +13,20 @@ struct PairedDevice: Codable, Equatable {
     let datePaired: Date
     var richMediaEnabled: Bool
     var richMediaEnabledChangedAt: Int64 // Unix seconds
+    /// 16-char hex tag the phone advertises (its stable identity tag, shared
+    /// during pairing). nil for pre-multi-Mac pairings — fall back to the
+    /// secret-derived tag, which is what those phones advertise.
+    var advertTagHex: String?
 
     init(sharedSecret: String, displayName: String, datePaired: Date,
-         richMediaEnabled: Bool = false, richMediaEnabledChangedAt: Int64 = 0) {
+         richMediaEnabled: Bool = false, richMediaEnabledChangedAt: Int64 = 0,
+         advertTagHex: String? = nil) {
         self.sharedSecret = sharedSecret
         self.displayName = displayName
         self.datePaired = datePaired
         self.richMediaEnabled = richMediaEnabled
         self.richMediaEnabledChangedAt = richMediaEnabledChangedAt
+        self.advertTagHex = advertTagHex
     }
 
     // Custom decoding to handle existing data without the new fields
@@ -31,6 +37,7 @@ struct PairedDevice: Codable, Equatable {
         datePaired = try container.decode(Date.self, forKey: .datePaired)
         richMediaEnabled = try container.decodeIfPresent(Bool.self, forKey: .richMediaEnabled) ?? false
         richMediaEnabledChangedAt = try container.decodeIfPresent(Int64.self, forKey: .richMediaEnabledChangedAt) ?? 0
+        advertTagHex = try container.decodeIfPresent(String.self, forKey: .advertTagHex)
     }
 }
 
@@ -109,6 +116,16 @@ final class PairingManager {
         guard let result = E2ECrypto.deviceTag(secretBytes: secretBytes) else { return nil }
         tagCache[secret] = result
         return result
+    }
+
+    /// Tag to match against the phone's BLE advertisement: the phone's stable
+    /// identity tag when known (multi-Mac pairing), otherwise the legacy
+    /// secret-derived tag.
+    func scanTag(for device: PairedDevice) -> Data? {
+        if let hex = device.advertTagHex, let tag = E2ECrypto.hexToData(hex), tag.count == 8 {
+            return tag
+        }
+        return deviceTag(for: device.sharedSecret)
     }
 
     func encryptionKey(for secret: String) -> SymmetricKey? {

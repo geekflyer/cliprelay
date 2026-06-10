@@ -41,11 +41,12 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 
-class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
+class ClipRelayService : Service(), L2capServerCallback {
     companion object {
         const val ACTION_PUSH_TEXT = "org.cliprelay.action.PUSH_TEXT"
         const val ACTION_RELOAD_PAIRING = "org.cliprelay.action.RELOAD_PAIRING"
         const val ACTION_UNPAIR = "org.cliprelay.action.UNPAIR"
+        const val ACTION_FORGET_DEVICE = "org.cliprelay.action.FORGET_DEVICE"
         const val ACTION_START_PAIRING = "org.cliprelay.action.START_PAIRING"
         const val ACTION_CONNECTION_STATE = "org.cliprelay.action.CONNECTION_STATE"
         const val ACTION_QUERY_CONNECTION = "org.cliprelay.action.QUERY_CONNECTION"
@@ -61,6 +62,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         const val EXTRA_CONNECTED = "extra_connected"
         const val EXTRA_DEVICE_NAME = "extra_device_name"
         const val EXTRA_DEVICE_TAG = "extra_device_tag"
+        const val EXTRA_DEVICE_ID = "extra_device_id"
+        const val EXTRA_CONNECTED_IDS = "extra_connected_ids"
         const val EXTRA_FROM_MAC = "extra_from_mac"
 
         const val ACTION_VERSION_MISMATCH = "org.cliprelay.action.VERSION_MISMATCH"
@@ -75,6 +78,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
         const val PREFS_NAME = "cliprelay_state"
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
+        const val KEY_PENDING_PAIRING_NAME = "pending_pairing_name"
 
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
@@ -86,13 +90,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private var advertiser: Advertiser? = null
     private var l2capServer: L2capServer? = null
 
-    // Active L2CAP session (at most one)
-    @Volatile
-    private var activeSession: Session? = null
-    private var sessionThread: Thread? = null
+    // Active L2CAP sessions, one per connected Mac (guarded by sessionLock).
+    private val sessionLock = Any()
+    private val sessions = mutableListOf<SessionHandle>()
 
     // Pairing state
-    private val isPaired: Boolean get() = pairingStore.loadSharedSecret() != null
+    private val isPaired: Boolean get() = pairingStore.hasPairedMacs()
     @Volatile
     private var lastInboundHash: String? = null
     @Volatile
@@ -124,6 +127,57 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     private var lastClipboardLaunchMs = 0L
     @Volatile
     private var ghostActivityInFlight = false
+
+    // ── Session handles ───────────────────────────────────────────────
+
+    /**
+     * Per-connection SessionCallback adapter. Each connected Mac gets its own
+     * handle; which Mac it is becomes known once the handshake identifies the
+     * matching shared secret (or pairing completes).
+     */
+    private inner class SessionHandle : SessionCallback {
+        @Volatile var session: Session? = null
+        @Volatile var thread: Thread? = null
+        /** Shared secret of the Mac on this connection (after handshake/pairing). */
+        @Volatile var secretHex: String? = null
+        @Volatile var ready = false
+
+        fun close() {
+            session?.close()
+            thread?.let { t -> runCatching { t.join(2000) } }
+        }
+
+        override fun onSessionReady() = handleSessionReady(this)
+        override fun onClipboardReceived(plaintext: ByteArray, hash: String) =
+            handleClipboardReceivedFromMac(plaintext, hash)
+        override fun onTransferComplete(hash: String) = handleTransferComplete(hash)
+        override fun onSessionError(error: Exception) = handleSessionError(this, error)
+        override fun hasHash(hash: String): Boolean = hash == lastInboundHash
+        override fun onPairingComplete(sharedSecret: ByteArray, remoteName: String?) =
+            handlePairingSecretEstablished(this, sharedSecret, remoteName)
+        override fun onRichMediaSettingChanged(enabled: Boolean) =
+            handleRichMediaSettingChanged(enabled)
+        override fun onImageReceived(data: ByteArray, contentType: String, hash: String) =
+            handleImageReceived(data, contentType, hash)
+        override fun onImageSendFailed(reason: String) = handleImageSendFailed(reason)
+        override fun isDeviceAwake(): Boolean = isDeviceAwakeNow()
+    }
+
+    private fun readySessions(): List<SessionHandle> =
+        synchronized(sessionLock) { sessions.filter { it.ready } }
+
+    /** Remove a handle from the list. Returns false when it was already removed. */
+    private fun removeSession(handle: SessionHandle): Boolean =
+        synchronized(sessionLock) { sessions.remove(handle) }
+
+    private fun closeAllSessions() {
+        val snapshot = synchronized(sessionLock) {
+            val copy = sessions.toList()
+            sessions.clear()
+            copy
+        }
+        snapshot.forEach { it.close() }
+    }
 
     private val bluetoothStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -164,7 +218,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
         // Publish direct share shortcut if already paired
         if (isPaired) {
-            publishDirectShareShortcut(loadConnectedDeviceName())
+            publishDirectShareShortcut(directShareLabel())
         }
     }
 
@@ -184,6 +238,10 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         when (intent?.action) {
             ACTION_UNPAIR -> {
                 handleUnpairRequest()
+                return START_STICKY
+            }
+            ACTION_FORGET_DEVICE -> {
+                intent.getStringExtra(EXTRA_DEVICE_ID)?.let { handleForgetDevice(it) }
                 return START_STICKY
             }
             ACTION_START_PAIRING -> {
@@ -222,7 +280,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 return START_STICKY
             }
             ACTION_SEND_CONFIG_UPDATE -> {
-                activeSession?.sendConfigUpdate()
+                readySessions().forEach { it.session?.sendConfigUpdate() }
                 return START_STICKY
             }
             ACTION_PUSH_IMAGE -> {
@@ -244,9 +302,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                 }
             }
             ACTION_QUERY_CONNECTION -> {
-                val connected = activeSession != null
-                val name = if (connected) loadConnectedDeviceName() else null
-                sendConnectionBroadcast(connected, name)
+                broadcastConnectionState()
             }
         }
 
@@ -316,9 +372,7 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
                         .copyOfRange(0, 8)
                 }
             } else {
-                pairingStore.loadSharedSecret()?.let { secret ->
-                    E2ECrypto.deviceTag(E2ECrypto.hexToBytes(secret))
-                }
+                pairingStore.identityTag()
             }
             adv.start()
             advertiser = adv
@@ -346,13 +400,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     }
 
     private fun stopBleComponents(broadcastDisconnected: Boolean = true) {
-        // Tear down active session
-        activeSession?.close()
-        sessionThread?.let { thread ->
-            try { thread.join(2000) } catch (_: InterruptedException) {}
-        }
-        activeSession = null
-        sessionThread = null
+        // Tear down all active sessions
+        closeAllSessions()
 
         // Stop BLE stack
         advertiser?.stop()
@@ -367,12 +416,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     }
 
     private fun loadPairingState() {
-        val secret = pairingStore.loadSharedSecret()
-        if (secret != null) {
-            val secretBytes = E2ECrypto.hexToBytes(secret)
-            advertiser?.deviceTag = E2ECrypto.deviceTag(secretBytes)
-        } else {
-            advertiser?.deviceTag = null
+        val identityTag = pairingStore.identityTag()
+        advertiser?.deviceTag = identityTag
+        if (identityTag == null) {
             saveConnectedDeviceName(null)
         }
     }
@@ -384,12 +430,6 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
         if (pairingInProgress) {
             sendPairingStatus(PAIRING_STAGE_EXCHANGING_KEYS)
-        }
-
-        // Tear down previous session
-        activeSession?.close()
-        sessionThread?.let { thread ->
-            try { thread.join(2000) } catch (_: InterruptedException) {}
         }
 
         // Determine session mode
@@ -405,26 +445,30 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             SessionMode.Pairing(
                 ownPrivateKey = keyPair.private,
                 ownPublicKeyRaw = E2ECrypto.x25519PublicKeyToRaw(keyPair.public),
-                remotePublicKeyRaw = macPub
+                remotePublicKeyRaw = macPub,
+                identityTagHex = pairingStore.identityTagHex()
             )
         } else {
             SessionMode.Normal
         }
 
-        // Create new session (Android is the responder)
-        val secret = if (pairingInProgress) null else pairingStore.loadSharedSecret()
+        // Create new session (Android is the responder). The HELLO's HMAC
+        // identifies which paired Mac is connecting, so pass all secrets.
+        val handle = SessionHandle()
         val session = Session(
             socket.inputStream, socket.outputStream,
             isInitiator = false,
-            this,  // SessionCallback
+            handle,
             mode = mode,
-            sharedSecretHex = secret,
-            settingsProvider = pairingStore
+            settingsProvider = pairingStore,
+            candidateSecretsHex = if (pairingInProgress) emptyList()
+                else pairingStore.loadPairedMacs().map { it.secretHex }
         )
         session.localName = android.os.Build.MODEL
-        activeSession = session
+        handle.session = session
+        synchronized(sessionLock) { sessions.add(handle) }
 
-        sessionThread = Thread({
+        handle.thread = Thread({
             session.performHandshake()
             session.listenForMessages()
         }, "L2CAP-Session").apply {
@@ -447,10 +491,27 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
     }
 
-    // ── SessionCallback ───────────────────────────────────────────────
+    // ── Session event handlers (called from SessionHandle) ───────────
 
-    override fun onSessionReady() {
+    private fun handleSessionReady(handle: SessionHandle) {
         Log.w(TAG, "L2CAP session ready")
+
+        val session = handle.session
+        // The handshake identified which Mac this is (pairing sessions set
+        // secretHex earlier, in handlePairingSecretEstablished).
+        if (handle.secretHex == null) {
+            handle.secretHex = session?.matchedSecretHex
+        }
+        handle.ready = true
+
+        // If the same Mac reconnected while a stale session lingered, drop the
+        // old one. Remove it from the list first so its error callback is a no-op.
+        val stale = synchronized(sessionLock) {
+            val others = sessions.filter { it !== handle && it.secretHex == handle.secretHex }
+            sessions.removeAll(others)
+            others
+        }
+        stale.forEach { it.close() }
 
         // If the advertiser's device tag was updated during pairing (without a
         // restart), restart it now so future reconnections use the correct tag.
@@ -462,17 +523,19 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         // it so the UI always shows the real hostname (e.g. "Christian's Mac")
         // instead of null — during pairing, KEY_CONFIRM doesn't include a name
         // so this is the first point where the Mac's name is available.
-        activeSession?.remoteName?.let {
-            saveConnectedDeviceName(it)
-            publishDirectShareShortcut(it)
+        val remoteName = session?.remoteName
+        val secret = handle.secretHex
+        if (remoteName != null && secret != null) {
+            pairingStore.updateMacName(secret, remoteName)
+            saveConnectedDeviceName(remoteName)
         }
+        publishDirectShareShortcut(directShareLabel())
 
-        val name = loadConnectedDeviceName()
-        sendConnectionBroadcast(true, name)
+        broadcastConnectionState()
         DebugSmokeProbe.onConnectionChanged(this, true)
     }
 
-    override fun onClipboardReceived(plaintext: ByteArray, hash: String) {
+    private fun handleClipboardReceivedFromMac(plaintext: ByteArray, hash: String) {
         val decodedText = plaintext.toString(Charsets.UTF_8)
         if (decodedText.isEmpty()) return
 
@@ -483,17 +546,18 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         DebugSmokeProbe.onInboundClipboardApplied(this, decodedText)
     }
 
-    override fun onTransferComplete(hash: String) {
+    private fun handleTransferComplete(hash: String) {
         Log.d(TAG, "Outbound transfer complete: $hash")
         sendClipboardTransferBroadcast(fromMac = false)
     }
 
-    override fun onSessionError(error: Exception) {
+    private fun handleSessionError(handle: SessionHandle, error: Exception) {
         Log.e(TAG, "Session error: ${error.message}")
-        activeSession = null
-        sessionThread = null
-        sendConnectionBroadcast(false)
-        DebugSmokeProbe.onConnectionChanged(this, false)
+        // Already removed means we closed it deliberately — nothing to report.
+        if (!removeSession(handle)) return
+
+        broadcastConnectionState()
+        DebugSmokeProbe.onConnectionChanged(this, readySessions().isNotEmpty())
 
         if (error is VersionMismatchException) {
             val intent = Intent(ACTION_VERSION_MISMATCH)
@@ -503,25 +567,35 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         // L2CAP server is still listening, will accept next connection
     }
 
-    override fun hasHash(hash: String): Boolean {
-        return hash == lastInboundHash
-    }
-
-    override fun onPairingComplete(sharedSecret: ByteArray, remoteName: String?) {
+    private fun handlePairingSecretEstablished(
+        handle: SessionHandle,
+        sharedSecret: ByteArray,
+        remoteName: String?
+    ) {
         val secretHex = sharedSecret.joinToString("") { "%02x".format(it) }
         Log.w(TAG, "ECDH pairing complete, storing shared secret")
         clearPairingTimeout()
 
-        // Store the shared secret
-        pairingStore.saveSharedSecret(secretHex)
+        // Store the new pairing. The QR-scanned Mac name (if any) serves as the
+        // initial display name until the handshake delivers the real hostname.
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val scannedName = prefs.getString(KEY_PENDING_PAIRING_NAME, null)?.takeIf { it.isNotBlank() }
+            ?: remoteName
+        if (!pairingStore.addPairedMac(secretHex, scannedName)) {
+            Log.e(TAG, "Could not store new pairing (limit reached or storage unavailable)")
+            cancelPairing(broadcastFailed = true)
+            handle.session?.close()
+            return
+        }
+        handle.secretHex = secretHex
 
         // Update the device tag for future advertisements, but do NOT restart
         // advertising now — the HELLO/WELCOME handshake is still in progress on
         // this same L2CAP connection.  Restarting BLE advertising mid-handshake
         // can disrupt the active connection on some Android devices.  The
-        // advertiser will be restarted in onSessionReady() once the full
+        // advertiser will be restarted in handleSessionReady() once the full
         // handshake completes.
-        advertiser?.deviceTag = E2ECrypto.deviceTag(sharedSecret)
+        advertiser?.deviceTag = pairingStore.identityTag()
 
         // Clear pairing state
         pairingInProgress = false
@@ -529,8 +603,9 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         pendingMacPublicKeyRaw = null
 
         // Clean up temporary prefs
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+        prefs.edit()
             .remove("pending_pairing_pubkey")
+            .remove(KEY_PENDING_PAIRING_NAME)
             .apply()
 
         // Save device name
@@ -545,19 +620,19 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         val pairingIntent = Intent(ACTION_PAIRING_COMPLETE)
         pairingIntent.setPackage(packageName)
         pairingIntent.putExtra(EXTRA_DEVICE_TAG, deviceTagHex)
-        pairingIntent.putExtra(EXTRA_DEVICE_NAME, remoteName)
+        pairingIntent.putExtra(EXTRA_DEVICE_NAME, scannedName)
         sendBroadcast(pairingIntent)
-        publishDirectShareShortcut(remoteName)
+        publishDirectShareShortcut(directShareLabel())
     }
 
-    override fun onRichMediaSettingChanged(enabled: Boolean) {
+    private fun handleRichMediaSettingChanged(enabled: Boolean) {
         val intent = Intent(ACTION_RICH_MEDIA_SETTING_CHANGED)
         intent.setPackage(packageName)
         intent.putExtra(EXTRA_RICH_MEDIA_ENABLED, enabled)
         sendBroadcast(intent)
     }
 
-    override fun onImageSendFailed(reason: String) {
+    private fun handleImageSendFailed(reason: String) {
         Log.w(TAG, "Image send failed: $reason")
         Handler(Looper.getMainLooper()).post {
             android.widget.Toast.makeText(
@@ -568,14 +643,14 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
     }
 
-    override fun onImageReceived(data: ByteArray, contentType: String, hash: String) {
+    private fun handleImageReceived(data: ByteArray, contentType: String, hash: String) {
         lastReceivedImageHash = hash
         Log.w(TAG, "Received image from Mac (${data.size} bytes, $contentType)")
         clipboardWriter.writeImage(data, contentType)
         sendClipboardTransferBroadcast(fromMac = true)
     }
 
-    override fun isDeviceAwake(): Boolean {
+    private fun isDeviceAwakeNow(): Boolean {
         val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         val km = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
         return pm.isInteractive && !km.isDeviceLocked
@@ -599,13 +674,13 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         }
         lastSentTextHash = textHash
 
-        val session = activeSession
-        if (session == null) {
+        val targets = readySessions()
+        if (targets.isEmpty()) {
             Log.d(TAG, "No active L2CAP session; skipping Android->Mac push")
             return
         }
 
-        session.sendClipboard(plaintext)
+        targets.forEach { it.session?.sendClipboard(plaintext) }
         DebugSmokeProbe.onOutboundClipboardPublished(this, text)
     }
 
@@ -628,8 +703,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             return
         }
 
-        val session = activeSession
-        if (session == null) {
+        val targets = readySessions()
+        if (targets.isEmpty()) {
             Log.w(TAG, "No active session; cannot send image")
             Handler(Looper.getMainLooper()).post {
                 android.widget.Toast.makeText(this, "Not connected to Mac", android.widget.Toast.LENGTH_SHORT).show()
@@ -645,8 +720,8 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             return
         }
 
-        session.sendImage(imageData, mimeType)
-        Log.w(TAG, "Queued image for send (${imageData.size} bytes, $mimeType)")
+        targets.forEach { it.session?.sendImage(imageData, mimeType) }
+        Log.w(TAG, "Queued image for send to ${targets.size} Mac(s) (${imageData.size} bytes, $mimeType)")
     }
 
     // ── Pairing ────────────────────────────────────────────────────────
@@ -655,6 +730,12 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val macPubKeyHex = prefs.getString("pending_pairing_pubkey", null) ?: return
         val macPubKeyRaw = E2ECrypto.hexToBytes(macPubKeyHex)
+
+        if (pairingStore.loadPairedMacs().size >= PairingStore.MAX_PAIRED_MACS) {
+            Log.w(TAG, "Pairing rejected: limit of ${PairingStore.MAX_PAIRED_MACS} Macs reached")
+            sendPairingStatus(PAIRING_STAGE_FAILED)
+            return
+        }
 
         // Replace any pairing already in flight (e.g. user re-scanned).
         clearPairingTimeout()
@@ -669,11 +750,17 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
 
         Log.w(TAG, "Started pairing mode with pairing tag")
 
-        // Restart BLE components with pairing tag
+        // Switch the advertisement to the pairing tag. Existing connections to
+        // other Macs stay up — only the advertiser cycles; the L2CAP server
+        // keeps listening on the same PSM.
         if (bleStarted) {
-            stopBleComponents(broadcastDisconnected = false)
+            advertiser?.deviceTag = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(macPubKeyRaw)
+                .copyOfRange(0, 8)
+            advertiser?.restart()
+        } else {
+            ensureBleComponentsState()
         }
-        ensureBleComponentsState()
 
         if (!bleStarted) {
             // BLE startup failed (e.g. Bluetooth off) — fail fast instead of
@@ -715,13 +802,21 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         pendingMacPublicKeyRaw = null
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
             .remove("pending_pairing_pubkey")
+            .remove(KEY_PENDING_PAIRING_NAME)
             .apply()
         if (broadcastFailed) {
             // Broadcast FAILED before tearing down BLE so the ViewModel is already
             // in Unpaired state when the disconnected broadcast arrives.
             sendPairingStatus(PAIRING_STAGE_FAILED)
         }
-        stopBleComponents(broadcastDisconnected = false)
+        if (isPaired && bleStarted) {
+            // Other Macs remain paired — go back to advertising the identity
+            // tag without dropping their live sessions.
+            advertiser?.deviceTag = pairingStore.identityTag()
+            advertiser?.restart()
+        } else {
+            stopBleComponents(broadcastDisconnected = false)
+        }
     }
 
     // ── Unpair ────────────────────────────────────────────────────────
@@ -740,6 +835,33 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
             stopBleComponents()
         } else {
             sendConnectionBroadcast(false)
+        }
+    }
+
+    /** Forget a single Mac (by PairedMac.id). Falls back to full unpair cleanup for the last one. */
+    private fun handleForgetDevice(deviceId: String) {
+        val mac = pairingStore.loadPairedMacs().firstOrNull { it.id == deviceId } ?: return
+        Log.w(TAG, "Forgetting paired Mac ${mac.name ?: deviceId}")
+        pairingStore.removePairedMac(mac.secretHex)
+
+        // Drop the live session for that Mac, if any
+        val doomed = synchronized(sessionLock) {
+            val matches = sessions.filter { it.secretHex == mac.secretHex }
+            sessions.removeAll(matches)
+            matches
+        }
+        doomed.forEach { it.close() }
+
+        if (!isPaired) {
+            // Last Mac forgotten — same cleanup as a full unpair
+            clipboardSettingsStore.setAutoCopyOnboardingShown(false)
+            clipboardSettingsStore.setAutoCopyEnabled(false)
+            removeDirectShareShortcut()
+            loadPairingState()
+            stopBleComponents()
+        } else {
+            publishDirectShareShortcut(directShareLabel())
+            broadcastConnectionState()
         }
     }
 
@@ -769,10 +891,11 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
     // ── Auto-copy (triggered by AccessibilityService) ────────────────
 
     private fun handleClipboardChanged() {
-        Log.d(TAG, "Clipboard changed — activeSession=${activeSession != null}, ghostInFlight=$ghostActivityInFlight")
+        val readyCount = readySessions().size
+        Log.d(TAG, "Clipboard changed — readySessions=$readyCount, ghostInFlight=$ghostActivityInFlight")
 
         // Skip if no active session (no Mac connected)
-        if (activeSession == null) {
+        if (readyCount == 0) {
             Log.d(TAG, "Skipping clipboard: no active session")
             return
         }
@@ -846,8 +969,37 @@ class ClipRelayService : Service(), L2capServerCallback, SessionCallback {
         val intent = Intent(ACTION_CONNECTION_STATE)
         intent.setPackage(packageName)
         intent.putExtra(EXTRA_CONNECTED, connected)
+        intent.putStringArrayListExtra(EXTRA_CONNECTED_IDS, ArrayList())
         if (deviceName != null) intent.putExtra(EXTRA_DEVICE_NAME, deviceName)
         sendBroadcast(intent)
+    }
+
+    /** Broadcast the full per-Mac connection state (ids of Macs with a ready session). */
+    private fun broadcastConnectionState() {
+        val macs = pairingStore.loadPairedMacs()
+        val ids = ArrayList<String>()
+        var firstName: String? = null
+        readySessions().forEach { handle ->
+            val mac = macs.firstOrNull { it.secretHex == handle.secretHex } ?: return@forEach
+            ids.add(mac.id)
+            if (firstName == null) firstName = mac.name ?: handle.session?.remoteName
+        }
+        val intent = Intent(ACTION_CONNECTION_STATE)
+        intent.setPackage(packageName)
+        intent.putExtra(EXTRA_CONNECTED, ids.isNotEmpty())
+        intent.putStringArrayListExtra(EXTRA_CONNECTED_IDS, ids)
+        firstName?.let { intent.putExtra(EXTRA_DEVICE_NAME, it) }
+        sendBroadcast(intent)
+    }
+
+    /** Share-sheet target label: single Mac shows its name, several show a collective label. */
+    private fun directShareLabel(): String? {
+        val macs = pairingStore.loadPairedMacs()
+        return when {
+            macs.isEmpty() -> null
+            macs.size == 1 -> macs[0].name ?: loadConnectedDeviceName()
+            else -> "All Macs"
+        }
     }
 
     // ── Preferences ───────────────────────────────────────────────────

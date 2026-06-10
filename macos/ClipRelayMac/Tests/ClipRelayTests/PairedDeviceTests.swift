@@ -56,6 +56,48 @@ final class PairedDeviceTests: XCTestCase {
         XCTAssertEqual(decoded[0].richMediaEnabledChangedAt, 42)
     }
 
+    // MARK: - Advert tag (phone identity tag)
+
+    func testAdvertTagDefaultsToNil() {
+        let device = PairedDevice(sharedSecret: "aabb", displayName: "Test", datePaired: Date())
+        XCTAssertNil(device.advertTagHex)
+    }
+
+    func testAdvertTagRoundTrip() throws {
+        let device = PairedDevice(sharedSecret: "aabb", displayName: "Test", datePaired: Date(),
+                                  advertTagHex: "0011223344556677")
+        let data = try JSONEncoder().encode([device])
+        let decoded = try JSONDecoder().decode([PairedDevice].self, from: data)
+        XCTAssertEqual(decoded[0].advertTagHex, "0011223344556677")
+    }
+
+    func testDecodingLegacyDataWithoutAdvertTag() throws {
+        let legacyJSON = """
+        [{"sharedSecret":"aabb","displayName":"OldDevice","datePaired":0}]
+        """
+        let data = legacyJSON.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode([PairedDevice].self, from: data)
+        XCTAssertNil(decoded[0].advertTagHex)
+    }
+
+    func testScanTagUsesAdvertTagWhenPresent() {
+        let manager = PairingManager()
+        let device = PairedDevice(
+            sharedSecret: "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1",
+            displayName: "Test", datePaired: Date(),
+            advertTagHex: "0011223344556677"
+        )
+        XCTAssertEqual(manager.scanTag(for: device), E2ECrypto.hexToData("0011223344556677"))
+    }
+
+    func testScanTagFallsBackToSecretDerivedTag() {
+        let manager = PairingManager()
+        let secret = "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1"
+        let device = PairedDevice(sharedSecret: secret, displayName: "Test", datePaired: Date())
+        XCTAssertEqual(manager.scanTag(for: device), manager.deviceTag(for: secret))
+        XCTAssertNotNil(manager.scanTag(for: device))
+    }
+
     // MARK: - PairingManager integration (uses real Keychain)
 
     func testSetRichMediaEnabledUpdatesDevice() {

@@ -24,7 +24,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import org.cliprelay.crypto.E2ECrypto
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.service.ClipboardAccessibilityService
@@ -40,13 +39,13 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 ClipRelayService.ACTION_CONNECTION_STATE -> {
-                    val connected = intent.getBooleanExtra(ClipRelayService.EXTRA_CONNECTED, false)
-                    val name = intent.getStringExtra(ClipRelayService.EXTRA_DEVICE_NAME)
-                    viewModel.onConnectionChanged(connected, name)
+                    val connectedIds =
+                        intent.getStringArrayListExtra(ClipRelayService.EXTRA_CONNECTED_IDS)
+                            ?: arrayListOf()
+                    viewModel.onMacsChanged(loadMacsForUi(connectedIds.toSet()))
                 }
                 ClipRelayService.ACTION_PAIRING_COMPLETE -> {
-                    val deviceTag = intent.getStringExtra(ClipRelayService.EXTRA_DEVICE_TAG)
-                    viewModel.onPaired(deviceTag)
+                    viewModel.onPaired(loadMacsForUi(emptySet()))
                     requestBatteryOptimizationAndOnboarding()
                 }
                 ClipRelayService.ACTION_PAIRING_STATUS -> {
@@ -118,18 +117,10 @@ class MainActivity : AppCompatActivity() {
         clipboardSettingsStore = ClipboardSettingsStore(this)
 
         val pairingStore = PairingStore(this)
-        val secret = pairingStore.loadSharedSecret()
-        val isPaired = secret != null
-        val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
-            .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
-        val deviceTag = secret?.let { s ->
-            val hex = E2ECrypto.deviceTag(s).take(4).joinToString("") { "%02X".format(it) }
-            hex.chunked(4).joinToString(" ")
-        }
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         val autoCopyEnabled = clipboardSettingsStore.isAutoCopyEnabled()
         val imageSyncEnabled = pairingStore.isRichMediaEnabled()
-        viewModel.initState(isPaired, deviceName, deviceTag, autoClearEnabled, autoCopyEnabled, imageSyncEnabled)
+        viewModel.initState(loadMacsForUi(emptySet()), autoClearEnabled, autoCopyEnabled, imageSyncEnabled)
 
         setContent {
             val state by viewModel.state.collectAsState()
@@ -183,13 +174,19 @@ class MainActivity : AppCompatActivity() {
                 onPairClick = {
                     scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
                 },
-                onUnpairClick = {
-                    viewModel.onUnpaired()
-                    val unpairIntent = Intent(this, ClipRelayService::class.java)
-                    unpairIntent.action = ClipRelayService.ACTION_UNPAIR
-                    if (!startServiceSafely(unpairIntent)) {
-                        PairingStore(this).clear()
+                onForgetMacClick = { macId ->
+                    val forgetIntent = Intent(this, ClipRelayService::class.java)
+                    forgetIntent.action = ClipRelayService.ACTION_FORGET_DEVICE
+                    forgetIntent.putExtra(ClipRelayService.EXTRA_DEVICE_ID, macId)
+                    if (!startServiceSafely(forgetIntent)) {
+                        // Service unavailable (e.g. missing BLE permissions) — remove directly.
+                        val store = PairingStore(this)
+                        store.loadPairedMacs().firstOrNull { it.id == macId }
+                            ?.let { store.removePairedMac(it.secretHex) }
                     }
+                    // The service removes the pairing asynchronously — drop it
+                    // from the UI immediately rather than waiting for the broadcast.
+                    viewModel.onMacForgotten(loadMacsForUi(emptySet()).filterNot { it.id == macId })
                 },
                 onBurstShown = {
                     viewModel.onBurstShown()
@@ -252,6 +249,12 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         unregisterReceiver(connectionReceiver)
     }
+
+    /** Read the paired Macs from the store and apply per-Mac connection flags. */
+    private fun loadMacsForUi(connectedIds: Set<String>): List<PairedMacUi> =
+        PairingStore(this).loadPairedMacs().map { mac ->
+            PairedMacUi(id = mac.id, name = mac.name, connected = mac.id in connectedIds)
+        }
 
     private fun ensureServiceRunning() {
         startServiceSafely(Intent(this, ClipRelayService::class.java))

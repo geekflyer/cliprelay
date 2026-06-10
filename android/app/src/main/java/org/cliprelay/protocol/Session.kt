@@ -34,7 +34,9 @@ sealed class SessionMode {
     class Pairing(
         val ownPrivateKey: PrivateKey,
         val ownPublicKeyRaw: ByteArray,
-        val remotePublicKeyRaw: ByteArray
+        val remotePublicKeyRaw: ByteArray,
+        /** Stable phone identity tag (hex) to share with the Mac; null on first pairing. */
+        val identityTagHex: String? = null
     ) : SessionMode()
 }
 
@@ -61,7 +63,13 @@ class Session(
     internal var handshakeTimeoutMs: Long = 5_000L,
     internal var transferTimeoutMs: Long = 30_000L,
     internal var pairingTimeoutMs: Long = 60_000L,
-    private val settingsProvider: SettingsProvider? = null
+    private val settingsProvider: SettingsProvider? = null,
+    /**
+     * Candidate shared secrets for responder mode with multiple paired Macs.
+     * The HELLO's HMAC identifies which Mac is connecting; the matching secret
+     * becomes this session's shared secret (see [matchedSecretHex]).
+     */
+    private val candidateSecretsHex: List<String> = emptyList()
 ) {
     private val tag = "Session"
     private val closed = AtomicBoolean(false)
@@ -72,6 +80,12 @@ class Session(
     /** Remote device name received during handshake. Available after onSessionReady. */
     var remoteName: String? = null
         private set
+
+    /**
+     * The shared secret this session ended up using. With [candidateSecretsHex]
+     * this identifies which Mac connected. Available after onSessionReady.
+     */
+    val matchedSecretHex: String? get() = sharedSecretHex
 
     /** Auth key derived from the shared secret, used for HMAC authentication during handshake. */
     private var authKey: SecretKey? = sharedSecretHex?.let {
@@ -118,7 +132,7 @@ class Session(
         try {
             when (val m = mode) {
                 is SessionMode.Normal -> {
-                    if (sharedSecretHex == null) {
+                    if (sharedSecretHex == null && candidateSecretsHex.isEmpty()) {
                         throw ProtocolException("Shared secret required for Normal mode")
                     }
                     if (isInitiator) {
@@ -206,6 +220,11 @@ class Session(
         val exchangeJson = JSONObject().apply {
             put("pubkey", pubkeyHex)
             localName?.let { put("name", it) }
+            // Stable phone identity tag: the Mac scans for this instead of the
+            // secret-derived tag, so one advertisement serves all paired Macs.
+            // Absent on first pairing — the Mac then falls back to the
+            // secret-derived tag, which equals the identity tag the phone adopts.
+            pairing.identityTagHex?.let { put("tag", it) }
         }
         val keyExchange = Message(MessageType.KEY_EXCHANGE, exchangeJson.toString().toByteArray())
         MessageCodec.write(output, keyExchange)
@@ -795,9 +814,19 @@ class Session(
             throw ProtocolException("Authentication failed")
         }
         val authBytes = E2ECrypto.hexToBytes(authHex)
-        val ak = authKey ?: throw ProtocolException("Authentication failed")
-        if (!E2ECrypto.verifyAuth(remoteEkBytes, ak, authBytes)) {
-            throw ProtocolException("Authentication failed")
+        val ak = authKey
+        if (ak != null) {
+            if (!E2ECrypto.verifyAuth(remoteEkBytes, ak, authBytes)) {
+                throw ProtocolException("Authentication failed")
+            }
+        } else {
+            // Multiple paired Macs: the HMAC identifies which one is connecting.
+            val matched = candidateSecretsHex.firstOrNull { secretHex ->
+                val candidateKey = E2ECrypto.deriveAuthKey(E2ECrypto.hexToBytes(secretHex))
+                E2ECrypto.verifyAuth(remoteEkBytes, candidateKey, authBytes)
+            } ?: throw ProtocolException("Authentication failed")
+            sharedSecretHex = matched
+            authKey = E2ECrypto.deriveAuthKey(E2ECrypto.hexToBytes(matched))
         }
 
         // Resolve settings with last-write-wins
