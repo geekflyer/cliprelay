@@ -176,5 +176,15 @@
                        length="2209611"
                        type="application/octet-stream" />
         </item>
+            <item>
+            <title>Version 0.6.0 (a97be71)</title>
+            <pubDate>Wed, 10 Jun 2026 17:54:49 +0000</pubDate>
+            <sparkle:version>416</sparkle:version>
+            <sparkle:shortVersionString>0.6.0 (a97be71)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.6.0/ClipRelay-0.6.0.dmg"
+                       sparkle:edSignature="J4wbZxmVYVw5NJ6Mg4dxXVXXmLTJqEwI3+uNrqE3CuGEr8OWx/SV7kCZZu9ggGv0a5Dxf456MGgmUwiLt9BaDQ=="
+                       length="2224205"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
