@@ -61,7 +61,6 @@ class ClipRelayService : Service(), L2capServerCallback {
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_CONNECTED = "extra_connected"
         const val EXTRA_DEVICE_NAME = "extra_device_name"
-        const val EXTRA_DEVICE_TAG = "extra_device_tag"
         const val EXTRA_DEVICE_ID = "extra_device_id"
         const val EXTRA_CONNECTED_IDS = "extra_connected_ids"
         const val EXTRA_FROM_MAC = "extra_from_mac"
@@ -613,13 +612,9 @@ class ClipRelayService : Service(), L2capServerCallback {
             saveConnectedDeviceName(remoteName)
         }
 
-        // Broadcast pairing complete with device tag for UI
-        val deviceTagHex = E2ECrypto.deviceTag(sharedSecret).take(4)
-            .joinToString("") { "%02X".format(it) }
-            .chunked(4).joinToString(" ")
+        // Broadcast pairing complete (the UI re-reads the pairing store)
         val pairingIntent = Intent(ACTION_PAIRING_COMPLETE)
         pairingIntent.setPackage(packageName)
-        pairingIntent.putExtra(EXTRA_DEVICE_TAG, deviceTagHex)
         pairingIntent.putExtra(EXTRA_DEVICE_NAME, scannedName)
         sendBroadcast(pairingIntent)
         publishDirectShareShortcut(directShareLabel())

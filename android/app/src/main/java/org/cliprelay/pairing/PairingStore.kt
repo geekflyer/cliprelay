@@ -12,15 +12,17 @@ import org.cliprelay.protocol.SettingsProvider
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Device-tag hex for a shared secret: the stable non-secret identifier. */
+internal fun deviceTagHex(secretHex: String): String =
+    E2ECrypto.deviceTag(secretHex).joinToString("") { "%02x".format(it) }
+
 /** One paired Mac. [id] is a stable non-secret identifier derived from the secret. */
 data class PairedMac(
     val secretHex: String,
     val name: String?,
     val pairedAtMs: Long
 ) {
-    val id: String by lazy {
-        E2ECrypto.deviceTag(secretHex).joinToString("") { "%02x".format(it) }
-    }
+    val id: String by lazy { deviceTagHex(secretHex) }
 }
 
 class PairingStore internal constructor(private val encryptedPrefs: SharedPreferences?) : SettingsProvider {
@@ -99,8 +101,7 @@ class PairingStore internal constructor(private val encryptedPrefs: SharedPrefer
         return runCatching {
             val editor = prefs.edit()
             if (identityTagHex() == null) {
-                val tagHex = E2ECrypto.deviceTag(secretHex).joinToString("") { "%02x".format(it) }
-                editor.putString(KEY_IDENTITY_TAG, tagHex)
+                editor.putString(KEY_IDENTITY_TAG, deviceTagHex(secretHex))
             }
             editor.putString(KEY_PAIRED_MACS, encode(macs + PairedMac(secretHex, name, pairedAtMs)))
             editor.apply()
@@ -189,10 +190,9 @@ class PairingStore internal constructor(private val encryptedPrefs: SharedPrefer
         runCatching {
             val legacy = prefs.getString(KEY_SHARED_SECRET, null) ?: return
             if (prefs.getString(KEY_PAIRED_MACS, null) == null) {
-                val tagHex = E2ECrypto.deviceTag(legacy).joinToString("") { "%02x".format(it) }
                 prefs.edit()
                     .putString(KEY_PAIRED_MACS, encode(listOf(PairedMac(legacy, null, 0L))))
-                    .putString(KEY_IDENTITY_TAG, tagHex)
+                    .putString(KEY_IDENTITY_TAG, deviceTagHex(legacy))
                     .remove(KEY_SHARED_SECRET)
                     .apply()
             } else {

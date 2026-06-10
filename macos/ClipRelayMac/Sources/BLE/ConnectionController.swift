@@ -489,7 +489,12 @@ extension ConnectionController {
         queue.async { [self] in
             guard let data = text.data(using: .utf8) else { return }
             let hash = Session.sha256Hex(data)
-            pendingClipboard = data
+            // Don't cache text we just received for reconnect-replay — it would
+            // be sent back to its originator when that device reconnects.
+            // (Live relay to *other* devices below is unaffected.)
+            if hash != lastReceivedTextHash {
+                pendingClipboard = data
+            }
             var sentCount = 0
             for device in devices.values where device.state.isReady {
                 // Skip the device that delivered this text to us (echo guard);

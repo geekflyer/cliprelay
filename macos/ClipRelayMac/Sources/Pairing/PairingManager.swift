@@ -45,7 +45,16 @@ final class PairingManager {
     private static let keychainAccount = "paired_devices"
     private static let pendingDisplayNamePrefix = "Pending pairing"
     private let keychain: SecretStore
+    /// Guards the caches: PairingManager is used from the connection queue and
+    /// the main thread (status bar menu).
+    private let cacheLock = NSLock()
     private var tagCache: [String: Data] = [:]
+    /// Decoded device list, invalidated on every persist(). loadDevices() is on
+    /// the BLE discovery hot path (every advertisement while scanning), so it
+    /// must not hit the keychain each time. All mutations go through persist()
+    /// in-process; the smoke CLI writes from a separate process only while the
+    /// app is not running.
+    private var devicesCache: [PairedDevice]?
 
     init(keychain: SecretStore = KeychainStore(service: "cliprelay")) {
         self.keychain = keychain
@@ -65,8 +74,22 @@ final class PairingManager {
     }
 
     func loadDevices() -> [PairedDevice] {
-        guard let data = keychain.data(for: Self.keychainAccount) else { return [] }
-        return (try? JSONDecoder().decode([PairedDevice].self, from: data)) ?? []
+        cacheLock.lock()
+        if let cached = devicesCache {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+        let loaded: [PairedDevice]
+        if let data = keychain.data(for: Self.keychainAccount) {
+            loaded = (try? JSONDecoder().decode([PairedDevice].self, from: data)) ?? []
+        } else {
+            loaded = []
+        }
+        cacheLock.lock()
+        devicesCache = loaded
+        cacheLock.unlock()
+        return loaded
     }
 
     func addDevice(_ device: PairedDevice) {
@@ -115,10 +138,17 @@ final class PairingManager {
     }
 
     func deviceTag(for secret: String) -> Data? {
-        if let cached = tagCache[secret] { return cached }
+        cacheLock.lock()
+        if let cached = tagCache[secret] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
         guard let secretBytes = E2ECrypto.hexToData(secret) else { return nil }
         guard let result = E2ECrypto.deviceTag(secretBytes: secretBytes) else { return nil }
+        cacheLock.lock()
         tagCache[secret] = result
+        cacheLock.unlock()
         return result
     }
 
@@ -139,7 +169,10 @@ final class PairingManager {
 
 
     private func persist(_ devices: [PairedDevice]) {
+        cacheLock.lock()
         tagCache.removeAll()
+        devicesCache = devices
+        cacheLock.unlock()
         guard let data = try? JSONEncoder().encode(devices) else { return }
         keychain.setData(data, for: Self.keychainAccount)
     }

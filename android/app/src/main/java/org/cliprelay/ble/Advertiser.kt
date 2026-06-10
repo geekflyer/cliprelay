@@ -41,6 +41,9 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
         }
     }
 
+    // Written from session/service threads, read on the main-looper advertising
+    // path — @Volatile guarantees the freshly-set tag is visible to the next cycle.
+    @Volatile
     var deviceTag: ByteArray? = null
     var psm: Int = 0
 
