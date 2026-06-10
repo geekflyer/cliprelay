@@ -46,6 +46,8 @@ Runs a near-fully automated BLE smoke test on debug builds:
 Notes:
   - Requires an attached Android device via USB debugging or wireless debugging
   - Requires debug APK installed (for debug smoke receiver and probe state)
+  - Requires a debug macOS bundle in dist/ (the smoke CLI is #if DEBUG only):
+    build it with ./scripts/build-all.sh --debug --mac-only
   - BLE connection waits are capped at 10 seconds
   - Cleans up the temporary pairing token on both devices at the end (unless --keep-pairing is set)
 EOF
@@ -653,6 +655,17 @@ fi
 
 if [[ ! -x "$MAC_BIN" ]]; then
   echo "Missing macOS binary: $MAC_BIN" >&2
+  exit 1
+fi
+
+# The smoke-test CLI (--smoke-import-pairing / --smoke-remove-pairing) is
+# compiled only under #if DEBUG. A release binary silently ignores those flags
+# and launches the full app instead, so the import becomes a no-op and the
+# test times out with "paired: 0". Detect that statically (running the binary
+# to probe would launch the app), and fail fast with a fix.
+if ! grep -q -e "--smoke-import-pairing" "$MAC_BIN"; then
+  echo "dist/ClipRelay.app is a release build without the smoke-test CLI." >&2
+  echo "Rebuild a debug bundle first: ./scripts/build-all.sh --debug --mac-only" >&2
   exit 1
 fi
 
