@@ -3,7 +3,31 @@
 import Foundation
 import Security
 
-final class KeychainStore {
+/// Abstraction over keychain storage so tests can use an in-memory store
+/// instead of the real login keychain (which triggers ACL password prompts
+/// for every freshly-signed test bundle).
+protocol SecretStore: AnyObject {
+    func data(for account: String) -> Data?
+    @discardableResult
+    func setData(_ data: Data, for account: String) -> Bool
+}
+
+/// In-memory SecretStore for unit tests.
+final class InMemorySecretStore: SecretStore {
+    private var storage: [String: Data] = [:]
+
+    func data(for account: String) -> Data? {
+        storage[account]
+    }
+
+    @discardableResult
+    func setData(_ data: Data, for account: String) -> Bool {
+        storage[account] = data
+        return true
+    }
+}
+
+final class KeychainStore: SecretStore {
     private let service: String
 
     init(service: String) {

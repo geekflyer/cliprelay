@@ -81,7 +81,7 @@ final class PairedDeviceTests: XCTestCase {
     }
 
     func testScanTagUsesAdvertTagWhenPresent() {
-        let manager = PairingManager()
+        let manager = PairingManager(keychain: InMemorySecretStore())
         let device = PairedDevice(
             sharedSecret: "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1",
             displayName: "Test", datePaired: Date(),
@@ -91,17 +91,17 @@ final class PairedDeviceTests: XCTestCase {
     }
 
     func testScanTagFallsBackToSecretDerivedTag() {
-        let manager = PairingManager()
+        let manager = PairingManager(keychain: InMemorySecretStore())
         let secret = "b4e4716bc736cde97aa0b585beddab79e190a2531e21bdd410914aeec7a2a4e1"
         let device = PairedDevice(sharedSecret: secret, displayName: "Test", datePaired: Date())
         XCTAssertEqual(manager.scanTag(for: device), manager.deviceTag(for: secret))
         XCTAssertNotNil(manager.scanTag(for: device))
     }
 
-    // MARK: - PairingManager integration (uses real Keychain)
+    // MARK: - PairingManager integration (in-memory store)
 
     func testSetRichMediaEnabledUpdatesDevice() {
-        let manager = PairingManager()
+        let manager = PairingManager(keychain: InMemorySecretStore())
         let secret = "ff" + String(repeating: "00", count: 31)
         let device = PairedDevice(sharedSecret: secret, displayName: "RichMediaTest", datePaired: Date())
 
@@ -124,7 +124,7 @@ final class PairedDeviceTests: XCTestCase {
     }
 
     func testClearRichMediaBySettingFalse() {
-        let manager = PairingManager()
+        let manager = PairingManager(keychain: InMemorySecretStore())
         let secret = "ee" + String(repeating: "00", count: 31)
         let device = PairedDevice(sharedSecret: secret, displayName: "ClearTest", datePaired: Date())
 

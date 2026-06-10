@@ -44,8 +44,12 @@ struct PairedDevice: Codable, Equatable {
 final class PairingManager {
     private static let keychainAccount = "paired_devices"
     private static let pendingDisplayNamePrefix = "Pending pairing"
-    private let keychain = KeychainStore(service: "cliprelay")
+    private let keychain: SecretStore
     private var tagCache: [String: Data] = [:]
+
+    init(keychain: SecretStore = KeychainStore(service: "cliprelay")) {
+        self.keychain = keychain
+    }
 
     /// Ephemeral ECDH key pair for in-progress pairing. Lives only during pairing window.
     private(set) var ephemeralPrivateKey: Curve25519.KeyAgreement.PrivateKey?
