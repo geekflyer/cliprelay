@@ -25,7 +25,7 @@ class ClipboardTileService : TileService() {
         super.onClick()
 
         val pairingStore = PairingStore(this)
-        if (pairingStore.loadSharedSecret() == null) {
+        if (!pairingStore.hasPairedMacs()) {
             Log.d(TAG, "Not paired — ignoring tile tap")
             return
         }
@@ -52,11 +52,15 @@ class ClipboardTileService : TileService() {
     private fun updateTileState() {
         val tile = qsTile ?: return
         val pairingStore = PairingStore(this)
-        val isPaired = pairingStore.loadSharedSecret() != null
+        val macs = pairingStore.loadPairedMacs()
 
-        if (isPaired) {
-            val deviceName = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
-                .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
+        if (macs.isNotEmpty()) {
+            val deviceName = if (macs.size == 1) {
+                macs[0].name ?: getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
+                    .getString(ClipRelayService.KEY_CONNECTED_DEVICE, null)
+            } else {
+                "${macs.size} Macs"
+            }
             tile.label = getString(R.string.tile_label)
             tile.subtitle = deviceName
             tile.state = Tile.STATE_INACTIVE

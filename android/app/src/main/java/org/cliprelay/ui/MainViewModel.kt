@@ -1,6 +1,6 @@
 package org.cliprelay.ui
 
-// ViewModel exposing app state (pairing, connection, transfer events) to the Compose UI.
+// ViewModel exposing app state (pairing, per-Mac connection, transfer events) to the Compose UI.
 
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -11,16 +11,31 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class PairingStage { Connecting, ExchangingKeys }
 
+/** One paired Mac as shown in the UI. [id] is PairedMac.id (device-tag hex). */
+data class PairedMacUi(
+    val id: String,
+    val name: String?,
+    val connected: Boolean = false
+) {
+    /** Short human-checkable pairing code, e.g. "AB12 CD34". */
+    val tagDisplay: String get() = id.take(8).uppercase().chunked(4).joinToString(" ")
+}
+
 sealed class AppState {
     object Unpaired : AppState()
     data class Pairing(val stage: PairingStage) : AppState()
-    data class Searching(val deviceName: String? = null, val deviceTag: String? = null) : AppState()
-    data class Connected(val deviceName: String?, val deviceTag: String? = null) : AppState()
+    data class Paired(val macs: List<PairedMacUi>) : AppState() {
+        val anyConnected: Boolean get() = macs.any { it.connected }
+        val connectedCount: Int get() = macs.count { it.connected }
+    }
 }
 
 class MainViewModel : ViewModel() {
     private val _state = MutableStateFlow<AppState>(AppState.Unpaired)
     val state: StateFlow<AppState> = _state.asStateFlow()
+
+    /** Last known paired Macs (with connection flags), kept across Pairing state. */
+    private var macs: List<PairedMacUi> = emptyList()
 
     private val _showBurst = MutableStateFlow(false)
     val showBurst: StateFlow<Boolean> = _showBurst.asStateFlow()
@@ -47,15 +62,30 @@ class MainViewModel : ViewModel() {
     private val _clipboardTransfer = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
     val clipboardTransfer: SharedFlow<Boolean> = _clipboardTransfer
 
-    fun initState(isPaired: Boolean, deviceName: String? = null, deviceTag: String? = null, autoClearEnabled: Boolean = false, autoCopyEnabled: Boolean = false, imageSyncEnabled: Boolean = false) {
-        _state.value = if (isPaired) AppState.Searching(deviceName, deviceTag) else AppState.Unpaired
+    fun initState(
+        macs: List<PairedMacUi>,
+        autoClearEnabled: Boolean = false,
+        autoCopyEnabled: Boolean = false,
+        imageSyncEnabled: Boolean = false
+    ) {
+        this.macs = macs
+        refreshPairedState()
         _autoClearEnabled.value = autoClearEnabled
         _autoCopyEnabled.value = autoCopyEnabled
         _imageSyncEnabled.value = imageSyncEnabled
     }
 
-    fun onPaired(deviceTag: String? = null) {
-        _state.value = AppState.Searching(deviceTag = deviceTag)
+    /** Paired list or per-Mac connection flags changed (store re-read / connection broadcast). */
+    fun onMacsChanged(macs: List<PairedMacUi>) {
+        this.macs = macs
+        // Don't let connection broadcasts kick us out of an in-progress pairing.
+        if (_state.value is AppState.Pairing) return
+        refreshPairedState()
+    }
+
+    fun onPaired(macs: List<PairedMacUi>) {
+        this.macs = macs
+        refreshPairedState()
         _pairingFailed.value = false
         _showBurst.value = true
     }
@@ -72,12 +102,12 @@ class MainViewModel : ViewModel() {
 
     fun onPairingFailed() {
         if (_state.value !is AppState.Pairing) return
-        _state.value = AppState.Unpaired
+        refreshPairedState()
         _pairingFailed.value = true
     }
 
     fun onPairingCancelled() {
-        _state.value = AppState.Unpaired
+        refreshPairedState()
         _pairingFailed.value = false
     }
 
@@ -90,21 +120,21 @@ class MainViewModel : ViewModel() {
     }
 
     fun onUnpaired() {
+        macs = emptyList()
         _state.value = AppState.Unpaired
         _autoCopyEnabled.value = false
     }
 
-    fun onConnectionChanged(connected: Boolean, deviceName: String?) {
-        // Don't let stale connection broadcasts override the Unpaired state,
-        // and don't let "disconnected" answers kick us out of an in-progress pairing.
-        if (_state.value is AppState.Unpaired) return
-        if (_state.value is AppState.Pairing && !connected) return
-        val currentTag = when (val s = _state.value) {
-            is AppState.Searching -> s.deviceTag
-            is AppState.Connected -> s.deviceTag
-            else -> null
+    fun onMacForgotten(remaining: List<PairedMacUi>) {
+        macs = remaining
+        refreshPairedState()
+        if (remaining.isEmpty()) {
+            _autoCopyEnabled.value = false
         }
-        _state.value = if (connected) AppState.Connected(deviceName, currentTag) else AppState.Searching(deviceName, currentTag)
+    }
+
+    private fun refreshPairedState() {
+        _state.value = if (macs.isEmpty()) AppState.Unpaired else AppState.Paired(macs)
     }
 
     fun onClipboardTransfer(fromMac: Boolean) {

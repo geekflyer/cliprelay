@@ -14,7 +14,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -93,7 +95,7 @@ fun ClipRelayScreen(
     onPairingCancelClick: () -> Unit = {},
     onPairingErrorDismiss: () -> Unit = {},
     onPairClick: () -> Unit,
-    onUnpairClick: () -> Unit,
+    onForgetMacClick: (String) -> Unit = {},
     onBurstShown: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
     onAutoCopySettingChanged: (Boolean) -> Unit,
@@ -102,7 +104,7 @@ fun ClipRelayScreen(
     onHelpClick: () -> Unit = {},
     onSupportLinkClick: (String) -> Unit = {},
 ) {
-    val isConnected = state is AppState.Connected
+    val isConnected = state is AppState.Paired && state.anyConnected
     val isPaired = state !is AppState.Unpaired
 
     val bgTop by animateColorAsState(
@@ -159,45 +161,59 @@ fun ClipRelayScreen(
                 )
             }
     ) {
-        Column(
+        // Scrollable so the footer stays reachable when the Mac list grows the
+        // card beyond the screen. When everything fits, SpaceBetween with a
+        // min-height of the viewport reproduces the old centered layout.
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .navigationBarsPadding()
         ) {
-            Spacer(modifier = Modifier.height(12.dp))
-            StatusChip(state = state)
-            Spacer(modifier = Modifier.weight(1f))
-            MainCard(
-                state = state,
-                clipboardTransferFlow = clipboardTransferFlow,
-                autoClearEnabled = autoClearEnabled,
-                autoCopyEnabled = autoCopyEnabled,
-                autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
-                imageSyncEnabled = imageSyncEnabled,
-                pairingFailed = pairingFailed,
-                onPairingCancelClick = onPairingCancelClick,
-                onPairingErrorDismiss = onPairingErrorDismiss,
-                onPairClick = onPairClick,
-                onUnpairClick = onUnpairClick,
-                onAutoClearSettingChanged = onAutoClearSettingChanged,
-                onAutoCopySettingChanged = onAutoCopySettingChanged,
-                onImageSyncSettingChanged = onImageSyncSettingChanged,
-                onAutoCopyFixClick = onAutoCopyFixClick
-            )
-            Spacer(modifier = Modifier.weight(1f))
+            val viewportHeight = maxHeight
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = viewportHeight),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(modifier = Modifier.height(12.dp))
+                StatusChip(state = state)
+            }
+            Box(modifier = Modifier.padding(vertical = 16.dp)) {
+                MainCard(
+                    state = state,
+                    clipboardTransferFlow = clipboardTransferFlow,
+                    autoClearEnabled = autoClearEnabled,
+                    autoCopyEnabled = autoCopyEnabled,
+                    autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
+                    imageSyncEnabled = imageSyncEnabled,
+                    pairingFailed = pairingFailed,
+                    onPairingCancelClick = onPairingCancelClick,
+                    onPairingErrorDismiss = onPairingErrorDismiss,
+                    onPairClick = onPairClick,
+                    onForgetMacClick = onForgetMacClick,
+                    onAutoClearSettingChanged = onAutoClearSettingChanged,
+                    onAutoCopySettingChanged = onAutoCopySettingChanged,
+                    onImageSyncSettingChanged = onImageSyncSettingChanged,
+                    onAutoCopyFixClick = onAutoCopyFixClick
+                )
+            }
             FooterSection(
                 isPaired = isPaired,
                 bleState = when {
                     isConnected -> "connected"
-                    state is AppState.Searching -> "searching"
+                    state is AppState.Paired -> "searching"
                     state is AppState.Pairing -> "searching"
                     else -> "unpaired"
                 },
                 onHelpClick = onHelpClick,
                 onSupportLinkClick = onSupportLinkClick,
             )
+            }
         }
 
         // Pairing burst overlay
@@ -227,17 +243,19 @@ private fun StatusChip(state: AppState) {
             text = Teal,
             label = "Pairing…"
         )
-        is AppState.Searching -> ChipStyle(
-            bg = Color(0x1400FFD5),
-            dot = Color(0xFFBDBDBD),
-            text = Teal,
-            label = "Searching for Mac"
-        )
-        is AppState.Connected -> ChipStyle(
+        is AppState.Paired -> if (state.anyConnected) ChipStyle(
             bg = Color(0x1A00FFD5),
             dot = Aqua,
             text = Teal,
-            label = "Connected"
+            label = when {
+                state.macs.size == 1 -> "Connected"
+                else -> "Connected to ${state.connectedCount} of ${state.macs.size} Macs"
+            }
+        ) else ChipStyle(
+            bg = Color(0x1400FFD5),
+            dot = Color(0xFFBDBDBD),
+            text = Teal,
+            label = if (state.macs.size == 1) "Searching for Mac" else "Searching for Macs"
         )
     }
 
@@ -246,7 +264,7 @@ private fun StatusChip(state: AppState) {
             .clip(RoundedCornerShape(20.dp))
             .background(bgColor)
             .then(
-                if (state is AppState.Connected)
+                if (state is AppState.Paired && state.anyConnected)
                     Modifier.border(1.dp, Aqua.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
                 else Modifier
             )
@@ -254,7 +272,7 @@ private fun StatusChip(state: AppState) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Animated dot for Searching/Pairing states
-        if (state is AppState.Searching || state is AppState.Pairing) {
+        if ((state is AppState.Paired && !state.anyConnected) || state is AppState.Pairing) {
             BlinkingDot(color = dotColor)
         } else {
             Box(
@@ -311,45 +329,40 @@ private fun MainCard(
     onPairingCancelClick: () -> Unit = {},
     onPairingErrorDismiss: () -> Unit = {},
     onPairClick: () -> Unit,
-    onUnpairClick: () -> Unit,
+    onForgetMacClick: (String) -> Unit = {},
     onAutoClearSettingChanged: (Boolean) -> Unit,
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {}
 ) {
     val isPaired = state !is AppState.Unpaired
-    val isConnected = state is AppState.Connected
+    val isConnected = state is AppState.Paired && state.anyConnected
+    val macs = (state as? AppState.Paired)?.macs ?: emptyList()
 
     val cardTopColor by animateColorAsState(
-        targetValue = when (state) {
-            is AppState.Unpaired -> Color.White
-            is AppState.Pairing -> Color(0xFFF5FFFC)
-            is AppState.Searching -> Color(0xFFF5FFFC)
-            is AppState.Connected -> Color(0xFFF0FFFC)
+        targetValue = when {
+            state is AppState.Unpaired -> Color.White
+            isConnected -> Color(0xFFF0FFFC)
+            else -> Color(0xFFF5FFFC)
         },
         animationSpec = tween(600),
         label = "cardTop"
     )
 
     val borderColor by animateColorAsState(
-        targetValue = when (state) {
-            is AppState.Unpaired -> Color(0x1400FFD5)
-            is AppState.Pairing -> Color(0x1F00FFD5)
-            is AppState.Searching -> Color(0x1F00FFD5)
-            is AppState.Connected -> Color(0x3300FFD5)
+        targetValue = when {
+            state is AppState.Unpaired -> Color(0x1400FFD5)
+            isConnected -> Color(0x3300FFD5)
+            else -> Color(0x1F00FFD5)
         },
         animationSpec = tween(600),
         label = "cardBorder"
     )
 
-    val deviceName = when (state) {
-        is AppState.Connected -> state.deviceName
-        is AppState.Searching -> state.deviceName
-        else -> null
-    }
-    val deviceTag = when (state) {
-        is AppState.Connected -> state.deviceTag
-        is AppState.Searching -> state.deviceTag
+    // Node label: single Mac shows its name; several show a count.
+    val deviceName = when {
+        macs.size == 1 -> macs[0].name
+        macs.size > 1 -> "${macs.size} Macs"
         else -> null
     }
 
@@ -476,14 +489,6 @@ private fun MainCard(
                         color = Teal.copy(alpha = 0.4f),
                         fontWeight = FontWeight.Medium
                     )
-                    if (deviceTag != null) {
-                        Text(
-                            text = "Pairing: $deviceTag",
-                            fontSize = 11.sp,
-                            color = Teal.copy(alpha = 0.45f),
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
                 }
                 }
 
@@ -552,35 +557,21 @@ private fun MainCard(
                     )
                 }
             } else {
-                val unpairBg by animateColorAsState(
-                    targetValue = if (isConnected) Color(0x1400FFD5) else Color(0x0F00FFD5),
-                    animationSpec = tween(400),
-                    label = "unpairBg"
-                )
-                val unpairBorder by animateColorAsState(
-                    targetValue = if (isConnected) Color(0x2600FFD5) else Color(0x1A00FFD5),
-                    animationSpec = tween(400),
-                    label = "unpairBorder"
-                )
-                Button(
-                    onClick = onUnpairClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, unpairBorder, RoundedCornerShape(28.dp)),
-                    shape = RoundedCornerShape(28.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = unpairBg,
-                        contentColor = Teal
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp)
-                ) {
-                    Text(
-                        text = "Unpair",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                if (pairingFailed) {
+                    PairingFailedCard(
+                        onTryAgain = {
+                            onPairingErrorDismiss()
+                            onPairClick()
+                        },
+                        onDismiss = onPairingErrorDismiss
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
+                MacListSection(
+                    macs = macs,
+                    onForgetMacClick = onForgetMacClick,
+                    onPairAnotherClick = onPairClick
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -642,6 +633,111 @@ private fun PairingStatusRow(
                 color = Teal.copy(alpha = 0.6f),
                 fontSize = 13.sp
             )
+        }
+    }
+}
+
+// ─── Paired Mac List ─────────────────────────────────────────────────────────
+@Composable
+private fun MacListSection(
+    macs: List<PairedMacUi>,
+    onForgetMacClick: (String) -> Unit,
+    onPairAnotherClick: () -> Unit
+) {
+    var macPendingForget by remember { mutableStateOf<PairedMacUi?>(null) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        macs.forEachIndexed { index, mac ->
+            MacRow(mac = mac, onForgetClick = { macPendingForget = mac })
+            if (index < macs.lastIndex) Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        if (macs.size < org.cliprelay.pairing.PairingStore.MAX_PAIRED_MACS) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onPairAnotherClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0x1A00FFD5), RoundedCornerShape(28.dp)),
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0x0F00FFD5),
+                    contentColor = Teal
+                ),
+                elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp)
+            ) {
+                Text(
+                    text = "+ Pair another Mac",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+        }
+    }
+
+    macPendingForget?.let { mac ->
+        AlertDialog(
+            onDismissRequest = { macPendingForget = null },
+            title = { Text("Forget ${mac.name ?: "this Mac"}?") },
+            text = { Text("This Mac will no longer sync with your phone. You can pair it again anytime.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onForgetMacClick(mac.id)
+                    macPendingForget = null
+                }) {
+                    Text("Forget", color = Color(0xFFB71C1C), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { macPendingForget = null }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun MacRow(mac: PairedMacUi, onForgetClick: () -> Unit) {
+    val rowBg = if (mac.connected) Color(0x1400FFD5) else Color(0x08000000)
+    val rowBorder = if (mac.connected) Color(0x2B00FFD5) else Color(0x14000000)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(rowBg)
+            .border(1.dp, rowBorder, RoundedCornerShape(18.dp))
+            .padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (mac.connected) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(Aqua)
+            )
+        } else {
+            BlinkingDot(color = Color(0xFFBDBDBD))
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = mac.name ?: "Mac",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xCC000000),
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Text(
+                text = (if (mac.connected) "Connected" else "Searching") + " · ${mac.tagDisplay}",
+                fontSize = 11.sp,
+                color = Color(0x73000000)
+            )
+        }
+        TextButton(onClick = onForgetClick) {
+            Text(text = "Forget", fontSize = 12.sp, color = Color(0x80000000))
         }
     }
 }
@@ -890,7 +986,7 @@ private fun DeviceNode(
     label: String
 ) {
     val isPaired = state !is AppState.Unpaired
-    val isConnected = state is AppState.Connected
+    val isConnected = state is AppState.Paired && state.anyConnected
     // Phone is "active" once paired; Mac is active only when connected
     val isActive = if (isPhone) isPaired else isConnected
 

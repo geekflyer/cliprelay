@@ -1801,6 +1801,104 @@ class SessionTest {
         return SessionEnvHolder(SessionEnv(macSession, androidSession, macCallback, androidCallback))
     }
 
+    // ── Candidate-secret (multi-Mac) handshake tests ─────────────────
+
+    @Test
+    fun `responder with candidate secrets matches the connecting mac`() {
+        val otherSecret = "11".repeat(32)
+        val env = createSessionsWithCandidates(
+            macSecret = testSharedSecret,
+            candidates = listOf(otherSecret, testSharedSecret)
+        )
+        val readyLatch = CountDownLatch(2)
+        env.macCallback.onReady = { readyLatch.countDown() }
+        env.androidCallback.onReady = { readyLatch.countDown() }
+
+        startBothSessions(env)
+
+        assertTrue("Both sessions should become ready", readyLatch.await(5, TimeUnit.SECONDS))
+        assertEquals(testSharedSecret, env.androidSession.matchedSecretHex)
+        cleanup(env)
+    }
+
+    @Test
+    fun `responder with candidate secrets transfers clipboard end to end`() {
+        val env = createSessionsWithCandidates(
+            macSecret = testSharedSecret,
+            candidates = listOf("22".repeat(32), testSharedSecret, "33".repeat(32))
+        )
+        val receivedLatch = CountDownLatch(1)
+        var received: ByteArray? = null
+        env.androidCallback.onReceived = { plaintext, _ ->
+            received = plaintext
+            receivedLatch.countDown()
+        }
+        val readyLatch = CountDownLatch(2)
+        env.macCallback.onReady = { readyLatch.countDown() }
+        env.androidCallback.onReady = { readyLatch.countDown() }
+
+        startBothSessions(env)
+        assertTrue(readyLatch.await(5, TimeUnit.SECONDS))
+
+        env.macSession.sendClipboard("hello from mac".toByteArray())
+
+        assertTrue("Clipboard should arrive", receivedLatch.await(5, TimeUnit.SECONDS))
+        assertEquals("hello from mac", String(received!!))
+        cleanup(env)
+    }
+
+    @Test
+    fun `responder rejects mac whose secret is not among candidates`() {
+        val env = createSessionsWithCandidates(
+            macSecret = testSharedSecret,
+            candidates = listOf("44".repeat(32), "55".repeat(32))
+        )
+        val errorLatch = CountDownLatch(1)
+        var capturedError: Exception? = null
+        env.androidCallback.onError = { e ->
+            capturedError = e
+            errorLatch.countDown()
+        }
+
+        startBothSessions(env)
+
+        assertTrue("Responder should fail auth", errorLatch.await(5, TimeUnit.SECONDS))
+        assertTrue(
+            "Error should mention authentication",
+            capturedError!!.message!!.contains("Authentication")
+        )
+        cleanup(env)
+    }
+
+    /** Like createPairedSessions, but the Android responder gets a candidate list instead of a single secret. */
+    private fun createSessionsWithCandidates(macSecret: String, candidates: List<String>): SessionEnv {
+        val macToAndroidOut = PipedOutputStream()
+        val macToAndroidIn = PipedInputStream(macToAndroidOut)
+        val androidToMacOut = PipedOutputStream()
+        val androidToMacIn = PipedInputStream(androidToMacOut)
+
+        val macCallback = TestCallback()
+        val androidCallback = TestCallback()
+
+        val macSession = Session(
+            input = androidToMacIn,
+            output = macToAndroidOut,
+            isInitiator = true,
+            callback = macCallback,
+            sharedSecretHex = macSecret
+        )
+
+        val androidSession = Session(
+            input = macToAndroidIn,
+            output = androidToMacOut,
+            isInitiator = false,
+            callback = androidCallback,
+            candidateSecretsHex = candidates
+        )
+
+        return SessionEnv(macSession, androidSession, macCallback, androidCallback)
+    }
+
     private fun startBothSessions(env: SessionEnv) {
         val macThread = Thread {
             env.macSession.performHandshake()

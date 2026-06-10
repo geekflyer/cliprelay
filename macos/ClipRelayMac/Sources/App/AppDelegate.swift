@@ -264,17 +264,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - ConnectionControllerDelegate
 
 extension AppDelegate: ConnectionControllerDelegate {
-    func didChangeState(connected: Bool, deviceName: String?, token: String?) {
-        if connected, let deviceName, let token {
-            let peer = PeerSummary(
+    func didChangeState(connectedTokens: [String]) {
+        statusBarController.setConnectedPeers(peerSummaries(for: connectedTokens))
+    }
+
+    private func peerSummaries(for tokens: [String]) -> [PeerSummary] {
+        let devices = pairingManager.loadDevices()
+        return tokens.compactMap { token in
+            guard let device = devices.first(where: { $0.sharedSecret == token }) else { return nil }
+            return PeerSummary(
                 id: deviceStableID(token: token),
-                description: deviceName,
+                description: device.displayName,
                 secret: token,
                 deviceTagHex: formattedDeviceTagHex(token: token)
             )
-            statusBarController.setConnectedPeers([peer])
-        } else {
-            statusBarController.setConnectedPeers([])
         }
     }
 
@@ -347,10 +350,8 @@ extension AppDelegate: ConnectionControllerDelegate {
 
     func didChangeImageSyncSetting(enabled: Bool) {
         // Refresh the menu to update the checkmark
-        if let cc = connectionController, let token = cc.connectedToken {
-            let deviceName = cc.pairedDevices.first(where: { $0.sharedSecret == token })?.displayName ?? "Android"
-            let peer = PeerSummary(id: deviceStableID(token: token), description: deviceName, secret: token, deviceTagHex: formattedDeviceTagHex(token: token))
-            statusBarController.setConnectedPeers([peer])
+        if let cc = connectionController {
+            statusBarController.setConnectedPeers(peerSummaries(for: cc.connectedTokens))
         }
     }
 

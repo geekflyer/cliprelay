@@ -66,7 +66,7 @@ class QrScannerActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE)
         prefs.edit()
             .putString("pending_pairing_pubkey", info.publicKeyHex)
-            .putString(ClipRelayService.KEY_CONNECTED_DEVICE, info.deviceName ?: "")
+            .putString(ClipRelayService.KEY_PENDING_PAIRING_NAME, info.deviceName ?: "")
             .apply()
 
         // Signal the service to start pairing mode

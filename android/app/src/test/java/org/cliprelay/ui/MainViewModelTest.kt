@@ -7,6 +7,9 @@ import org.junit.Test
 
 class MainViewModelTest {
 
+    private val macA = PairedMacUi(id = "aabbccdd00112233", name = "Mac A")
+    private val macB = PairedMacUi(id = "eeff445566778899", name = "Mac B")
+
     @Test
     fun pairingStarted_entersConnectingState_andClearsFailedFlag() {
         val vm = MainViewModel()
@@ -27,9 +30,9 @@ class MainViewModelTest {
     @Test
     fun pairingStatus_ignoredWhenNotPairing() {
         val vm = MainViewModel()
-        vm.initState(isPaired = true, deviceName = "Mac")
+        vm.initState(macs = listOf(macA))
         vm.onPairingStatus(PairingStage.ExchangingKeys)
-        assertTrue(vm.state.value is AppState.Searching)
+        assertTrue(vm.state.value is AppState.Paired)
     }
 
     @Test
@@ -42,12 +45,22 @@ class MainViewModelTest {
     }
 
     @Test
+    fun pairingFailed_withExistingMacs_revertsToPairedAndSetsFlag() {
+        val vm = MainViewModel()
+        vm.initState(macs = listOf(macA))
+        vm.onPairingStarted()
+        vm.onPairingFailed()
+        assertEquals(AppState.Paired(listOf(macA)), vm.state.value)
+        assertTrue(vm.pairingFailed.value)
+    }
+
+    @Test
     fun pairingFailed_afterPairingComplete_isIgnored() {
         val vm = MainViewModel()
         vm.onPairingStarted()
-        vm.onPaired(deviceTag = "AB12 CD34")
+        vm.onPaired(listOf(macA))
         vm.onPairingFailed()
-        assertTrue(vm.state.value is AppState.Searching)
+        assertTrue(vm.state.value is AppState.Paired)
         assertFalse(vm.pairingFailed.value)
     }
 
@@ -73,8 +86,8 @@ class MainViewModelTest {
     fun disconnectedBroadcast_doesNotKickOutOfPairingState() {
         val vm = MainViewModel()
         vm.onPairingStarted()
-        // Service answers ACTION_QUERY_CONNECTION with connected=false on resume
-        vm.onConnectionChanged(connected = false, deviceName = null)
+        // Service answers ACTION_QUERY_CONNECTION with no connected Macs on resume
+        vm.onMacsChanged(emptyList())
         assertEquals(AppState.Pairing(PairingStage.Connecting), vm.state.value)
     }
 
@@ -82,8 +95,43 @@ class MainViewModelTest {
     fun pairedThenConnected_reachesConnectedState() {
         val vm = MainViewModel()
         vm.onPairingStarted()
-        vm.onPaired(deviceTag = "AB12 CD34")
-        vm.onConnectionChanged(connected = true, deviceName = "Mac")
-        assertTrue(vm.state.value is AppState.Connected)
+        vm.onPaired(listOf(macA))
+        vm.onMacsChanged(listOf(macA.copy(connected = true)))
+        val state = vm.state.value
+        assertTrue(state is AppState.Paired && state.anyConnected)
+    }
+
+    @Test
+    fun multipleMacs_partialConnection_reportsCounts() {
+        val vm = MainViewModel()
+        vm.initState(macs = listOf(macA, macB))
+        vm.onMacsChanged(listOf(macA.copy(connected = true), macB))
+        val state = vm.state.value as AppState.Paired
+        assertTrue(state.anyConnected)
+        assertEquals(1, state.connectedCount)
+        assertEquals(2, state.macs.size)
+    }
+
+    @Test
+    fun forgettingLastMac_returnsToUnpaired_andDisablesAutoCopy() {
+        val vm = MainViewModel()
+        vm.initState(macs = listOf(macA), autoCopyEnabled = true)
+        vm.onMacForgotten(emptyList())
+        assertEquals(AppState.Unpaired, vm.state.value)
+        assertFalse(vm.autoCopyEnabled.value)
+    }
+
+    @Test
+    fun forgettingOneOfTwoMacs_staysPaired() {
+        val vm = MainViewModel()
+        vm.initState(macs = listOf(macA, macB), autoCopyEnabled = true)
+        vm.onMacForgotten(listOf(macB))
+        assertEquals(AppState.Paired(listOf(macB)), vm.state.value)
+        assertTrue(vm.autoCopyEnabled.value)
+    }
+
+    @Test
+    fun tagDisplay_formatsFirstFourBytes() {
+        assertEquals("AABB CCDD", macA.tagDisplay)
     }
 }

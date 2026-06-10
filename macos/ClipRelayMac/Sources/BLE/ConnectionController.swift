@@ -1,52 +1,97 @@
-// Unified BLE connection controller: owns the full lifecycle from scanning through
-// session ready state, with a single cleanup path and generation-based cancellation.
+// BLE connection controller: maintains one connection per paired Android device
+// concurrently. Each device has its own small state machine, backoff, and session;
+// scanning runs whenever any paired device is unconnected (or pairing is active).
 
 import CoreBluetooth
 import CryptoKit
 import Foundation
 import os
 
-// MARK: - Connection State
+// MARK: - Per-Device State
 
-enum ConnectionState: CustomStringConvertible {
+enum DeviceState: CustomStringConvertible {
     case idle
-    case scanning
-    case bleConnecting(CBPeripheral, CBL2CAPPSM, token: String, generation: UInt)
-    case l2capOpening(CBPeripheral, token: String, generation: UInt)
-    case pairingConnecting(CBPeripheral, CBL2CAPPSM, generation: UInt)
-    case pairingL2CAP(CBPeripheral, generation: UInt)
-    case pairingHandshake(Session, generation: UInt)
-    case handshaking(Session, token: String, generation: UInt)
-    case ready(Session, token: String, generation: UInt)
-
-    var generation: UInt? {
-        switch self {
-        case .idle, .scanning:
-            return nil
-        case .bleConnecting(_, _, _, let g),
-             .l2capOpening(_, _, let g),
-             .pairingConnecting(_, _, let g),
-             .pairingL2CAP(_, let g),
-             .pairingHandshake(_, let g),
-             .handshaking(_, _, let g),
-             .ready(_, _, let g):
-            return g
-        }
-    }
+    case bleConnecting(CBL2CAPPSM)
+    case l2capOpening
+    case handshaking(Session)
+    case ready(Session)
 
     var description: String {
         switch self {
         case .idle: return "idle"
-        case .scanning: return "scanning"
-        case .bleConnecting(_, let psm, _, let g): return "bleConnecting(psm=\(psm), gen=\(g))"
-        case .l2capOpening(_, _, let g): return "l2capOpening(gen=\(g))"
-        case .pairingConnecting(_, let psm, let g): return "pairingConnecting(psm=\(psm), gen=\(g))"
-        case .pairingL2CAP(_, let g): return "pairingL2CAP(gen=\(g))"
-        case .pairingHandshake(_, let g): return "pairingHandshake(gen=\(g))"
-        case .handshaking(_, _, let g): return "handshaking(gen=\(g))"
-        case .ready(_, _, let g): return "ready(gen=\(g))"
+        case .bleConnecting(let psm): return "bleConnecting(psm=\(psm))"
+        case .l2capOpening: return "l2capOpening"
+        case .handshaking: return "handshaking"
+        case .ready: return "ready"
         }
     }
+
+    var session: Session? {
+        switch self {
+        case .handshaking(let s), .ready(let s): return s
+        default: return nil
+        }
+    }
+
+    var isReady: Bool {
+        if case .ready = self { return true }
+        return false
+    }
+
+    var isIdle: Bool {
+        if case .idle = self { return true }
+        return false
+    }
+}
+
+/// Exponential reconnect backoff: 1, 2, 4, ... capped at maxReconnectDelay.
+struct ReconnectBackoff {
+    private(set) var delay: TimeInterval = 1.0
+
+    mutating func next() -> TimeInterval {
+        let current = delay
+        delay = min(delay * 2, ConnectionController.maxReconnectDelay)
+        return current
+    }
+
+    mutating func reset() {
+        delay = 1.0
+    }
+}
+
+/// Connection bookkeeping for one paired Android device. Only accessed on the
+/// controller's serial queue.
+final class DeviceConnection {
+    let token: String
+    var state: DeviceState = .idle
+    /// Peripheral of the current attempt/connection (kept outside `state` so it
+    /// can always be cancelled during teardown).
+    var peripheral: CBPeripheral?
+    /// The open L2CAP channel. Must stay retained — releasing a CBL2CAPChannel
+    /// closes the underlying connection.
+    var channel: CBL2CAPChannel?
+    var connectingStartTime: Date?
+    var backoff = ReconnectBackoff()
+    /// Earliest time the next connect attempt may start (per-device flap guard).
+    var nextAttemptAt = Date.distantPast
+    /// Set on version mismatch: stays paired but no reconnect attempts (and no
+    /// repeated alerts) until the next Bluetooth power cycle.
+    var suspended = false
+    var adapter: SessionAdapter?
+    var settingsProvider: DeviceSettingsProvider?
+
+    init(token: String) {
+        self.token = token
+    }
+}
+
+// MARK: - Pairing State
+
+private enum PairingPhase {
+    case scanning
+    case connecting(CBPeripheral, CBL2CAPPSM)
+    case l2capOpening(CBPeripheral)
+    case handshake(Session)
 }
 
 // MARK: - Connection Error
@@ -60,7 +105,7 @@ enum ConnectionError {
 // MARK: - Delegate
 
 protocol ConnectionControllerDelegate: AnyObject {
-    func didChangeState(connected: Bool, deviceName: String?, token: String?)
+    func didChangeState(connectedTokens: [String])
     func didReceiveClipboard(text: String)
     func didReceiveImage(data: Data, contentType: String)
     func didCompletePairing(deviceName: String?)
@@ -88,30 +133,34 @@ class ConnectionController: NSObject {
 
     // MARK: State
 
-    /// Internal state — only access from the connection queue.
-    private(set) var state: ConnectionState = .idle
+    /// One connection record per paired device, keyed by token. Queue-only.
+    private(set) var devices: [String: DeviceConnection] = [:]
+    /// Bumped when everything is torn down (BT off, disconnect) so in-flight
+    /// session callbacks from before the teardown are ignored.
     private(set) var generation: UInt = 0
     weak var delegate: ConnectionControllerDelegate?
 
-    /// Main-thread-safe cached values, updated on every state transition.
-    /// Use these from AppDelegate/UI closures instead of reading `state` directly.
+    /// Main-thread-safe cached values, updated on every readiness change.
     private(set) var isConnected: Bool = false
-    private(set) var connectedToken: String?
+    private(set) var connectedTokens: [String] = []
+    var connectedToken: String? { connectedTokens.first }
 
     // MARK: BLE
 
     private var centralManager: CBCentralManager!
-    private var l2capChannel: CBL2CAPChannel?
-    private var connectingStartTime: Date?
-    /// Last peripheral we attempted to connect to. Retained across transitionToIdle
-    /// so we can re-cancel it when BT powers on (cancelPeripheralConnection during
-    /// BT-off may be a no-op, leaving internal CB connection bookkeeping dangling).
-    private var lastAttemptedPeripheral: CBPeripheral?
+    /// Peripherals whose cancel happened while Bluetooth was off (a no-op that
+    /// leaves dangling CoreBluetooth connection bookkeeping). Re-cancelled at
+    /// poweredOn. Cancels issued while powered on take effect immediately and
+    /// are not tracked.
+    private var staleAttemptedPeripherals: [UUID: CBPeripheral] = [:]
 
-    // MARK: Reconnect
+    private func rememberStaleAttemptIfNeeded(_ peripheral: CBPeripheral) {
+        guard centralManager?.state != .poweredOn else { return }
+        staleAttemptedPeripherals[peripheral.identifier] = peripheral
+    }
 
-    private var reconnectDelay: TimeInterval = 1.0
-    private var reconnectTimer: DispatchSourceTimer?
+    // MARK: Timers
+
     private var healthCheckTimer: DispatchSourceTimer?
 
     // MARK: Pairing
@@ -119,13 +168,12 @@ class ConnectionController: NSObject {
     private let pairingManager: PairingManager
     private var pairingTag: Data?
     private var pairingPrivateKey: Curve25519.KeyAgreement.PrivateKey?
-
-    // MARK: Session Adapter
-
-    /// Retained to prevent adapter deallocation during session lifetime.
-    fileprivate var currentAdapter: SessionAdapter?
-    /// Strong reference to settings provider (Session.settingsProvider is weak).
-    private var settingsProviderRef: DeviceSettingsProvider?
+    private var pairingPhase: PairingPhase = .scanning
+    private var pairingPeripheral: CBPeripheral?
+    /// Retained for the same reason as DeviceConnection.channel.
+    private var pairingChannel: CBL2CAPChannel?
+    private var pairingConnectingStartTime: Date?
+    private var pairingAdapter: SessionAdapter?
 
     // MARK: Dedup
 
@@ -161,115 +209,73 @@ class ConnectionController: NSObject {
         logger.notice("\(message, privacy: .public)")
     }
 
-    // MARK: - State Transitions
+    // MARK: - Device list
 
-    private func transition(to newState: ConnectionState, reason: String) {
-        let wasReady = isReady(state)
-        let oldDesc = state.description
-        state = newState
-        let nowReady = isReady(state)
-        log("[\(reason)] \(oldDesc) → \(newState)")
-
-        if wasReady != nowReady {
-            let token: String?
-            let deviceName: String?
-            switch newState {
-            case .ready(_, let t, _):
-                token = t
-                deviceName = pairingManager.loadDevices().first(where: { $0.sharedSecret == t })?.displayName
-            default:
-                token = nil
-                deviceName = nil
+    /// Reconcile the per-device connection records with the pairing store.
+    private func syncDevicesWithStore() {
+        let stored = Set(pairingManager.loadDevices().map(\.sharedSecret))
+        for token in stored where devices[token] == nil {
+            devices[token] = DeviceConnection(token: token)
+        }
+        for token in devices.keys where !stored.contains(token) {
+            if let device = devices[token] {
+                closeConnection(of: device)
             }
-            let connected = nowReady
-            // Update main-thread-safe cached values
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.isConnected = connected
-                self.connectedToken = token
-                self.delegate?.didChangeState(connected: connected, deviceName: deviceName, token: token)
-            }
+            devices.removeValue(forKey: token)
         }
     }
 
-    private func isReady(_ state: ConnectionState) -> Bool {
-        if case .ready = state { return true }
-        return false
-    }
-
-    // MARK: - Cleanup (single path)
-
-    private func transitionToIdle(reason: String, reconnect: Bool, preservePairingContext: Bool = false) {
-        // Cancel peripheral connection if we have one
-        if let peripheral = trackedPeripheral(from: state) ?? lastAttemptedPeripheral {
+    /// Tear down a device's session/peripheral and return it to idle.
+    /// Does NOT notify the delegate — callers decide.
+    private func closeConnection(of device: DeviceConnection) {
+        device.state.session?.close()
+        if let peripheral = device.peripheral {
             centralManager?.cancelPeripheralConnection(peripheral)
+            rememberStaleAttemptIfNeeded(peripheral)
         }
+        device.peripheral = nil
+        device.channel = nil
+        device.connectingStartTime = nil
+        device.adapter = nil
+        device.settingsProvider = nil
+        device.state = .idle
+    }
 
-        // Stop scanning
-        if case .scanning = state {
-            centralManager?.stopScan()
+    /// A connect attempt failed or the connection dropped: back off and retry
+    /// via scanning.
+    private func failAttempt(_ device: DeviceConnection, reason: String) {
+        let wasReady = device.state.isReady
+        let delay = device.backoff.next()
+        log("[\(reason)] \(device.token.prefix(8))… \(device.state) → idle (retry in \(String(format: "%.1f", delay))s)")
+        closeConnection(of: device)
+        device.nextAttemptAt = Date().addingTimeInterval(delay)
+        if wasReady {
+            notifyConnectionChanged()
         }
+        ensureScanning()
+    }
 
-        // Close session if active
-        if let session = activeSession(from: state) {
-            session.close()
-        }
+    // MARK: - Scanning
 
-        // Clear all connection state (pendingClipboard intentionally preserved
-        // across reconnection cycles so it can be sent after reconnecting)
-        l2capChannel = nil
-        connectingStartTime = nil
-        if !preservePairingContext {
-            pairingTag = nil
-            pairingPrivateKey = nil
-        }
-        settingsProviderRef = nil
-
-        // Increment generation so any in-flight callbacks from the old connection are ignored
-        generation &+= 1
-
-        transition(to: .idle, reason: reason)
-
-        if reconnect {
-            scheduleReconnect()
+    /// Start or stop scanning based on need: scanning runs while pairing is
+    /// active or any paired device is unconnected.
+    fileprivate func ensureScanning() {
+        guard let centralManager, centralManager.state == .poweredOn else { return }
+        let needScan = pairingTag != nil
+            || devices.values.contains { $0.state.isIdle && !$0.suspended }
+        if needScan && !centralManager.isScanning {
+            log("Scanning (paired: \(devices.count), pairing: \(pairingTag != nil))")
+            centralManager.scanForPeripherals(
+                withServices: [Self.serviceUUID],
+                options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+            )
+        } else if !needScan && centralManager.isScanning {
+            log("All paired devices connected — stopping scan")
+            centralManager.stopScan()
         }
     }
 
-    // MARK: - State Helpers
-
-    private func trackedPeripheral(from state: ConnectionState) -> CBPeripheral? {
-        switch state {
-        case .bleConnecting(let p, _, _, _),
-             .l2capOpening(let p, _, _),
-             .pairingConnecting(let p, _, _),
-             .pairingL2CAP(let p, _):
-            return p
-        case .idle, .scanning, .pairingHandshake, .handshaking, .ready:
-            return nil
-        }
-    }
-
-    private func activeSession(from state: ConnectionState) -> Session? {
-        switch state {
-        case .pairingHandshake(let s, _),
-             .handshaking(let s, _, _),
-             .ready(let s, _, _):
-            return s
-        default:
-            return nil
-        }
-    }
-
-    private func shouldPreservePairingContext(for state: ConnectionState) -> Bool {
-        switch state {
-        case .pairingConnecting, .pairingL2CAP, .pairingHandshake:
-            return true
-        default:
-            return false
-        }
-    }
-
-    // MARK: - Timers
+    // MARK: - Health Check
 
     private func startHealthCheck() {
         healthCheckTimer?.cancel()
@@ -280,100 +286,120 @@ class ConnectionController: NSObject {
         healthCheckTimer = timer
     }
 
-    private func scheduleReconnect() {
-        reconnectTimer?.cancel()
-        let delay = reconnectDelay
-        log("Scheduling reconnect in \(String(format: "%.1f", delay))s")
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + delay)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            self.reconnectTimer = nil
-            self.startScanning()
-        }
-        timer.resume()
-        reconnectTimer = timer
-        reconnectDelay = min(reconnectDelay * 2, Self.maxReconnectDelay)
-    }
-
-    // MARK: - Scanning
-
-    func startScanning() {
-        dispatchPrecondition(condition: .onQueue(queue))
-        guard let centralManager else {
-            log("startScanning: no central manager")
-            return
-        }
-        guard centralManager.state == .poweredOn else {
-            log("startScanning: BT not poweredOn (\(centralManager.state.rawValue))")
-            return
-        }
-        guard case .idle = state else {
-            log("startScanning: not idle (\(state))")
-            return
-        }
-        log("Scanning (paired: \(pairedDeviceTags().count))")
-        transition(to: .scanning, reason: "startScanning")
-        centralManager.scanForPeripherals(
-            withServices: [Self.serviceUUID],
-            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
-        )
-    }
-
-    // MARK: - Health Check
-
     private func performHealthCheck() {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard centralManager.state == .poweredOn else { return }
+        guard let centralManager, centralManager.state == .poweredOn else { return }
 
-        switch state {
-        case .bleConnecting, .l2capOpening, .pairingConnecting, .pairingL2CAP:
-            if let start = connectingStartTime,
-               Date().timeIntervalSince(start) > Self.connectingTimeout {
-                log("Health check: connecting timed out")
-                transitionToIdle(
-                    reason: "connectingTimeout",
-                    reconnect: true,
-                    preservePairingContext: shouldPreservePairingContext(for: state)
-                )
+        // Per-device connecting timeout
+        for device in devices.values {
+            switch device.state {
+            case .bleConnecting, .l2capOpening:
+                if let start = device.connectingStartTime,
+                   Date().timeIntervalSince(start) > Self.connectingTimeout {
+                    failAttempt(device, reason: "connectingTimeout")
+                }
+            default:
+                break
             }
-        case .scanning:
-            // Cycle the scan to pick up new advertisements
-            centralManager.stopScan()
-            centralManager.scanForPeripherals(
-                withServices: [Self.serviceUUID],
-                options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
-            )
-        case .idle:
-            resetReconnectDelay()
-            startScanning()
-        case .handshaking, .ready:
-            break
-        case .pairingHandshake:
-            break
         }
+
+        // Pairing connecting timeout
+        if pairingTag != nil {
+            switch pairingPhase {
+            case .connecting, .l2capOpening:
+                if let start = pairingConnectingStartTime,
+                   Date().timeIntervalSince(start) > Self.connectingTimeout {
+                    log("Health check: pairing connect timed out — back to scanning")
+                    abortPairingAttempt()
+                }
+            default:
+                break
+            }
+        }
+
+        // Cycle the scan to pick up new advertisements
+        if centralManager.isScanning {
+            centralManager.stopScan()
+        }
+        ensureScanning()
     }
 
-    // MARK: - Reconnect Delay
+    // MARK: - Teardown
 
-    func resetReconnectDelay() {
-        reconnectDelay = 1.0
+    /// Tear down all connections (BT off, app shutdown). Preserves pairing
+    /// context when requested so pairing resumes once BT returns.
+    private func teardownAll(reason: String, preservePairingContext: Bool) {
+        log("[\(reason)] tearing down all connections")
+        for device in devices.values {
+            closeConnection(of: device)
+            device.backoff.reset()
+            device.nextAttemptAt = .distantPast
+        }
+        if case .handshake(let session) = pairingPhase {
+            session.close()
+        }
+        if let peripheral = pairingPeripheral {
+            centralManager?.cancelPeripheralConnection(peripheral)
+            rememberStaleAttemptIfNeeded(peripheral)
+        }
+        pairingPeripheral = nil
+        pairingChannel = nil
+        pairingConnectingStartTime = nil
+        pairingAdapter = nil
+        pairingPhase = .scanning
+        if !preservePairingContext {
+            pairingTag = nil
+            pairingPrivateKey = nil
+        }
+        if centralManager?.isScanning == true {
+            centralManager?.stopScan()
+        }
+        generation &+= 1
+        notifyConnectionChanged()
     }
 
-    @discardableResult
-    func nextReconnectDelay() -> TimeInterval {
-        let current = reconnectDelay
-        reconnectDelay = min(reconnectDelay * 2, Self.maxReconnectDelay)
-        return current
+    // MARK: - Notifications
+
+    fileprivate func notifyConnectionChanged() {
+        let readyTokens = devices.values
+            .filter { $0.state.isReady }
+            .map(\.token)
+            .sorted()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isConnected = !readyTokens.isEmpty
+            self.connectedTokens = readyTokens
+            self.delegate?.didChangeState(connectedTokens: readyTokens)
+        }
     }
 
     // MARK: - Paired Device Lookup
 
-    private func pairedDeviceTags() -> [(token: String, tag: Data)] {
-        pairingManager.loadDevices().compactMap { device in
-            guard let tag = pairingManager.deviceTag(for: device.sharedSecret) else { return nil }
-            return (token: device.sharedSecret, tag: tag)
+    /// First device that matches the advertised tag AND is eligible for a
+    /// connect attempt. Several records can share a tag (e.g. a stale record
+    /// left behind by re-pairing the same phone), so don't stop at the first
+    /// tag match — a perpetually-failing stale record must not shadow the
+    /// valid one.
+    private func connectableDevice(matching tag: Data) -> DeviceConnection? {
+        let now = Date()
+        for paired in pairingManager.loadDevices() {
+            guard pairingManager.scanTag(for: paired) == tag,
+                  let device = devices[paired.sharedSecret],
+                  device.state.isIdle,
+                  !device.suspended,
+                  now >= device.nextAttemptAt
+            else { continue }
+            return device
         }
+        return nil
+    }
+
+    private func device(of peripheral: CBPeripheral) -> DeviceConnection? {
+        devices.values.first { $0.peripheral === peripheral }
+    }
+
+    private func device(of session: Session) -> DeviceConnection? {
+        devices.values.first { $0.state.session === session }
     }
 
     // MARK: - Manufacturer Data Extraction
@@ -397,9 +423,7 @@ class ConnectionController: NSObject {
             guard let self else { return }
             self.healthCheckTimer?.cancel()
             self.healthCheckTimer = nil
-            self.reconnectTimer?.cancel()
-            self.reconnectTimer = nil
-            self.transitionToIdle(reason: "disconnect", reconnect: false)
+            self.teardownAll(reason: "disconnect", preservePairingContext: false)
         }
     }
 }
@@ -415,8 +439,7 @@ extension ConnectionController {
     // MARK: Pairing
 
     /// Start pairing flow. Generates ECDH key pair, returns QR URI.
-    /// PairingManager operations happen on the calling thread (main).
-    /// BLE scanning dispatched to connection queue.
+    /// Existing device connections stay up — only the scan gains a pairing tag.
     func startPairing() -> PairingInfo? {
         pairingManager.removePendingDevices()
         let privateKey = pairingManager.generateKeyPair()
@@ -425,12 +448,8 @@ extension ConnectionController {
         queue.async { [self] in
             pairingPrivateKey = privateKey
             pairingTag = tag
-            transitionToIdle(
-                reason: "entering pairing mode",
-                reconnect: false,
-                preservePairingContext: true
-            )
-            startScanning()
+            pairingPhase = .scanning
+            ensureScanning()
         }
         return PairingInfo(uri: uri)
     }
@@ -439,14 +458,29 @@ extension ConnectionController {
         queue.async { [self] in
             pairingManager.clearEphemeralKey()
             pairingManager.removePendingDevices()
-            switch state {
-            case .scanning, .pairingConnecting, .pairingL2CAP, .pairingHandshake:
-                transitionToIdle(reason: "pairing cancelled", reconnect: false)
-            default:
-                pairingTag = nil
-                pairingPrivateKey = nil
-            }
+            abortPairingAttempt()
+            pairingTag = nil
+            pairingPrivateKey = nil
+            ensureScanning()
         }
+    }
+
+    /// Abort an in-flight pairing connection attempt, returning the pairing
+    /// flow to scanning (pairing tag/key stay set unless cleared by caller).
+    fileprivate func abortPairingAttempt() {
+        if case .handshake(let session) = pairingPhase {
+            session.close()
+        }
+        if let peripheral = pairingPeripheral {
+            centralManager?.cancelPeripheralConnection(peripheral)
+            rememberStaleAttemptIfNeeded(peripheral)
+        }
+        pairingPeripheral = nil
+        pairingChannel = nil
+        pairingConnectingStartTime = nil
+        pairingAdapter = nil
+        pairingPhase = .scanning
+        ensureScanning()
     }
 
     // MARK: Sending
@@ -455,11 +489,23 @@ extension ConnectionController {
         queue.async { [self] in
             guard let data = text.data(using: .utf8) else { return }
             let hash = Session.sha256Hex(data)
-            guard hash != lastReceivedTextHash else { return }
-            pendingClipboard = data
-            if case .ready(let session, _, _) = state {
-                session.sendClipboard(data)
-                log("Queued clipboard (\(data.count) bytes)")
+            // Don't cache text we just received for reconnect-replay — it would
+            // be sent back to its originator when that device reconnects.
+            // (Live relay to *other* devices below is unaffected.)
+            if hash != lastReceivedTextHash {
+                pendingClipboard = data
+            }
+            var sentCount = 0
+            for device in devices.values where device.state.isReady {
+                // Skip the device that delivered this text to us (echo guard);
+                // other devices still receive it, which relays a clipboard
+                // from one phone to the rest.
+                if device.adapter?.lastTextHash == hash { continue }
+                device.state.session?.sendClipboard(data)
+                sentCount += 1
+            }
+            if sentCount > 0 {
+                log("Queued clipboard (\(data.count) bytes) to \(sentCount) device(s)")
             } else {
                 log("Clipboard cached for reconnect (\(data.count) bytes)")
             }
@@ -470,9 +516,10 @@ extension ConnectionController {
         queue.async { [self] in
             let hash = Session.sha256Hex(data)
             guard hash != lastReceivedImageHash else { return }
-            guard case .ready(let session, let token, _) = state else { return }
-            guard imageSyncEnabled(for: token) else { return }
-            session.sendImage(data, contentType: contentType)
+            for device in devices.values where device.state.isReady {
+                guard imageSyncEnabled(for: device.token) else { continue }
+                device.state.session?.sendImage(data, contentType: contentType)
+            }
         }
     }
 
@@ -481,25 +528,17 @@ extension ConnectionController {
     func forgetDevice(token: String, completion: (() -> Void)? = nil) {
         queue.async { [self] in
             pairingManager.removeDevice(secret: token)
-            defer {
-                if let completion {
-                    DispatchQueue.main.async(execute: completion)
+            if let device = devices[token] {
+                let wasReady = device.state.isReady
+                closeConnection(of: device)
+                devices.removeValue(forKey: token)
+                if wasReady {
+                    notifyConnectionChanged()
                 }
             }
-            switch state {
-            case .ready(_, let t, _) where t == token:
-                transitionToIdle(reason: "device forgotten", reconnect: false)
-            case .handshaking(_, let t, _) where t == token:
-                transitionToIdle(reason: "device forgotten", reconnect: false)
-            case .bleConnecting(_, _, let t, _) where t == token:
-                transitionToIdle(reason: "device forgotten", reconnect: false)
-            case .l2capOpening(_, let t, _) where t == token:
-                transitionToIdle(reason: "device forgotten", reconnect: false)
-            default:
-                break
-            }
-            if case .idle = state, !pairingManager.loadDevices().isEmpty {
-                startScanning()
+            ensureScanning()
+            if let completion {
+                DispatchQueue.main.async(execute: completion)
             }
         }
     }
@@ -510,28 +549,30 @@ extension ConnectionController {
 
     // MARK: Settings
 
+    /// Toggle image sync. With multiple connected devices the new value is
+    /// applied to all of them (the setting syncs last-write-wins anyway).
     func toggleImageSync() {
         queue.async { [self] in
-            let secret: String?
-            if case .ready(_, let token, _) = state {
-                secret = token
-            } else {
-                secret = pairingManager.loadDevices().first?.sharedSecret
-            }
-            guard let secret else { return }
-            let devices = pairingManager.loadDevices()
-            guard let device = devices.first(where: { $0.sharedSecret == secret }) else { return }
-            let newEnabled = !device.richMediaEnabled
+            let readyTokens = devices.values.filter { $0.state.isReady }.map(\.token)
+            let targets = readyTokens.isEmpty
+                ? pairingManager.loadDevices().prefix(1).map(\.sharedSecret)
+                : readyTokens
+            guard let first = targets.first else { return }
+            let current = pairingManager.loadDevices()
+                .first(where: { $0.sharedSecret == first })?.richMediaEnabled ?? false
+            let newEnabled = !current
             let changedAt = Int64(Date().timeIntervalSince1970)
-            pairingManager.setRichMediaEnabled(newEnabled, changedAt: changedAt, forSecret: secret)
-            if case .ready(let session, _, _) = state {
-                session.sendConfigUpdate()
+            for token in targets {
+                pairingManager.setRichMediaEnabled(newEnabled, changedAt: changedAt, forSecret: token)
             }
-            log("Image sync toggled to \(newEnabled)")
+            for device in devices.values where device.state.isReady {
+                device.state.session?.sendConfigUpdate()
+            }
+            log("Image sync toggled to \(newEnabled) for \(targets.count) device(s)")
         }
     }
 
-    /// Safe to call from main thread — uses cached `connectedToken`.
+    /// Safe to call from main thread — uses cached `connectedTokens`.
     var isImageSyncEnabled: Bool {
         guard let secret = connectedToken else { return false }
         return imageSyncEnabled(for: secret)
@@ -550,21 +591,24 @@ extension ConnectionController: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         log("BT state: \(central.state.rawValue)")
         if central.state == .poweredOn {
-            // Re-cancel any peripheral from before the power cycle. cancelPeripheralConnection
+            // Re-cancel peripherals from before the power cycle. cancelPeripheralConnection
             // during BT-off is a no-op, so internal CB connection bookkeeping can accumulate
-            // across brief power nap cycles (BT on for ~2s, off, repeat). Re-cancelling now
-            // that BT is back on releases those dangling slots.
-            if let stale = lastAttemptedPeripheral {
+            // across brief power nap cycles. Re-cancelling now releases dangling slots.
+            for stale in staleAttemptedPeripherals.values {
                 central.cancelPeripheralConnection(stale)
-                lastAttemptedPeripheral = nil
             }
-            resetReconnectDelay()
+            staleAttemptedPeripherals.removeAll()
+            syncDevicesWithStore()
+            for device in devices.values {
+                device.backoff.reset()
+                device.nextAttemptAt = .distantPast
+                device.suspended = false  // version-mismatch suspension lifts on BT cycle
+            }
             startHealthCheck()
-            startScanning()
+            ensureScanning()
         } else {
-            transitionToIdle(
+            teardownAll(
                 reason: "BT state \(central.state.rawValue)",
-                reconnect: false,
                 preservePairingContext: pairingTag != nil
             )
         }
@@ -580,70 +624,57 @@ extension ConnectionController: CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        guard case .scanning = state else { return }
-
         guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
               let deviceTag = Self.extractDeviceTag(from: manufacturerData),
               let psm = Self.extractPSM(from: manufacturerData)
         else { return }
 
-        // Check for active pairing request
+        // Active pairing request takes priority
         if let pairingTag, pairingTag == deviceTag {
-            central.stopScan()
-            generation &+= 1
-            transition(
-                to: .pairingConnecting(peripheral, psm, generation: generation),
-                reason: "pairingDiscovered"
-            )
-            connectingStartTime = Date()
-            lastAttemptedPeripheral = peripheral
+            guard case .scanning = pairingPhase else { return }
+            log("Pairing target discovered, PSM=\(psm), RSSI=\(RSSI)")
+            pairingPhase = .connecting(peripheral, psm)
+            pairingPeripheral = peripheral
+            pairingConnectingStartTime = Date()
             peripheral.delegate = self
             central.connect(peripheral, options: nil)
+            ensureScanning()
             return
         }
 
-        // In pairing mode, only match the pairing tag — don't connect to existing paired devices
+        // In pairing mode, only match the pairing tag — don't start new
+        // connections to existing paired devices (live ones stay connected).
         if pairingTag != nil { return }
 
-        // Check against paired devices
-        let paired = pairedDeviceTags()
-        if let matched = paired.first(where: { $0.tag == deviceTag }) {
-            log("Matched device tag, PSM=\(psm), RSSI=\(RSSI)")
-            central.stopScan()
-            generation &+= 1
-            transition(
-                to: .bleConnecting(peripheral, psm, token: matched.token, generation: generation),
-                reason: "pairedDeviceDiscovered"
-            )
-            connectingStartTime = Date()
-            lastAttemptedPeripheral = peripheral
-            peripheral.delegate = self
-            central.connect(peripheral, options: nil)
-        }
+        // Match against paired devices that are idle and past their backoff
+        guard let device = connectableDevice(matching: deviceTag) else { return }
+
+        log("Matched device tag for \(device.token.prefix(8))…, PSM=\(psm), RSSI=\(RSSI)")
+        device.state = .bleConnecting(psm)
+        device.peripheral = peripheral
+        device.connectingStartTime = Date()
+        peripheral.delegate = self
+        central.connect(peripheral, options: nil)
+        // Keep scanning if other devices are still unconnected
+        ensureScanning()
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        switch state {
-        case .bleConnecting(_, let psm, let token, let gen) where gen == generation:
-            transition(
-                to: .l2capOpening(peripheral, token: token, generation: gen),
-                reason: "didConnect"
-            )
-            connectingStartTime = Date()  // reset for L2CAP open timeout
+        if peripheral === pairingPeripheral, case .connecting(_, let psm) = pairingPhase {
+            pairingPhase = .l2capOpening(peripheral)
+            pairingConnectingStartTime = Date()  // reset for L2CAP open timeout
             peripheral.openL2CAPChannel(psm)
-
-        case .pairingConnecting(_, let psm, let gen) where gen == generation:
-            transition(
-                to: .pairingL2CAP(peripheral, generation: gen),
-                reason: "didConnect(pairing)"
-            )
-            connectingStartTime = Date()  // reset for L2CAP open timeout
-            peripheral.openL2CAPChannel(psm)
-
-        default:
-            log("Stale didConnect (\(state)), cancelling")
-            central.cancelPeripheralConnection(peripheral)
+            return
         }
+
+        guard let device = device(of: peripheral), case .bleConnecting(let psm) = device.state else {
+            log("Stale didConnect, cancelling")
+            central.cancelPeripheralConnection(peripheral)
+            return
+        }
+        device.state = .l2capOpening
+        device.connectingStartTime = Date()  // reset for L2CAP open timeout
+        peripheral.openL2CAPChannel(psm)
     }
 
     func centralManager(
@@ -653,11 +684,13 @@ extension ConnectionController: CBCentralManagerDelegate {
     ) {
         log("didFailToConnect: \(error?.localizedDescription ?? "unknown")")
         central.cancelPeripheralConnection(peripheral)
-        transitionToIdle(
-            reason: "didFailToConnect",
-            reconnect: true,
-            preservePairingContext: shouldPreservePairingContext(for: state)
-        )
+        if peripheral === pairingPeripheral {
+            abortPairingAttempt()
+            return
+        }
+        if let device = device(of: peripheral) {
+            failAttempt(device, reason: "didFailToConnect")
+        }
     }
 
     func centralManager(
@@ -665,27 +698,16 @@ extension ConnectionController: CBCentralManagerDelegate {
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
-        log("didDisconnect (\(state)): \(error?.localizedDescription ?? "clean")")
-
-        guard state.generation == generation else {
-            log("Stale didDisconnect (state gen \(state.generation?.description ?? "nil") != \(generation))")
+        log("didDisconnect: \(error?.localizedDescription ?? "clean")")
+        if peripheral === pairingPeripheral {
+            abortPairingAttempt()
             return
         }
-
-        switch state {
-        case .bleConnecting, .l2capOpening:
-            transitionToIdle(reason: "didDisconnect(connecting)", reconnect: true)
-        case .pairingConnecting, .pairingL2CAP, .pairingHandshake:
-            transitionToIdle(
-                reason: "didDisconnect(pairing)",
-                reconnect: true,
-                preservePairingContext: true
-            )
-        case .handshaking, .ready:
-            transitionToIdle(reason: "didDisconnect(session)", reconnect: true)
-        case .idle, .scanning:
-            log("didDisconnect while \(state), ignoring")
+        guard let device = device(of: peripheral) else {
+            log("didDisconnect for unknown peripheral, ignoring")
+            return
         }
+        failAttempt(device, reason: "didDisconnect")
     }
 }
 
@@ -694,41 +716,48 @@ extension ConnectionController: CBCentralManagerDelegate {
 extension ConnectionController: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
-        connectingStartTime = nil
+        let isPairing = peripheral === pairingPeripheral
 
         if let error {
             log("L2CAP open error: \(error.localizedDescription)")
-            transitionToIdle(
-                reason: "L2CAP open error",
-                reconnect: true,
-                preservePairingContext: shouldPreservePairingContext(for: state)
-            )
+            if isPairing {
+                abortPairingAttempt()
+            } else if let device = device(of: peripheral) {
+                failAttempt(device, reason: "L2CAP open error")
+            }
             return
         }
 
         guard let channel else {
             log("L2CAP open returned nil channel")
-            transitionToIdle(
-                reason: "L2CAP nil channel",
-                reconnect: true,
-                preservePairingContext: shouldPreservePairingContext(for: state)
-            )
+            if isPairing {
+                abortPairingAttempt()
+            } else if let device = device(of: peripheral) {
+                failAttempt(device, reason: "L2CAP nil channel")
+            }
             return
         }
 
-        l2capChannel = channel
-
-        switch state {
-        case .l2capOpening(_, let token, let gen) where gen == generation:
-            startSession(channel: channel, token: token, gen: gen, isPairing: false)
-
-        case .pairingL2CAP(_, let gen) where gen == generation:
-            startSession(channel: channel, token: nil, gen: gen, isPairing: true)
-
-        default:
-            log("Stale didOpen (\(state)), cancelling")
-            centralManager?.cancelPeripheralConnection(peripheral)
+        if isPairing {
+            guard case .l2capOpening = pairingPhase else {
+                log("Stale pairing didOpen, cancelling")
+                centralManager?.cancelPeripheralConnection(peripheral)
+                return
+            }
+            pairingConnectingStartTime = nil
+            pairingChannel = channel
+            startSession(channel: channel, device: nil)
+            return
         }
+
+        guard let device = device(of: peripheral), case .l2capOpening = device.state else {
+            log("Stale didOpen, cancelling")
+            centralManager?.cancelPeripheralConnection(peripheral)
+            return
+        }
+        device.connectingStartTime = nil
+        device.channel = channel
+        startSession(channel: channel, device: device)
     }
 }
 
@@ -736,14 +765,16 @@ extension ConnectionController: CBPeripheralDelegate {
 
 extension ConnectionController {
 
-    fileprivate func startSession(channel: CBL2CAPChannel, token: String?, gen: UInt, isPairing: Bool) {
+    /// Start a session on an opened L2CAP channel. `device == nil` means this
+    /// is the pairing flow.
+    fileprivate func startSession(channel: CBL2CAPChannel, device: DeviceConnection?) {
         guard let inputStream = channel.inputStream, let outputStream = channel.outputStream else {
             log("L2CAP channel missing streams")
-            transitionToIdle(
-                reason: "missing streams",
-                reconnect: true,
-                preservePairingContext: isPairing
-            )
+            if let device {
+                failAttempt(device, reason: "missing streams")
+            } else {
+                abortPairingAttempt()
+            }
             return
         }
 
@@ -753,40 +784,36 @@ extension ConnectionController {
         inputStream.open()
         outputStream.open()
 
-        let adapter = SessionAdapter(controller: self, generation: gen)
-        currentAdapter = adapter
+        let adapter = SessionAdapter(controller: self, generation: generation)
 
         let session: Session
-        if isPairing {
+        if let device {
+            let settingsProvider = DeviceSettingsProvider(pairingManager: pairingManager, secret: device.token)
+            session = Session(inputStream: inputStream, outputStream: outputStream,
+                              isInitiator: true, delegate: adapter, sharedSecretHex: device.token)
+            session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+            session.settingsProvider = settingsProvider
+            device.adapter = adapter
+            device.settingsProvider = settingsProvider  // retain (Session.settingsProvider is weak)
+            device.state = .handshaking(session)
+        } else {
             guard let privateKey = pairingPrivateKey else {
                 log("Pairing channel but no ephemeral key")
-                transitionToIdle(reason: "missing pairing key", reconnect: false)
+                abortPairingAttempt()
                 return
             }
             session = Session(inputStream: inputStream, outputStream: outputStream,
                               isInitiator: true, delegate: adapter,
                               mode: .pairing(privateKey: privateKey))
             session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-            transition(to: .pairingHandshake(session, generation: gen), reason: "pairing handshake")
-        } else {
-            guard let token else {
-                log("Normal channel but no token")
-                transitionToIdle(reason: "missing token", reconnect: false)
-                return
-            }
-            let settingsProvider = DeviceSettingsProvider(pairingManager: pairingManager, secret: token)
-            settingsProviderRef = settingsProvider  // retain (Session.settingsProvider is weak)
-            session = Session(inputStream: inputStream, outputStream: outputStream,
-                              isInitiator: true, delegate: adapter, sharedSecretHex: token)
-            session.localName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-            session.settingsProvider = settingsProvider
-            transition(to: .handshaking(session, token: token, generation: gen), reason: "handshake")
+            pairingAdapter = adapter
+            pairingPhase = .handshake(session)
         }
 
-        reconnectDelay = 1.0  // reset backoff on successful L2CAP
+        device?.backoff.reset()  // successful L2CAP — reset backoff
 
         // Spawn session thread
-        let thread = Thread { [weak self] in
+        let thread = Thread {
             inputStream.remove(from: .main, forMode: .common)
             outputStream.remove(from: .main, forMode: .common)
             let runLoop = RunLoop.current
@@ -794,13 +821,8 @@ extension ConnectionController {
             outputStream.schedule(in: runLoop, forMode: .common)
             session.performHandshake()
             session.listenForMessages()
-            // Session ended — clean up adapter reference
-            self?.queue.async {
-                guard self?.currentAdapter === adapter else { return }
-                self?.currentAdapter = nil
-            }
         }
-        thread.name = isPairing ? "L2CAP-Pairing" : "L2CAP-Session"
+        thread.name = device == nil ? "L2CAP-Pairing" : "L2CAP-Session"
         thread.start()
     }
 }
@@ -809,26 +831,31 @@ extension ConnectionController {
 
 extension ConnectionController {
 
-    fileprivate func handleSessionReady(_ session: Session, generation gen: UInt) {
-        let remoteName = session.remoteName
-        guard case .handshaking(_, let token, let g) = state, g == gen else {
-            log("Stale sessionReady (gen \(gen) != \(generation))")
+    fileprivate func handleSessionReady(_ session: Session) {
+        guard let device = device(of: session), case .handshaking = device.state else {
+            log("Stale sessionReady, ignoring")
             return
         }
+        let remoteName = session.remoteName
         // Update stored device name
         if let name = remoteName {
-            let devices = pairingManager.loadDevices()
-            if let existing = devices.first(where: { $0.sharedSecret == token && $0.displayName != name }) {
-                pairingManager.removeDevice(secret: token)
+            let stored = pairingManager.loadDevices()
+            if let existing = stored.first(where: { $0.sharedSecret == device.token && $0.displayName != name }) {
+                pairingManager.removeDevice(secret: device.token)
                 let updated = PairedDevice(sharedSecret: existing.sharedSecret, displayName: name,
                                            datePaired: existing.datePaired,
                                            richMediaEnabled: existing.richMediaEnabled,
-                                           richMediaEnabledChangedAt: existing.richMediaEnabledChangedAt)
+                                           richMediaEnabledChangedAt: existing.richMediaEnabledChangedAt,
+                                           advertTagHex: existing.advertTagHex)
                 pairingManager.addDevice(updated)
             }
         }
-        transition(to: .ready(session, token: token, generation: gen), reason: "handshake complete")
-        log("Session ready — remote: \(remoteName ?? "unknown")")
+        device.state = .ready(session)
+        device.backoff.reset()
+        device.nextAttemptAt = .distantPast
+        log("Session ready — remote: \(remoteName ?? "unknown") (\(connectedReadyCount()) connected)")
+        notifyConnectionChanged()
+        ensureScanning()
         // Send pending clipboard
         if let pending = pendingClipboard {
             session.sendClipboard(pending)
@@ -836,25 +863,39 @@ extension ConnectionController {
         }
     }
 
-    fileprivate func handleSessionError(_ error: Error) {
+    private func connectedReadyCount() -> Int {
+        devices.values.filter { $0.state.isReady }.count
+    }
+
+    fileprivate func handleSessionError(_ session: Session, error: Error) {
         log("Session error: \(error)")
+        if case .handshake(let pairingSession) = pairingPhase, pairingSession === session {
+            abortPairingAttempt()
+            return
+        }
+        guard let device = device(of: session) else {
+            log("Session error for unknown session, ignoring")
+            return
+        }
         if case SessionError.versionMismatch(let v) = error {
-            transitionToIdle(reason: "version mismatch (v\(v))", reconnect: false)
+            // Don't keep retrying an outdated peer — every attempt would fail
+            // the same way and re-trigger the update alert. Suspend until the
+            // next Bluetooth power cycle.
+            log("Version mismatch (v\(v)) — suspending \(device.token.prefix(8))…")
+            closeConnection(of: device)
+            device.suspended = true
+            notifyConnectionChanged()
+            ensureScanning()
             DispatchQueue.main.async { [weak self] in
                 self?.delegate?.didEncounterError(error: .versionMismatch(v))
             }
             return
         }
-        transitionToIdle(
-            reason: "session error",
-            reconnect: true,
-            preservePairingContext: shouldPreservePairingContext(for: state)
-        )
+        failAttempt(device, reason: "session error")
     }
 
     fileprivate func handleClipboardReceived(plaintext: Data, hash: String) {
         lastReceivedTextHash = hash
-        currentAdapter?.lastTextHash = hash
         guard let text = String(data: plaintext, encoding: .utf8) else {
             log("Received data not valid UTF-8")
             return
@@ -881,24 +922,42 @@ extension ConnectionController {
         }
     }
 
-    fileprivate func handlePairingComplete(sharedSecret: Data, remoteName: String?) {
+    fileprivate func handlePairingComplete(_ session: Session, sharedSecret: Data, remoteName: String?) {
         let secretHex = sharedSecret.map { String(format: "%02x", $0) }.joined()
         log("Pairing complete")
-        let device = PairedDevice(sharedSecret: secretHex, displayName: remoteName ?? "Android", datePaired: Date())
-        pairingManager.addDevice(device)
+        // The phone's stable identity tag arrived in KEY_EXCHANGE (nil on the
+        // phone's first pairing — it then advertises the secret-derived tag).
+        let advertTagHex = session.remoteAdvertTagHex
+        let paired = PairedDevice(sharedSecret: secretHex, displayName: remoteName ?? "Android",
+                                  datePaired: Date(), advertTagHex: advertTagHex)
+        pairingManager.addDevice(paired)
         pairingManager.clearEphemeralKey()
-        // Wire settings provider (hold strong ref via settingsProviderRef so weak var isn't immediately nil)
-        if let session = activeSession(from: state) {
-            let provider = DeviceSettingsProvider(pairingManager: pairingManager, secret: secretHex)
-            settingsProviderRef = provider
-            session.settingsProvider = provider
+
+        // Wire settings provider (hold strong ref via the device record so the
+        // session's weak var isn't immediately nil)
+        let provider = DeviceSettingsProvider(pairingManager: pairingManager, secret: secretHex)
+        session.settingsProvider = provider
+
+        // Promote the pairing session to a normal device connection: the
+        // HELLO/WELCOME handshake continues on the same channel.
+        syncDevicesWithStore()
+        if let device = devices[secretHex] {
+            device.state = .handshaking(session)
+            device.peripheral = pairingPeripheral
+            device.channel = pairingChannel
+            device.adapter = pairingAdapter
+            device.settingsProvider = provider
         }
+
+        pairingPeripheral = nil
+        pairingChannel = nil
+        pairingConnectingStartTime = nil
+        pairingAdapter = nil
+        pairingPhase = .scanning
         pairingTag = nil
         pairingPrivateKey = nil
-        // Transition from pairingHandshake to handshaking
-        if case .pairingHandshake(let session, let gen) = state, gen == generation {
-            transition(to: .handshaking(session, token: secretHex, generation: gen), reason: "pairing complete")
-        }
+        ensureScanning()
+
         DispatchQueue.main.async { [weak self] in
             self?.delegate?.didCompletePairing(deviceName: remoteName)
         }
@@ -922,8 +981,10 @@ extension ConnectionController {
 // MARK: - SessionAdapter
 
 /// Bridges `SessionDelegate` callbacks (fired on the session thread) to
-/// `ConnectionController` handler methods on its serial queue, guarded by generation.
-private class SessionAdapter: NSObject, SessionDelegate {
+/// `ConnectionController` handler methods on its serial queue, guarded by
+/// generation. Handlers additionally locate the owning device by session
+/// identity, so callbacks from replaced sessions are ignored.
+class SessionAdapter: NSObject, SessionDelegate {
     weak var controller: ConnectionController?
     let generation: UInt
 
@@ -953,11 +1014,11 @@ private class SessionAdapter: NSObject, SessionDelegate {
     // MARK: SessionDelegate
 
     func sessionDidBecomeReady(_ session: Session) {
-        dispatch { $0.handleSessionReady(session, generation: self.generation) }
+        dispatch { $0.handleSessionReady(session) }
     }
 
     func session(_ session: Session, didFailWithError error: Error) {
-        dispatch { $0.handleSessionError(error) }
+        dispatch { $0.handleSessionError(session, error: error) }
     }
 
     func session(_ session: Session, didReceivePlaintext plaintext: Data, hash: String) {
@@ -974,7 +1035,7 @@ private class SessionAdapter: NSObject, SessionDelegate {
     }
 
     func session(_ session: Session, didCompletePairingWithSecret sharedSecret: Data, remoteName: String?) {
-        dispatch { $0.handlePairingComplete(sharedSecret: sharedSecret, remoteName: remoteName) }
+        dispatch { $0.handlePairingComplete(session, sharedSecret: sharedSecret, remoteName: remoteName) }
     }
 
     func session(_ session: Session, didChangeRichMediaSetting enabled: Bool) {

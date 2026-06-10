@@ -6,12 +6,16 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Unit tests for PairingStore rich media settings.
+ * Unit tests for PairingStore multi-Mac storage, identity tag, migration,
+ * and rich media settings.
  * Uses an in-memory SharedPreferences fake so no Android context is needed.
  */
 class PairingStoreTest {
 
     private lateinit var store: PairingStore
+
+    private val secretA = "aa".repeat(32)
+    private val secretB = "bb".repeat(32)
 
     @Before
     fun setUp() {
@@ -56,17 +60,101 @@ class PairingStoreTest {
     }
 
     @Test
-    fun `clear also resets shared secret`() {
-        store.saveSharedSecret("abc123")
+    fun `clear also resets paired macs and identity tag`() {
+        store.addPairedMac(secretA, "Mac A")
         store.clear()
-        assertNull(store.loadSharedSecret())
+        assertTrue(store.loadPairedMacs().isEmpty())
+        assertNull(store.identityTagHex())
     }
 
     @Test
-    fun `shared secret round-trip still works`() {
-        val secret = "deadbeef"
-        assertTrue(store.saveSharedSecret(secret))
-        assertEquals(secret, store.loadSharedSecret())
+    fun `paired mac round-trip`() {
+        assertTrue(store.addPairedMac(secretA, "Mac A", pairedAtMs = 42L))
+        val macs = store.loadPairedMacs()
+        assertEquals(1, macs.size)
+        assertEquals(secretA, macs[0].secretHex)
+        assertEquals("Mac A", macs[0].name)
+        assertEquals(42L, macs[0].pairedAtMs)
+    }
+
+    @Test
+    fun `first pairing sets identity tag from secret`() {
+        store.addPairedMac(secretA, "Mac A")
+        val expected = org.cliprelay.crypto.E2ECrypto.deviceTag(secretA)
+            .joinToString("") { "%02x".format(it) }
+        assertEquals(expected, store.identityTagHex())
+    }
+
+    @Test
+    fun `second pairing keeps the original identity tag`() {
+        store.addPairedMac(secretA, "Mac A")
+        val tag = store.identityTagHex()
+        store.addPairedMac(secretB, "Mac B")
+        assertEquals(tag, store.identityTagHex())
+        assertEquals(2, store.loadPairedMacs().size)
+    }
+
+    @Test
+    fun `identity tag survives removal of the first mac while others remain`() {
+        store.addPairedMac(secretA, "Mac A")
+        val tag = store.identityTagHex()
+        store.addPairedMac(secretB, "Mac B")
+        store.removePairedMac(secretA)
+        assertEquals(tag, store.identityTagHex())
+        assertEquals(listOf(secretB), store.loadPairedMacs().map { it.secretHex })
+    }
+
+    @Test
+    fun `removing the last mac clears the identity tag`() {
+        store.addPairedMac(secretA, "Mac A")
+        store.removePairedMac(secretA)
+        assertTrue(store.loadPairedMacs().isEmpty())
+        assertNull(store.identityTagHex())
+    }
+
+    @Test
+    fun `re-adding the same secret replaces instead of duplicating`() {
+        store.addPairedMac(secretA, "Old Name")
+        store.addPairedMac(secretA, "New Name")
+        val macs = store.loadPairedMacs()
+        assertEquals(1, macs.size)
+        assertEquals("New Name", macs[0].name)
+    }
+
+    @Test
+    fun `addPairedMac enforces the limit`() {
+        repeat(PairingStore.MAX_PAIRED_MACS) { i ->
+            assertTrue(store.addPairedMac("%02x".format(i + 1).repeat(32), "Mac $i"))
+        }
+        assertFalse(store.addPairedMac("ff".repeat(32), "One Too Many"))
+        assertEquals(PairingStore.MAX_PAIRED_MACS, store.loadPairedMacs().size)
+    }
+
+    @Test
+    fun `updateMacName renames an existing pairing`() {
+        store.addPairedMac(secretA, null)
+        store.updateMacName(secretA, "Christian's Mac")
+        assertEquals("Christian's Mac", store.loadPairedMacs()[0].name)
+    }
+
+    @Test
+    fun `legacy single secret migrates to paired macs list with identity tag`() {
+        val legacyPrefs = FakeSharedPreferences()
+        legacyPrefs.edit().putString(PairingStore.KEY_SHARED_SECRET, secretA).apply()
+        val migrated = PairingStore(legacyPrefs)
+        assertEquals(listOf(secretA), migrated.loadPairedMacs().map { it.secretHex })
+        val expectedTag = org.cliprelay.crypto.E2ECrypto.deviceTag(secretA)
+            .joinToString("") { "%02x".format(it) }
+        assertEquals(expectedTag, migrated.identityTagHex())
+        assertNull(legacyPrefs.getString(PairingStore.KEY_SHARED_SECRET, null))
+    }
+
+    @Test
+    fun `mac id is stable and derived from secret`() {
+        store.addPairedMac(secretA, "Mac A")
+        val expected = org.cliprelay.crypto.E2ECrypto.deviceTag(secretA)
+            .joinToString("") { "%02x".format(it) }
+        assertEquals(expected, store.loadPairedMacs()[0].id)
     }
 }
 

@@ -4,35 +4,35 @@ import XCTest
 final class ConnectionControllerTests: XCTestCase {
 
     private func makeController() -> ConnectionController {
-        let pm = PairingManager()
+        let pm = PairingManager(keychain: InMemorySecretStore())
         return ConnectionController(pairingManager: pm, skipCentralManager: true)
     }
 
     // MARK: - Backoff Tests
 
     func testBackoffSequence() {
-        let controller = makeController()
+        var backoff = ReconnectBackoff()
         let expected: [TimeInterval] = [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0, 30.0]
         for (i, expectedDelay) in expected.enumerated() {
-            let delay = controller.nextReconnectDelay()
+            let delay = backoff.next()
             XCTAssertEqual(delay, expectedDelay, accuracy: 0.001,
                            "Backoff step \(i): expected \(expectedDelay), got \(delay)")
         }
     }
 
     func testBackoffResetsToOneSecond() {
-        let controller = makeController()
-        _ = controller.nextReconnectDelay()
-        _ = controller.nextReconnectDelay()
-        _ = controller.nextReconnectDelay()
-        controller.resetReconnectDelay()
-        XCTAssertEqual(controller.nextReconnectDelay(), 1.0, accuracy: 0.001)
+        var backoff = ReconnectBackoff()
+        _ = backoff.next()
+        _ = backoff.next()
+        _ = backoff.next()
+        backoff.reset()
+        XCTAssertEqual(backoff.next(), 1.0, accuracy: 0.001)
     }
 
     func testBackoffCapAtMaxDelay() {
-        let controller = makeController()
+        var backoff = ReconnectBackoff()
         for _ in 0..<20 {
-            let delay = controller.nextReconnectDelay()
+            let delay = backoff.next()
             XCTAssertLessThanOrEqual(delay, ConnectionController.maxReconnectDelay)
         }
     }
@@ -103,9 +103,11 @@ final class ConnectionControllerTests: XCTestCase {
 
     // MARK: - State Tests
 
-    func testInitialStateIsIdle() {
+    func testInitialStateIsDisconnected() {
         let controller = makeController()
-        XCTAssertEqual(controller.state.description, "idle")
+        XCTAssertFalse(controller.isConnected)
+        XCTAssertTrue(controller.connectedTokens.isEmpty)
+        XCTAssertNil(controller.connectedToken)
     }
 
     func testInitialGenerationIsZero() {
@@ -113,14 +115,24 @@ final class ConnectionControllerTests: XCTestCase {
         XCTAssertEqual(controller.generation, 0)
     }
 
-    func testStateDescriptions() {
-        XCTAssertEqual(ConnectionState.idle.description, "idle")
-        XCTAssertEqual(ConnectionState.scanning.description, "scanning")
+    func testDeviceStateDescriptions() {
+        XCTAssertEqual(DeviceState.idle.description, "idle")
+        XCTAssertEqual(DeviceState.l2capOpening.description, "l2capOpening")
+        XCTAssertEqual(DeviceState.bleConnecting(131).description, "bleConnecting(psm=131)")
     }
 
-    func testStateGenerationNilForIdleAndScanning() {
-        XCTAssertNil(ConnectionState.idle.generation)
-        XCTAssertNil(ConnectionState.scanning.generation)
+    func testDeviceStateReadiness() {
+        XCTAssertTrue(DeviceState.idle.isIdle)
+        XCTAssertFalse(DeviceState.idle.isReady)
+        XCTAssertFalse(DeviceState.l2capOpening.isIdle)
+        XCTAssertNil(DeviceState.idle.session)
+    }
+
+    func testNewDeviceConnectionStartsIdle() {
+        let device = DeviceConnection(token: "aabb")
+        XCTAssertTrue(device.state.isIdle)
+        XCTAssertNil(device.peripheral)
+        XCTAssertEqual(device.nextAttemptAt, .distantPast)
     }
 
     // MARK: - Constants Tests

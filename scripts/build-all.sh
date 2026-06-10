@@ -19,6 +19,7 @@ SPARKLE_PLIST_KEYS="<key>SUPublicEDKey</key>
 BUILD_MAC=true
 BUILD_ANDROID=true
 ANDROID_RELEASE=false
+MAC_CONFIGURATION=release
 
 usage() {
   cat <<'EOF'
@@ -30,6 +31,8 @@ Options:
   --mac-only       Build only macOS app
   --android-only   Build only Android artifacts
   --release        Build Android release AAB/APK instead of debug APK
+  --debug          Build the macOS app in debug configuration (enables the
+                   smoke-test CLI used by scripts/hardware-smoke-test.sh)
   -h, --help       Show this help message
 EOF
 }
@@ -46,6 +49,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --release)
       ANDROID_RELEASE=true
+      shift
+      ;;
+    --debug)
+      MAC_CONFIGURATION=debug
       shift
       ;;
     -h|--help)
@@ -74,14 +81,14 @@ build_mac() {
   fi
 
   echo "==> Building macOS app"
-  swift build --configuration release --package-path "$MAC_PROJECT_DIR"
+  swift build --configuration "$MAC_CONFIGURATION" --package-path "$MAC_PROJECT_DIR"
 
-  local binary_path="$MAC_PROJECT_DIR/.build/release/ClipRelay"
+  local binary_path="$MAC_PROJECT_DIR/.build/$MAC_CONFIGURATION/ClipRelay"
   if [[ ! -x "$binary_path" ]]; then
-    if [[ -x "$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/ClipRelay" ]]; then
-      binary_path="$MAC_PROJECT_DIR/.build/arm64-apple-macosx/release/ClipRelay"
-    elif [[ -x "$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/ClipRelay" ]]; then
-      binary_path="$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/release/ClipRelay"
+    if [[ -x "$MAC_PROJECT_DIR/.build/arm64-apple-macosx/$MAC_CONFIGURATION/ClipRelay" ]]; then
+      binary_path="$MAC_PROJECT_DIR/.build/arm64-apple-macosx/$MAC_CONFIGURATION/ClipRelay"
+    elif [[ -x "$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/$MAC_CONFIGURATION/ClipRelay" ]]; then
+      binary_path="$MAC_PROJECT_DIR/.build/x86_64-apple-macosx/$MAC_CONFIGURATION/ClipRelay"
     else
       echo "Could not locate built macOS binary." >&2
       exit 1

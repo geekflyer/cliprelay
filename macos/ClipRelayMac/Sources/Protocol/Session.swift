@@ -84,6 +84,10 @@ final class Session {
     /// Remote device name received during handshake. Available after sessionDidBecomeReady.
     private(set) var remoteName: String?
 
+    /// Phone identity tag (16-char hex) received in KEY_EXCHANGE during pairing.
+    /// nil when the phone has no other paired Macs (first pairing).
+    private(set) var remoteAdvertTagHex: String?
+
     private let lock = NSLock()
     private var _closed = false
     private var closed: Bool {
@@ -256,6 +260,14 @@ final class Session {
 
         // Extract remote name from KEY_EXCHANGE if present
         let exchangeRemoteName = json["name"] as? String
+
+        // Extract the phone's stable identity tag (multi-Mac phones include it
+        // so this Mac scans for the right advertisement)
+        if let tagHex = json["tag"] as? String,
+           tagHex.count == 16,
+           tagHex.allSatisfy({ $0.isHexDigit }) {
+            remoteAdvertTagHex = tagHex.lowercased()
+        }
 
         // Notify delegate of completed pairing
         delegate?.session(self, didCompletePairingWithSecret: sharedSecret, remoteName: exchangeRemoteName)
