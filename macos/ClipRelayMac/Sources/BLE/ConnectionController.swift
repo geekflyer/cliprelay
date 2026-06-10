@@ -74,6 +74,9 @@ final class DeviceConnection {
     var backoff = ReconnectBackoff()
     /// Earliest time the next connect attempt may start (per-device flap guard).
     var nextAttemptAt = Date.distantPast
+    /// Set on version mismatch: stays paired but no reconnect attempts (and no
+    /// repeated alerts) until the next Bluetooth power cycle.
+    var suspended = false
     var adapter: SessionAdapter?
     var settingsProvider: DeviceSettingsProvider?
 
@@ -145,9 +148,16 @@ class ConnectionController: NSObject {
     // MARK: BLE
 
     private var centralManager: CBCentralManager!
-    /// Peripherals from attempts that may have dangling CoreBluetooth connection
-    /// bookkeeping (e.g. cancel during BT-off is a no-op). Re-cancelled at poweredOn.
-    private var staleAttemptedPeripherals: [CBPeripheral] = []
+    /// Peripherals whose cancel happened while Bluetooth was off (a no-op that
+    /// leaves dangling CoreBluetooth connection bookkeeping). Re-cancelled at
+    /// poweredOn. Cancels issued while powered on take effect immediately and
+    /// are not tracked.
+    private var staleAttemptedPeripherals: [UUID: CBPeripheral] = [:]
+
+    private func rememberStaleAttemptIfNeeded(_ peripheral: CBPeripheral) {
+        guard centralManager?.state != .poweredOn else { return }
+        staleAttemptedPeripherals[peripheral.identifier] = peripheral
+    }
 
     // MARK: Timers
 
@@ -221,7 +231,7 @@ class ConnectionController: NSObject {
         device.state.session?.close()
         if let peripheral = device.peripheral {
             centralManager?.cancelPeripheralConnection(peripheral)
-            staleAttemptedPeripherals.append(peripheral)
+            rememberStaleAttemptIfNeeded(peripheral)
         }
         device.peripheral = nil
         device.channel = nil
@@ -251,7 +261,8 @@ class ConnectionController: NSObject {
     /// active or any paired device is unconnected.
     fileprivate func ensureScanning() {
         guard let centralManager, centralManager.state == .poweredOn else { return }
-        let needScan = pairingTag != nil || devices.values.contains { $0.state.isIdle }
+        let needScan = pairingTag != nil
+            || devices.values.contains { $0.state.isIdle && !$0.suspended }
         if needScan && !centralManager.isScanning {
             log("Scanning (paired: \(devices.count), pairing: \(pairingTag != nil))")
             centralManager.scanForPeripherals(
@@ -329,7 +340,7 @@ class ConnectionController: NSObject {
         }
         if let peripheral = pairingPeripheral {
             centralManager?.cancelPeripheralConnection(peripheral)
-            staleAttemptedPeripherals.append(peripheral)
+            rememberStaleAttemptIfNeeded(peripheral)
         }
         pairingPeripheral = nil
         pairingChannel = nil
@@ -364,11 +375,21 @@ class ConnectionController: NSObject {
 
     // MARK: - Paired Device Lookup
 
-    private func device(matching tag: Data) -> DeviceConnection? {
-        let stored = pairingManager.loadDevices()
-        for paired in stored {
-            guard pairingManager.scanTag(for: paired) == tag else { continue }
-            return devices[paired.sharedSecret]
+    /// First device that matches the advertised tag AND is eligible for a
+    /// connect attempt. Several records can share a tag (e.g. a stale record
+    /// left behind by re-pairing the same phone), so don't stop at the first
+    /// tag match — a perpetually-failing stale record must not shadow the
+    /// valid one.
+    private func connectableDevice(matching tag: Data) -> DeviceConnection? {
+        let now = Date()
+        for paired in pairingManager.loadDevices() {
+            guard pairingManager.scanTag(for: paired) == tag,
+                  let device = devices[paired.sharedSecret],
+                  device.state.isIdle,
+                  !device.suspended,
+                  now >= device.nextAttemptAt
+            else { continue }
+            return device
         }
         return nil
     }
@@ -452,7 +473,7 @@ extension ConnectionController {
         }
         if let peripheral = pairingPeripheral {
             centralManager?.cancelPeripheralConnection(peripheral)
-            staleAttemptedPeripherals.append(peripheral)
+            rememberStaleAttemptIfNeeded(peripheral)
         }
         pairingPeripheral = nil
         pairingChannel = nil
@@ -568,7 +589,7 @@ extension ConnectionController: CBCentralManagerDelegate {
             // Re-cancel peripherals from before the power cycle. cancelPeripheralConnection
             // during BT-off is a no-op, so internal CB connection bookkeeping can accumulate
             // across brief power nap cycles. Re-cancelling now releases dangling slots.
-            for stale in staleAttemptedPeripherals {
+            for stale in staleAttemptedPeripherals.values {
                 central.cancelPeripheralConnection(stale)
             }
             staleAttemptedPeripherals.removeAll()
@@ -576,6 +597,7 @@ extension ConnectionController: CBCentralManagerDelegate {
             for device in devices.values {
                 device.backoff.reset()
                 device.nextAttemptAt = .distantPast
+                device.suspended = false  // version-mismatch suspension lifts on BT cycle
             }
             startHealthCheck()
             ensureScanning()
@@ -620,10 +642,7 @@ extension ConnectionController: CBCentralManagerDelegate {
         if pairingTag != nil { return }
 
         // Match against paired devices that are idle and past their backoff
-        guard let device = device(matching: deviceTag),
-              device.state.isIdle,
-              Date() >= device.nextAttemptAt
-        else { return }
+        guard let device = connectableDevice(matching: deviceTag) else { return }
 
         log("Matched device tag for \(device.token.prefix(8))…, PSM=\(psm), RSSI=\(RSSI)")
         device.state = .bleConnecting(psm)
@@ -845,17 +864,26 @@ extension ConnectionController {
 
     fileprivate func handleSessionError(_ session: Session, error: Error) {
         log("Session error: \(error)")
-        if case SessionError.versionMismatch(let v) = error {
-            DispatchQueue.main.async { [weak self] in
-                self?.delegate?.didEncounterError(error: .versionMismatch(v))
-            }
-        }
         if case .handshake(let pairingSession) = pairingPhase, pairingSession === session {
             abortPairingAttempt()
             return
         }
         guard let device = device(of: session) else {
             log("Session error for unknown session, ignoring")
+            return
+        }
+        if case SessionError.versionMismatch(let v) = error {
+            // Don't keep retrying an outdated peer — every attempt would fail
+            // the same way and re-trigger the update alert. Suspend until the
+            // next Bluetooth power cycle.
+            log("Version mismatch (v\(v)) — suspending \(device.token.prefix(8))…")
+            closeConnection(of: device)
+            device.suspended = true
+            notifyConnectionChanged()
+            ensureScanning()
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.didEncounterError(error: .versionMismatch(v))
+            }
             return
         }
         failAttempt(device, reason: "session error")
