@@ -14,6 +14,7 @@ import io.github.g00fy2.quickie.config.BarcodeFormat
 import io.github.g00fy2.quickie.config.ScannerConfig
 import org.cliprelay.R
 import org.cliprelay.pairing.PairingUriParser
+import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.service.ClipRelayService
 
 class QrScannerActivity : AppCompatActivity() {
@@ -39,6 +40,14 @@ class QrScannerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Pairing needs the BLE foreground service, which cannot start without the
+        // "Nearby devices" runtime permission — bail out instead of letting the
+        // service crash after the scan.
+        if (!BlePermissions.hasRequiredRuntimePermissions(this)) {
+            Toast.makeText(this, R.string.ble_permission_required_toast, Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
         // Launch once; avoid relaunching if the activity is recreated while the scanner is open.
         if (savedInstanceState == null) {
             scanLauncher.launch(
@@ -72,7 +81,13 @@ class QrScannerActivity : AppCompatActivity() {
         // Signal the service to start pairing mode
         val intent = Intent(this, ClipRelayService::class.java)
         intent.action = ClipRelayService.ACTION_START_PAIRING
-        startForegroundService(intent)
+        if (!BlePermissions.hasRequiredRuntimePermissions(this) ||
+            runCatching { startForegroundService(intent) }.isFailure
+        ) {
+            Toast.makeText(this, R.string.ble_permission_required_toast, Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
 
         Toast.makeText(this, "Pairing…", Toast.LENGTH_SHORT).show()
         setResult(RESULT_OK)

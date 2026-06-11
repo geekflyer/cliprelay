@@ -35,6 +35,11 @@ class MainActivity : AppCompatActivity() {
     private val viewModel: MainViewModel by viewModels()
     private lateinit var clipboardSettingsStore: ClipboardSettingsStore
 
+    // Pairing is gated on the BLE ("Nearby devices") runtime permission: without it
+    // the connectedDevice foreground service cannot start and pairing would fail.
+    private var showBlePermissionDialog by mutableStateOf(false)
+    private var blePermissionPermanentlyDenied by mutableStateOf(false)
+
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -80,6 +85,21 @@ class MainActivity : AppCompatActivity() {
         val queryIntent = Intent(this, ClipRelayService::class.java)
         queryIntent.action = ClipRelayService.ACTION_QUERY_CONNECTION
         startServiceSafely(queryIntent)
+    }
+
+    private val pairPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        if (BlePermissions.hasRequiredRuntimePermissions(this)) {
+            ensureServiceRunning()
+            launchQrScanner()
+        } else {
+            // Denied again — re-show the explanation. If Android will no longer
+            // show the system prompt, the dialog routes to app settings instead.
+            blePermissionPermanentlyDenied = BlePermissions.requiredRuntimePermissions()
+                .none { shouldShowRequestPermissionRationale(it) }
+            showBlePermissionDialog = true
+        }
     }
 
     private val scannerLauncher = registerForActivityResult(
@@ -137,6 +157,28 @@ class MainActivity : AppCompatActivity() {
                 VersionMismatchDialog(onDismiss = { viewModel.onVersionMismatchDismissed() })
             }
 
+            if (showBlePermissionDialog) {
+                BlePermissionDialog(
+                    permanentlyDenied = blePermissionPermanentlyDenied,
+                    onContinue = {
+                        showBlePermissionDialog = false
+                        if (blePermissionPermanentlyDenied) {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:$packageName")
+                                )
+                            )
+                        } else {
+                            pairPermissionLauncher.launch(
+                                BlePermissions.requiredRuntimePermissions().toTypedArray()
+                            )
+                        }
+                    },
+                    onCancel = { showBlePermissionDialog = false }
+                )
+            }
+
             if (showAccessibilityDisclosure) {
                 AccessibilityDisclosureDialog(
                     onAllow = {
@@ -172,7 +214,14 @@ class MainActivity : AppCompatActivity() {
                     viewModel.onPairingFailedDismissed()
                 },
                 onPairClick = {
-                    scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
+                    if (BlePermissions.hasRequiredRuntimePermissions(this)) {
+                        launchQrScanner()
+                    } else {
+                        blePermissionPermanentlyDenied =
+                            BlePermissions.requiredRuntimePermissions()
+                                .none { shouldShowRequestPermissionRationale(it) }
+                        showBlePermissionDialog = true
+                    }
                 },
                 onForgetMacClick = { macId ->
                     val forgetIntent = Intent(this, ClipRelayService::class.java)
@@ -255,6 +304,10 @@ class MainActivity : AppCompatActivity() {
         PairingStore(this).loadPairedMacs().map { mac ->
             PairedMacUi(id = mac.id, name = mac.name, connected = mac.id in connectedIds)
         }
+
+    private fun launchQrScanner() {
+        scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
+    }
 
     private fun ensureServiceRunning() {
         startServiceSafely(Intent(this, ClipRelayService::class.java))

@@ -114,6 +114,7 @@ class ClipRelayService : Service(), L2capServerCallback {
     private var bleStarted = false
     @Volatile
     private var isDestroyed = false
+    private var foregroundStarted = false
     @Volatile
     private var pairingInProgress = false
     private var pendingPairingKeyPair: java.security.KeyPair? = null
@@ -206,7 +207,21 @@ class ClipRelayService : Service(), L2capServerCallback {
         loadPairingState()
         DebugSmokeProbe.reset(this)
 
-        startForeground(1001, buildNotification())
+        // On Android 14+ a connectedDevice foreground service may not enter the
+        // foreground without the Bluetooth runtime permissions — startForeground
+        // throws SecurityException if the user denied "Nearby devices". Stop the
+        // service instead of crashing the process.
+        val foregrounded = runCatching {
+            startForeground(1001, buildNotification())
+        }.onFailure { error ->
+            Log.e(TAG, "startForeground failed; stopping service", error)
+        }.isSuccess
+        if (!foregrounded) {
+            stopSelf()
+            return
+        }
+        foregroundStarted = true
+
         ContextCompat.registerReceiver(
             this,
             bluetoothStateReceiver,
@@ -225,7 +240,10 @@ class ClipRelayService : Service(), L2capServerCallback {
         isDestroyed = true
         clipboardAutoClearHandler.removeCallbacksAndMessages(null)
         clearPairingTimeout()
-        unregisterReceiver(bluetoothStateReceiver)
+        // The receiver is only registered when startForeground succeeded in onCreate.
+        if (foregroundStarted) {
+            unregisterReceiver(bluetoothStateReceiver)
+        }
         executor.shutdownNow()
         stopBleComponents()
         super.onDestroy()

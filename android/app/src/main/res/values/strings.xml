@@ -44,4 +44,11 @@
     <string name="accessibility_disclosure_body">ClipRelay uses Android\'s Accessibility Service to detect when you copy text, so it can automatically send your clipboard to your paired Mac.\n\nThis permission allows ClipRelay to monitor tap actions only. It does not read, collect, or store any screen content or personal data.</string>
     <string name="accessibility_disclosure_allow">Allow</string>
     <string name="accessibility_disclosure_deny">Deny</string>
+    <string name="ble_permission_title">Nearby Devices Permission</string>
+    <string name="ble_permission_body">ClipRelay connects to your Mac over Bluetooth. Android requires the \"Nearby devices\" permission to advertise and connect, so pairing cannot work without it.\n\nClipRelay only uses Bluetooth to talk to your paired Macs — it never uses it to determine your location.</string>
+    <string name="ble_permission_denied_body">The \"Nearby devices\" permission was denied. ClipRelay needs it to connect to your Mac over Bluetooth.\n\nPlease enable \"Nearby devices\" in the app settings to pair.</string>
+    <string name="ble_permission_continue">Continue</string>
+    <string name="ble_permission_open_settings">Open Settings</string>
+    <string name="ble_permission_cancel">Cancel</string>
+    <string name="ble_permission_required_toast">Nearby devices permission is required to pair</string>
 </resources>
