@@ -1213,6 +1213,45 @@ fun AccessibilityDisclosureDialog(
     )
 }
 
+// ─── BLE Permission Dialog ────────────────────────────────────────────────────
+// Shown before pairing when the "Nearby devices" runtime permission is missing.
+// Explains why the permission is needed; when Android no longer shows the system
+// prompt (permanently denied), routes the user to the app settings instead.
+@Composable
+fun BlePermissionDialog(
+    permanentlyDenied: Boolean,
+    onContinue: () -> Unit,
+    onCancel: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.ble_permission_title)) },
+        text = {
+            Text(
+                stringResource(
+                    if (permanentlyDenied) R.string.ble_permission_denied_body
+                    else R.string.ble_permission_body
+                )
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onContinue) {
+                Text(
+                    stringResource(
+                        if (permanentlyDenied) R.string.ble_permission_open_settings
+                        else R.string.ble_permission_continue
+                    )
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.ble_permission_cancel))
+            }
+        },
+    )
+}
+
 // ─── Version Mismatch Dialog ──────────────────────────────────────────────────
 @Composable
 fun VersionMismatchDialog(onDismiss: () -> Unit) {
