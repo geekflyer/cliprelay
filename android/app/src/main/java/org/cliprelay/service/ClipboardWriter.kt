@@ -21,11 +21,13 @@ class ClipboardWriter(context: Context) {
     private val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    fun writeText(text: String) {
+    fun writeText(text: String, markSensitive: Boolean = true) {
         val applyWrite = {
             val clip = ClipData.newPlainText(CLIP_LABEL, text)
-            clip.description.extras = PersistableBundle().apply {
-                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            if (markSensitive) {
+                clip.description.extras = PersistableBundle().apply {
+                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                }
             }
             runCatching { clipboard.setPrimaryClip(clip) }
             Unit

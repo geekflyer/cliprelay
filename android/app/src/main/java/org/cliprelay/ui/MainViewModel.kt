@@ -43,6 +43,9 @@ class MainViewModel : ViewModel() {
     private val _autoClearEnabled = MutableStateFlow(false)
     val autoClearEnabled: StateFlow<Boolean> = _autoClearEnabled.asStateFlow()
 
+    private val _hideClipboardEnabled = MutableStateFlow(true)
+    val hideClipboardEnabled: StateFlow<Boolean> = _hideClipboardEnabled.asStateFlow()
+
     private val _autoCopyEnabled = MutableStateFlow(false)
     val autoCopyEnabled: StateFlow<Boolean> = _autoCopyEnabled.asStateFlow()
 
@@ -66,13 +69,15 @@ class MainViewModel : ViewModel() {
         macs: List<PairedMacUi>,
         autoClearEnabled: Boolean = false,
         autoCopyEnabled: Boolean = false,
-        imageSyncEnabled: Boolean = false
+        imageSyncEnabled: Boolean = false,
+        hideClipboardEnabled: Boolean = true
     ) {
         this.macs = macs
         refreshPairedState()
         _autoClearEnabled.value = autoClearEnabled
         _autoCopyEnabled.value = autoCopyEnabled
         _imageSyncEnabled.value = imageSyncEnabled
+        _hideClipboardEnabled.value = hideClipboardEnabled
     }
 
     /** Paired list or per-Mac connection flags changed (store re-read / connection broadcast). */
@@ -143,6 +148,10 @@ class MainViewModel : ViewModel() {
 
     fun onAutoClearSettingChanged(enabled: Boolean) {
         _autoClearEnabled.value = enabled
+    }
+
+    fun onHideClipboardSettingChanged(enabled: Boolean) {
+        _hideClipboardEnabled.value = enabled
     }
 
     fun onAutoCopySettingChanged(enabled: Boolean) {
