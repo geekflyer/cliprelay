@@ -8,6 +8,7 @@ class ClipboardSettingsStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "cliprelay_settings"
         private const val KEY_AUTO_CLEAR_SYNCED_CLIPBOARD = "auto_clear_synced_clipboard"
+        private const val KEY_HIDE_SYNCED_CLIPBOARD = "hide_synced_clipboard"
         const val KEY_AUTO_COPY_ENABLED = "auto_copy_enabled"
         const val KEY_AUTO_COPY_ONBOARDING_SHOWN = "auto_copy_onboarding_shown"
 
@@ -22,6 +23,16 @@ class ClipboardSettingsStore(context: Context) {
 
     fun setAutoClearSyncedClipboardEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTO_CLEAR_SYNCED_CLIPBOARD, enabled).apply()
+    }
+
+    /** When enabled (default), synced clipboard text is marked sensitive so the
+     *  system hides it from previews and editor suggestions. */
+    fun isHideSyncedClipboardEnabled(): Boolean {
+        return prefs.getBoolean(KEY_HIDE_SYNCED_CLIPBOARD, true)
+    }
+
+    fun setHideSyncedClipboardEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HIDE_SYNCED_CLIPBOARD, enabled).apply()
     }
 
     fun isAutoCopyEnabled(): Boolean {

@@ -88,6 +88,7 @@ fun ClipRelayScreen(
     showBurst: Boolean,
     clipboardTransferFlow: Flow<Boolean> = emptyFlow(),
     autoClearEnabled: Boolean,
+    hideClipboardEnabled: Boolean = true,
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
@@ -98,6 +99,7 @@ fun ClipRelayScreen(
     onForgetMacClick: (String) -> Unit = {},
     onBurstShown: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
+    onHideClipboardSettingChanged: (Boolean) -> Unit = {},
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {},
@@ -188,6 +190,7 @@ fun ClipRelayScreen(
                     state = state,
                     clipboardTransferFlow = clipboardTransferFlow,
                     autoClearEnabled = autoClearEnabled,
+                    hideClipboardEnabled = hideClipboardEnabled,
                     autoCopyEnabled = autoCopyEnabled,
                     autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                     imageSyncEnabled = imageSyncEnabled,
@@ -197,6 +200,7 @@ fun ClipRelayScreen(
                     onPairClick = onPairClick,
                     onForgetMacClick = onForgetMacClick,
                     onAutoClearSettingChanged = onAutoClearSettingChanged,
+                    onHideClipboardSettingChanged = onHideClipboardSettingChanged,
                     onAutoCopySettingChanged = onAutoCopySettingChanged,
                     onImageSyncSettingChanged = onImageSyncSettingChanged,
                     onAutoCopyFixClick = onAutoCopyFixClick
@@ -322,6 +326,7 @@ private fun MainCard(
     state: AppState,
     clipboardTransferFlow: Flow<Boolean>,
     autoClearEnabled: Boolean,
+    hideClipboardEnabled: Boolean = true,
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
@@ -331,6 +336,7 @@ private fun MainCard(
     onPairClick: () -> Unit,
     onForgetMacClick: (String) -> Unit = {},
     onAutoClearSettingChanged: (Boolean) -> Unit,
+    onHideClipboardSettingChanged: (Boolean) -> Unit = {},
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {}
@@ -580,6 +586,11 @@ private fun MainCard(
                 onEnabledChange = onAutoClearSettingChanged
             )
             Spacer(modifier = Modifier.height(8.dp))
+            HideClipboardSettingRow(
+                enabled = hideClipboardEnabled,
+                onEnabledChange = onHideClipboardSettingChanged
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             ImageSyncSettingRow(
                 enabled = imageSyncEnabled,
                 onEnabledChange = onImageSyncSettingChanged
@@ -812,6 +823,62 @@ private fun AutoClearSettingRow(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = stringResource(R.string.auto_clear_setting_subtitle),
+                fontSize = 12.sp,
+                color = Color(0x80000000),
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Switch(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Teal,
+                checkedTrackColor = Aqua.copy(alpha = 0.45f),
+                checkedBorderColor = Aqua.copy(alpha = 0.60f),
+                uncheckedThumbColor = Color(0xFF7A7A7A),
+                uncheckedTrackColor = Color(0x15000000),
+                uncheckedBorderColor = Color(0x40000000)
+            )
+        )
+    }
+}
+
+@Composable
+private fun HideClipboardSettingRow(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
+) {
+    val toggleBg = if (enabled) Color(0x1400FFD5) else Color(0x08000000)
+    val toggleBorder = if (enabled) Color(0x2B00FFD5) else Color(0x14000000)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(toggleBg)
+            .border(1.dp, toggleBorder, RoundedCornerShape(18.dp))
+            .toggleable(
+                value = enabled,
+                role = Role.Switch,
+                onValueChange = onEnabledChange
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.hide_clipboard_setting_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xCC000000)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.hide_clipboard_setting_subtitle),
                 fontSize = 12.sp,
                 color = Color(0x80000000),
                 lineHeight = 16.sp

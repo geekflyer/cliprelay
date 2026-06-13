@@ -557,7 +557,7 @@ class ClipRelayService : Service(), L2capServerCallback {
         if (decodedText.isEmpty()) return
 
         lastInboundHash = hash
-        clipboardWriter.writeText(decodedText)
+        clipboardWriter.writeText(decodedText, markSensitive = clipboardSettingsStore.isHideSyncedClipboardEnabled())
         scheduleClipboardAutoClear(decodedText)
         sendClipboardTransferBroadcast(fromMac = true)
         DebugSmokeProbe.onInboundClipboardApplied(this, decodedText)

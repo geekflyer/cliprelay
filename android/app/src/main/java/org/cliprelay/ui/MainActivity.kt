@@ -140,12 +140,14 @@ class MainActivity : AppCompatActivity() {
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
         val autoCopyEnabled = clipboardSettingsStore.isAutoCopyEnabled()
         val imageSyncEnabled = pairingStore.isRichMediaEnabled()
-        viewModel.initState(loadMacsForUi(emptySet()), autoClearEnabled, autoCopyEnabled, imageSyncEnabled)
+        val hideClipboardEnabled = clipboardSettingsStore.isHideSyncedClipboardEnabled()
+        viewModel.initState(loadMacsForUi(emptySet()), autoClearEnabled, autoCopyEnabled, imageSyncEnabled, hideClipboardEnabled)
 
         setContent {
             val state by viewModel.state.collectAsState()
             val showBurst by viewModel.showBurst.collectAsState()
             val autoClearEnabled by viewModel.autoClearEnabled.collectAsState()
+            val hideClipboardEnabled by viewModel.hideClipboardEnabled.collectAsState()
             val autoCopyEnabled by viewModel.autoCopyEnabled.collectAsState()
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
             val imageSyncEnabled by viewModel.imageSyncEnabled.collectAsState()
@@ -200,6 +202,7 @@ class MainActivity : AppCompatActivity() {
                 showBurst = showBurst,
                 clipboardTransferFlow = viewModel.clipboardTransfer,
                 autoClearEnabled = autoClearEnabled,
+                hideClipboardEnabled = hideClipboardEnabled,
                 autoCopyEnabled = autoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
@@ -243,6 +246,10 @@ class MainActivity : AppCompatActivity() {
                 onAutoClearSettingChanged = { enabled ->
                     viewModel.onAutoClearSettingChanged(enabled)
                     clipboardSettingsStore.setAutoClearSyncedClipboardEnabled(enabled)
+                },
+                onHideClipboardSettingChanged = { enabled ->
+                    viewModel.onHideClipboardSettingChanged(enabled)
+                    clipboardSettingsStore.setHideSyncedClipboardEnabled(enabled)
                 },
                 onAutoCopySettingChanged = { enabled ->
                     if (enabled && !isAccessibilityServiceEnabled()) {
