@@ -32,9 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetryManager: TelemetryManager?
     private var clipboardMonitor: ClipboardMonitor?
     private var awaitingNewPairingConnection = false
-    private var hasShownBluetoothAlert = false
     private var bluetoothOffDebounceTimer: Timer?
-    private static let bluetoothOffDebounceDelay: TimeInterval = 60.0
+    private var lastWakeTime: Date?
+    // A manual Bluetooth toggle surfaces the indicator immediately. The only debounce is for
+    // the brief off→on cycle right after wake (sleep automations re-enabling Bluetooth): within
+    // `wakeSettleWindow` of a wake we wait `bluetoothOffWakeDebounceDelay`, and `.poweredOn`
+    // cancels it before the badge ever shows. See issue #61.
+    private static let bluetoothOffWakeDebounceDelay: TimeInterval = 10.0
+    private static let wakeSettleWindow: TimeInterval = 20.0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Start the Sparkle updater now that the app is fully launched.
@@ -196,12 +201,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.willSleepNotification,
             object: nil
         )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
     }
 
     @objc private func handleSystemWillSleep(_ notification: Notification) {
         bluetoothOffDebounceTimer?.invalidate()
         bluetoothOffDebounceTimer = nil
         statusBarController.setBluetoothWarning(nil)
+    }
+
+    @objc private func handleSystemDidWake(_ notification: Notification) {
+        lastWakeTime = Date()
     }
 
     private func showBluetoothAlert(message: String, info: String) {
@@ -315,32 +330,45 @@ extension AppDelegate: ConnectionControllerDelegate {
             bluetoothOffDebounceTimer?.invalidate()
             bluetoothOffDebounceTimer = nil
             statusBarController.setBluetoothWarning(nil)
-            hasShownBluetoothAlert = false
         case .unauthorized:
-            statusBarController.setBluetoothWarning("Bluetooth permission denied")
-            if !hasShownBluetoothAlert {
-                hasShownBluetoothAlert = true
-                showBluetoothAlert(
-                    message: "Bluetooth access denied",
-                    info: "ClipRelay needs Bluetooth permission. Please grant access in System Settings > Privacy & Security > Bluetooth."
-                )
+            // Permission denied is a stable, genuinely actionable state: surface it
+            // immediately. Clicking the menu row opens the Privacy settings pane.
+            statusBarController.setBluetoothWarning("Allow Bluetooth access for ClipRelay") { [weak self] in
+                self?.openBluetoothSettings(privacy: true)
             }
         case .poweredOff:
-            if !hasShownBluetoothAlert && bluetoothOffDebounceTimer == nil {
+            // A manual/intentional disable surfaces immediately. The only case we debounce is
+            // the brief off→on blink right after wake (sleep automations re-enabling Bluetooth):
+            // there we wait, and `.poweredOn` cancels it before the badge ever shows. See #61.
+            guard bluetoothOffDebounceTimer == nil else { break }
+            let recentlyWoke = lastWakeTime.map { Date().timeIntervalSince($0) < Self.wakeSettleWindow } ?? false
+            if recentlyWoke {
                 bluetoothOffDebounceTimer = Timer.scheduledTimer(
-                    withTimeInterval: Self.bluetoothOffDebounceDelay, repeats: false
+                    withTimeInterval: Self.bluetoothOffWakeDebounceDelay, repeats: false
                 ) { [weak self] _ in
                     guard let self else { return }
                     self.bluetoothOffDebounceTimer = nil
-                    self.hasShownBluetoothAlert = true
-                    self.statusBarController.setBluetoothWarning("Bluetooth is turned off")
-                    self.showBluetoothAlert(
-                        message: "Bluetooth is turned off",
-                        info: "ClipRelay needs Bluetooth to sync your clipboard. Please enable Bluetooth in System Settings."
-                    )
+                    self.showBluetoothOffWarning()
                 }
+            } else {
+                showBluetoothOffWarning()
             }
         default: break
+        }
+    }
+
+    private func showBluetoothOffWarning() {
+        statusBarController.setBluetoothWarning("Bluetooth is turned off - please enable Bluetooth for ClipRelay to resume sync.") { [weak self] in
+            self?.openBluetoothSettings(privacy: false)
+        }
+    }
+
+    private func openBluetoothSettings(privacy: Bool) {
+        let target = privacy
+            ? "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth"
+            : "x-apple.systempreferences:com.apple.BluetoothSettings"
+        if let url = URL(string: target) {
+            NSWorkspace.shared.open(url)
         }
     }
 
