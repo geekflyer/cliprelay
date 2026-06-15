@@ -331,6 +331,10 @@ extension AppDelegate: ConnectionControllerDelegate {
             bluetoothOffDebounceTimer = nil
             statusBarController.setBluetoothWarning(nil)
         case .unauthorized:
+            // Cancel a pending powered-off settle so it can't later overwrite this more
+            // specific warning (and its Privacy-pane link) with the generic message.
+            bluetoothOffDebounceTimer?.invalidate()
+            bluetoothOffDebounceTimer = nil
             // Permission denied is a stable, genuinely actionable state: surface it
             // immediately. Clicking the menu row opens the Privacy settings pane.
             statusBarController.setBluetoothWarning("Allow Bluetooth access for ClipRelay") { [weak self] in
