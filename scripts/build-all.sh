@@ -173,7 +173,10 @@ PLIST
         "$app_dir"
   else
     echo "Developer ID not found, signing ad-hoc with hardened runtime..."
-    codesign --force --sign - \
+    # --deep so the bundled Sparkle.framework is re-signed ad-hoc too. Without it the
+    # framework keeps its original Team ID and hardened runtime refuses to load it
+    # ("different Team IDs"), crashing the app on launch.
+    codesign --force --deep --sign - \
         --entitlements "$entitlements_path" \
         --options runtime \
         "$app_dir"

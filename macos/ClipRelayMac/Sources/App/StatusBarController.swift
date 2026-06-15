@@ -24,6 +24,7 @@ final class StatusBarController {
     private var connectedPeers: [PeerSummary] = []
     private var trustedPeers: [PeerSummary] = []
     private var bluetoothWarning: String?
+    private var bluetoothWarningAction: (() -> Void)?
 
     private static let brandAqua = NSColor(red: 0, green: 1, blue: 0.835, alpha: 1) // #00FFD5
 
@@ -55,14 +56,83 @@ final class StatusBarController {
             button.title = "GP"
             return
         }
-        if !connectedPeers.isEmpty {
+        if bluetoothWarning != nil {
+            // A Bluetooth problem means the app is inactive. Keep the normal template glyph
+            // (so it renders the same soft gray as idle, not a heavier solid black) and
+            // overlay a yellow warning badge on top.
+            let template = base.copy() as! NSImage
+            template.isTemplate = true
+            button.image = template
+            showWarningBadge(on: button)
+        } else if !connectedPeers.isEmpty {
+            hideWarningBadge(on: button)
             let aqua = base.colorized(with: Self.brandAqua)
             aqua.isTemplate = false
             button.image = aqua
         } else {
+            hideWarningBadge(on: button)
             let template = base.copy() as! NSImage
             template.isTemplate = true
             button.image = template
+        }
+    }
+
+    private static let warningBadgeLayerName = "clipRelayWarningBadge"
+
+    /// Overlays a small yellow "!" badge on the top-right of the status item. Drawn as a
+    /// layer (not composited into the image) so the glyph keeps its template appearance and
+    /// the badge never intercepts the menu click.
+    private func showWarningBadge(on button: NSStatusBarButton) {
+        button.wantsLayer = true
+        guard let host = button.layer else { return }
+
+        let badge: CALayer
+        if let existing = host.sublayers?.first(where: { $0.name == Self.warningBadgeLayerName }) {
+            badge = existing
+        } else {
+            badge = CALayer()
+            badge.name = Self.warningBadgeLayerName
+            host.addSublayer(badge)
+        }
+
+        let pointSize: CGFloat = 9
+        let scale = button.window?.backingScaleFactor ?? 2
+        badge.contents = makeWarningBadgeImage(pixelDiameter: pointSize * scale)
+            .cgImage(forProposedRect: nil, context: nil, hints: nil)
+        badge.contentsGravity = .resizeAspect
+        badge.contentsScale = scale
+
+        // Sit over the top-right corner of the centered 18pt glyph. The button's backing
+        // layer is flipped (top-left origin), so the glyph's top edge is the smaller y.
+        let bounds = button.bounds
+        let glyph: CGFloat = 18
+        let glyphMaxX = (bounds.width + glyph) / 2
+        let glyphMinY = (bounds.height - glyph) / 2
+        badge.frame = CGRect(x: glyphMaxX - pointSize + 1, y: glyphMinY - 1,
+                             width: pointSize, height: pointSize)
+    }
+
+    private func hideWarningBadge(on button: NSStatusBarButton) {
+        button.layer?.sublayers?
+            .first { $0.name == Self.warningBadgeLayerName }?
+            .removeFromSuperlayer()
+    }
+
+    /// A yellow disc with a dark "!" — drawn proportionally so it stays crisp at any scale.
+    private func makeWarningBadgeImage(pixelDiameter: CGFloat) -> NSImage {
+        NSImage(size: NSSize(width: pixelDiameter, height: pixelDiameter), flipped: false) { rect in
+            let w = rect.width
+            NSColor.systemYellow.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+
+            NSColor.black.setFill()
+            let stemW = w * 0.16
+            let stem = NSRect(x: rect.midX - stemW / 2, y: rect.midY - w * 0.03, width: stemW, height: w * 0.32)
+            NSBezierPath(roundedRect: stem, xRadius: stemW / 2, yRadius: stemW / 2).fill()
+            let dotD = w * 0.18
+            let dot = NSRect(x: rect.midX - dotD / 2, y: rect.midY - w * 0.30, width: dotD, height: dotD)
+            NSBezierPath(ovalIn: dot).fill()
+            return true
         }
     }
 
@@ -77,8 +147,10 @@ final class StatusBarController {
         renderMenu()
     }
 
-    func setBluetoothWarning(_ warning: String?) {
+    func setBluetoothWarning(_ warning: String?, action: (() -> Void)? = nil) {
         bluetoothWarning = warning
+        bluetoothWarningAction = action
+        updateStatusBarIcon()
         renderMenu()
     }
 
@@ -123,9 +195,20 @@ final class StatusBarController {
         menu.removeAllItems()
 
         if let bluetoothWarning {
-            let warningItem = NSMenuItem(title: bluetoothWarning, action: nil, keyEquivalent: "")
-            warningItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "warning")
-            warningItem.isEnabled = false
+            let hasAction = bluetoothWarningAction != nil
+            let warningItem = NSMenuItem(
+                title: bluetoothWarning,
+                action: hasAction ? #selector(handleBluetoothWarningSelected) : nil,
+                keyEquivalent: ""
+            )
+            let warningSymbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "warning")
+            // Two palette colors. The symbol's first layer is the exclamation, second is the
+            // triangle, so order them black then yellow for a yellow triangle + black mark.
+            warningItem.image = warningSymbol?.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(paletteColors: [.black, .systemYellow])
+            )
+            warningItem.target = self
+            warningItem.isEnabled = hasAction
             menu.addItem(warningItem)
             menu.addItem(NSMenuItem.separator())
         }
@@ -301,6 +384,11 @@ final class StatusBarController {
     @objc
     private func handlePairNewDevice() {
         onPairNewDeviceRequested?()
+    }
+
+    @objc
+    private func handleBluetoothWarningSelected() {
+        bluetoothWarningAction?()
     }
 
     @objc
