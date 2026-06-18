@@ -458,7 +458,7 @@ final class StatusBarController {
 
     private func deviceContext() -> [(String, String)] {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        let gitHash = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let osString = "macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
         var model = "Unknown Mac"
@@ -470,11 +470,23 @@ final class StatusBarController {
             }
         }
         let bleState = bleStateProvider?() ?? "unknown"
+        #if DEBUG
+        let buildType = "debug"
+        #else
+        let buildType = "release"
+        #endif
+        let flags = [
+            "imageSync=\(isImageSyncEnabled?() ?? false)",
+            "autoUpdate=\(updaterController.updater.automaticallyChecksForUpdates)",
+            "betaChannel=\(isBetaChannelEnabled)",
+        ].joined(separator: ", ")
         return [
-            ("App Version", "\(version) (\(gitHash))"),
+            ("App Version", "\(version) (\(build)) [\(buildType)]"),
             ("OS", osString),
             ("Device", model),
             ("BLE State", bleState),
+            ("Paired Devices", "\(trustedPeers.count) (\(connectedPeers.count) connected)"),
+            ("Flags", flags),
         ]
     }
 
