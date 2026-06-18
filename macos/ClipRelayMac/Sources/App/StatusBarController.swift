@@ -442,15 +442,9 @@ final class StatusBarController {
     private func handleShareLogs() {
         let context = deviceContext()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result(catching: { try LogShareExporter.exportLogs(deviceContext: context) })
+            let text = LogShareExporter.exportLogs(deviceContext: context)
             DispatchQueue.main.async {
-                guard let self else { return }
-                switch result {
-                case .success(let fileURL):
-                    self.presentSharingPicker(for: fileURL)
-                case .failure(let error):
-                    self.presentShareLogsError(message: error.localizedDescription)
-                }
+                self?.presentSharingPicker(for: text)
             }
         }
     }
@@ -484,22 +478,16 @@ final class StatusBarController {
         ]
     }
 
-    private func presentSharingPicker(for fileURL: URL) {
+    private func presentSharingPicker(for text: String) {
         guard let button = statusItem.button else {
-            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+            // No anchor for the picker — fall back to copying the logs.
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
             return
         }
-        let picker = NSSharingServicePicker(items: [fileURL])
+        let picker = NSSharingServicePicker(items: [text])
         sharingPicker = picker
         picker.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-    }
-
-    private func presentShareLogsError(message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Could not prepare ClipRelay logs"
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.runModal()
     }
 
     @objc

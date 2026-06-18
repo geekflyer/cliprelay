@@ -1,27 +1,20 @@
 import Foundation
 
 enum LogShareExporter {
-    private static let shareDirectoryName = "ClipRelaySharedLogs"
+    // Shared as plain text via NSSharingServicePicker rather than a .txt file —
+    // text drops straight into Mail/Messages/Notes or the pasteboard. The
+    // diagnostic log is already bounded by rotation; cap each section's tail so
+    // a debug-build unified-log dump can't bloat the share.
+    private static let maxDiagnosticChars = 400_000
+    private static let maxUnifiedLogChars = 200_000
 
-    static func exportLogs(deviceContext: [(String, String)]) throws -> URL {
-        let now = Date()
-        let shareDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(shareDirectoryName, isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: shareDirectory,
-            withIntermediateDirectories: true,
-            attributes: nil
-        )
-
-        let fileURL = shareDirectory.appendingPathComponent(buildFileName(for: now), isDirectory: false)
-        let contents = buildFileContents(
+    static func exportLogs(deviceContext: [(String, String)]) -> String {
+        buildShareText(
             deviceContext: deviceContext,
-            generatedAt: now,
-            diagnosticLog: DiagnosticLog.shared.currentLogText(),
-            logs: captureUnifiedLogs()
+            generatedAt: Date(),
+            diagnosticLog: tail(DiagnosticLog.shared.currentLogText(), maxChars: maxDiagnosticChars),
+            logs: tail(captureUnifiedLogs(), maxChars: maxUnifiedLogChars)
         )
-        try contents.write(to: fileURL, atomically: true, encoding: .utf8)
-        return fileURL
     }
 
     private static func captureUnifiedLogs() -> String {
@@ -66,15 +59,19 @@ enum LogShareExporter {
         return output.isEmpty ? "No recent ClipRelay unified logs were available." : output
     }
 
-    static func buildFileName(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return "cliprelay-mac-logs-\(formatter.string(from: date)).txt"
+    /// Keep the most recent `maxChars`, dropping the now-partial leading line.
+    static func tail(_ string: String, maxChars: Int) -> String {
+        guard string.count > maxChars else { return string }
+        let start = string.index(string.endIndex, offsetBy: -maxChars)
+        let trimmed = string[start...]
+        if let newline = trimmed.firstIndex(of: "\n") {
+            return "[… older lines truncated to fit the share size limit …]\n"
+                + trimmed[trimmed.index(after: newline)...]
+        }
+        return String(trimmed)
     }
 
-    static func buildFileContents(
+    static func buildShareText(
         deviceContext: [(String, String)],
         generatedAt: Date,
         diagnosticLog: String,
