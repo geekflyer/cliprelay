@@ -17,6 +17,7 @@ enum LogShareExporter {
         let contents = buildFileContents(
             deviceContext: deviceContext,
             generatedAt: now,
+            diagnosticLog: DiagnosticLog.shared.currentLogText(),
             logs: captureUnifiedLogs()
         )
         try contents.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -35,7 +36,7 @@ enum LogShareExporter {
             "--last",
             "24h",
             "--predicate",
-            "subsystem == \"org.cliprelay\"",
+            "subsystem == \"org.cliprelay\" OR process == \"ClipRelay\"",
         ]
         process.standardOutput = stdout
         process.standardError = stderr
@@ -65,7 +66,7 @@ enum LogShareExporter {
         return output.isEmpty ? "No recent ClipRelay unified logs were available." : output
     }
 
-    private static func buildFileName(for date: Date) -> String {
+    static func buildFileName(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -73,19 +74,24 @@ enum LogShareExporter {
         return "cliprelay-mac-logs-\(formatter.string(from: date)).txt"
     }
 
-    private static func buildFileContents(
+    static func buildFileContents(
         deviceContext: [(String, String)],
         generatedAt: Date,
+        diagnosticLog: String,
         logs: String
     ) -> String {
         let formatter = ISO8601DateFormatter()
         let contextLines = deviceContext.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
+        let diagnostics = diagnosticLog.trimmingCharacters(in: .whitespacesAndNewlines)
         return """
         ClipRelay macOS diagnostics
         Generated: \(formatter.string(from: generatedAt))
-        Included logs: ClipRelay unified log snapshot from the last 24 hours
+        Included logs: ClipRelay diagnostic log (BLE/pairing trace) + unified log snapshot from the last 24 hours
 
         \(contextLines)
+
+        ---- DIAGNOSTIC LOG (BLE / pairing) ----
+        \(diagnostics.isEmpty ? "No diagnostic log entries were recorded yet." : diagnostics)
 
         ---- UNIFIED LOGS ----
         \(logs)

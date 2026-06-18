@@ -207,6 +207,40 @@ class ConnectionController: NSObject {
 
     private func log(_ message: String) {
         logger.notice("\(message, privacy: .public)")
+        // Also persist to the shareable diagnostic file — os.Logger output is
+        // invisible in release builds, so this is the only trace users can send.
+        DiagnosticLog.shared.log(message, category: "Connection")
+    }
+
+    /// Full NSError detail. `localizedDescription` alone hides the CoreBluetooth
+    /// domain/code we need to tell apart L2CAP open failures (e.g. encryption
+    /// insufficient vs. peer removed pairing vs. unsupported).
+    private func describe(_ error: Error?) -> String {
+        guard let error else { return "none" }
+        let ns = error as NSError
+        var detail = "\(ns.domain) code=\(ns.code): \(ns.localizedDescription)"
+        if !ns.userInfo.isEmpty {
+            detail += " userInfo=\(ns.userInfo)"
+        }
+        return detail
+    }
+
+    /// Human-readable Bluetooth state for shared logs — a bare rawValue like
+    /// "BT state: 4" is opaque to a user reading their exported log.
+    /// poweredOff = OS Bluetooth disabled; unauthorized = app lacks permission
+    /// (Bluetooth may still be on).
+    private func describe(_ state: CBManagerState) -> String {
+        let name: String
+        switch state {
+        case .poweredOn: name = "poweredOn"
+        case .poweredOff: name = "poweredOff"
+        case .unauthorized: name = "unauthorized"
+        case .unsupported: name = "unsupported"
+        case .resetting: name = "resetting"
+        case .unknown: name = "unknown"
+        @unknown default: name = "unknown"
+        }
+        return "\(name) (\(state.rawValue))"
     }
 
     // MARK: - Device list
@@ -589,7 +623,7 @@ extension ConnectionController {
 extension ConnectionController: CBCentralManagerDelegate {
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        log("BT state: \(central.state.rawValue)")
+        log("BT state: \(describe(central.state))")
         if central.state == .poweredOn {
             // Re-cancel peripherals from before the power cycle. cancelPeripheralConnection
             // during BT-off is a no-op, so internal CB connection bookkeeping can accumulate
@@ -608,7 +642,7 @@ extension ConnectionController: CBCentralManagerDelegate {
             ensureScanning()
         } else {
             teardownAll(
-                reason: "BT state \(central.state.rawValue)",
+                reason: "BT state \(describe(central.state))",
                 preservePairingContext: pairingTag != nil
             )
         }
@@ -663,6 +697,7 @@ extension ConnectionController: CBCentralManagerDelegate {
         if peripheral === pairingPeripheral, case .connecting(_, let psm) = pairingPhase {
             pairingPhase = .l2capOpening(peripheral)
             pairingConnectingStartTime = Date()  // reset for L2CAP open timeout
+            log("Pairing: connected, opening L2CAP channel psm=\(psm)")
             peripheral.openL2CAPChannel(psm)
             return
         }
@@ -674,6 +709,7 @@ extension ConnectionController: CBCentralManagerDelegate {
         }
         device.state = .l2capOpening
         device.connectingStartTime = Date()  // reset for L2CAP open timeout
+        log("Connected \(device.token.prefix(8))…, opening L2CAP channel psm=\(psm)")
         peripheral.openL2CAPChannel(psm)
     }
 
@@ -682,7 +718,7 @@ extension ConnectionController: CBCentralManagerDelegate {
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
-        log("didFailToConnect: \(error?.localizedDescription ?? "unknown")")
+        log("didFailToConnect: \(describe(error))")
         central.cancelPeripheralConnection(peripheral)
         if peripheral === pairingPeripheral {
             abortPairingAttempt()
@@ -698,7 +734,7 @@ extension ConnectionController: CBCentralManagerDelegate {
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
-        log("didDisconnect: \(error?.localizedDescription ?? "clean")")
+        log("didDisconnect: \(error == nil ? "clean" : describe(error))")
         if peripheral === pairingPeripheral {
             abortPairingAttempt()
             return
@@ -719,7 +755,7 @@ extension ConnectionController: CBPeripheralDelegate {
         let isPairing = peripheral === pairingPeripheral
 
         if let error {
-            log("L2CAP open error: \(error.localizedDescription)")
+            log("L2CAP open error (\(isPairing ? "pairing" : "reconnect")): \(describe(error))")
             if isPairing {
                 abortPairingAttempt()
             } else if let device = device(of: peripheral) {
@@ -737,6 +773,8 @@ extension ConnectionController: CBPeripheralDelegate {
             }
             return
         }
+
+        log("L2CAP channel opened (\(isPairing ? "pairing" : "reconnect")) — starting session")
 
         if isPairing {
             guard case .l2capOpening = pairingPhase else {

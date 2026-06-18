@@ -5,6 +5,7 @@ package org.cliprelay.ble
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
+import android.util.Log
 import java.io.IOException
 
 interface L2capServerCallback {
@@ -16,6 +17,10 @@ class L2capServer(
     private val adapter: BluetoothAdapter,
     private val callback: L2capServerCallback
 ) {
+    companion object {
+        private const val TAG = "L2capServer"
+    }
+
     private var serverSocket: BluetoothServerSocket? = null
     private var acceptThread: Thread? = null
 
@@ -30,14 +35,17 @@ class L2capServer(
         val socket = adapter.listenUsingInsecureL2capChannel()
         serverSocket = socket
         val psm = socket.psm
+        Log.i(TAG, "L2CAP server listening (psm=$psm), waiting for central to connect")
 
         acceptThread = Thread({
             while (!Thread.currentThread().isInterrupted) {
                 try {
                     val client = socket.accept() // blocks until connection
+                    Log.i(TAG, "Accepted incoming L2CAP connection from ${client.remoteDevice?.address ?: "unknown"}")
                     callback.onClientConnected(client)
                 } catch (e: IOException) {
                     if (!Thread.currentThread().isInterrupted) {
+                        Log.w(TAG, "L2CAP accept error: ${e.message}")
                         callback.onAcceptError(e)
                     }
                     break
@@ -54,5 +62,6 @@ class L2capServer(
         try { serverSocket?.close() } catch (_: IOException) {}
         acceptThread = null
         serverSocket = null
+        Log.i(TAG, "L2CAP server stopped")
     }
 }
