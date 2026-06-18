@@ -395,10 +395,7 @@ class MainActivity : AppCompatActivity() {
                     val chooser = Intent.createChooser(
                         shareIntent,
                         getString(R.string.share_logs_chooser_title)
-                    ).apply {
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        clipData = shareIntent.clipData
-                    }
+                    )
                     startActivity(chooser)
                 }.onFailure { error ->
                     val reason = error.message ?: error.javaClass.simpleName

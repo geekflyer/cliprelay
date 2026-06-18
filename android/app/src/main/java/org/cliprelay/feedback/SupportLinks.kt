@@ -8,7 +8,8 @@ import org.cliprelay.BuildConfig
 
 object SupportLinks {
     private fun deviceContext(): List<Pair<String, String>> = listOf(
-        "App Version" to "${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
+        "App Version" to "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_HASH})" +
+            if (BuildConfig.DEBUG) " [debug]" else "",
         "OS" to "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
         "Device" to "${Build.MANUFACTURER} ${Build.MODEL}",
     )
