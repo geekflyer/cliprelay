@@ -33,6 +33,7 @@ final class StatusBarController {
 
     private var baseStatusBarImage: NSImage?
     private var syncPulseTimer: Timer?
+    private var sharingPicker: NSSharingServicePicker?
 
     init(updaterController: SPUStandardUpdaterController) {
         self.updaterController = updaterController
@@ -274,6 +275,9 @@ final class StatusBarController {
         let emailItem = NSMenuItem(title: "Email Support\u{2026}", action: #selector(handleOpenEmail), keyEquivalent: "")
         emailItem.target = self
         supportMenu.addItem(emailItem)
+        let shareLogsItem = NSMenuItem(title: "Share Logs\u{2026}", action: #selector(handleShareLogs), keyEquivalent: "")
+        shareLogsItem.target = self
+        supportMenu.addItem(shareLogsItem)
         supportMenu.addItem(NSMenuItem.separator())
         let discussionsItem = NSMenuItem(title: "Community Discussions\u{2026}", action: #selector(handleOpenDiscussions), keyEquivalent: "")
         discussionsItem.target = self
@@ -435,6 +439,17 @@ final class StatusBarController {
     }
 
     @objc
+    private func handleShareLogs() {
+        let context = deviceContext()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let text = LogShareExporter.exportLogs(deviceContext: context)
+            DispatchQueue.main.async {
+                self?.presentSharingPicker(for: text)
+            }
+        }
+    }
+
+    @objc
     private func handleOpenDiscussions() {
         if let url = URL(string: "https://github.com/geekflyer/cliprelay/discussions") {
             NSWorkspace.shared.open(url)
@@ -443,7 +458,7 @@ final class StatusBarController {
 
     private func deviceContext() -> [(String, String)] {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        let gitHash = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let osString = "macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
         var model = "Unknown Mac"
@@ -455,12 +470,36 @@ final class StatusBarController {
             }
         }
         let bleState = bleStateProvider?() ?? "unknown"
+        #if DEBUG
+        let buildType = "debug"
+        #else
+        let buildType = "release"
+        #endif
+        let flags = [
+            "imageSync=\(isImageSyncEnabled?() ?? false)",
+            "autoUpdate=\(updaterController.updater.automaticallyChecksForUpdates)",
+            "betaChannel=\(isBetaChannelEnabled)",
+        ].joined(separator: ", ")
         return [
-            ("App Version", "\(version) (\(gitHash))"),
+            ("App Version", "\(version) (\(build)) [\(buildType)]"),
             ("OS", osString),
             ("Device", model),
             ("BLE State", bleState),
+            ("Paired Devices", "\(trustedPeers.count) (\(connectedPeers.count) connected)"),
+            ("Flags", flags),
         ]
+    }
+
+    private func presentSharingPicker(for text: String) {
+        guard let button = statusItem.button else {
+            // No anchor for the picker — fall back to copying the logs.
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            return
+        }
+        let picker = NSSharingServicePicker(items: [text])
+        sharingPicker = picker
+        picker.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
     @objc

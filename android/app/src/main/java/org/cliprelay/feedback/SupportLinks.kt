@@ -8,13 +8,17 @@ import org.cliprelay.BuildConfig
 
 object SupportLinks {
     private fun deviceContext(): List<Pair<String, String>> = listOf(
-        "App Version" to "${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
+        "App Version" to "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_HASH})" +
+            if (BuildConfig.DEBUG) " [debug]" else "",
         "OS" to "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
         "Device" to "${Build.MANUFACTURER} ${Build.MODEL}",
     )
 
+    fun diagnosticsContext(bleState: String): List<Pair<String, String>> =
+        deviceContext() + ("BLE State" to bleState)
+
     fun gitHubIssueUrl(bleState: String): String {
-        val lines = (deviceContext() + ("BLE State" to bleState))
+        val lines = diagnosticsContext(bleState)
             .joinToString("\n") { "- **${it.first}:** ${it.second}" }
         val body = "\n\n---\n$lines"
         return Uri.parse("https://github.com/geekflyer/cliprelay/issues/new").buildUpon()
@@ -25,7 +29,7 @@ object SupportLinks {
     }
 
     fun emailUrl(bleState: String): String {
-        val lines = (deviceContext() + ("BLE State" to bleState))
+        val lines = diagnosticsContext(bleState)
             .joinToString("\n") { "${it.first}: ${it.second}" }
         val body = "\n\n---\n$lines"
         return "mailto:info@cliprelay.org" +

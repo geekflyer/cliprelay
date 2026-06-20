@@ -24,11 +24,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import org.cliprelay.R
+import org.cliprelay.feedback.LogShareExporter
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.service.ClipboardAccessibilityService
 import org.cliprelay.service.ClipRelayService
 import org.cliprelay.settings.ClipboardSettingsStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -275,6 +281,9 @@ class MainActivity : AppCompatActivity() {
                 onSupportLinkClick = { url ->
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                 },
+                onShareLogsClick = { bleState ->
+                    shareLogs(bleState)
+                },
             )
         }
     }
@@ -371,6 +380,32 @@ class MainActivity : AppCompatActivity() {
         }
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    private fun shareLogs(bleState: String) {
+        // lifecycleScope auto-cancels if the activity is destroyed during the
+        // capture, so the UI callback never touches a finishing activity.
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                LogShareExporter.createShareIntent(applicationContext, bleState)
+            }
+            withContext(Dispatchers.Main) {
+                result.onSuccess { shareIntent ->
+                    val chooser = Intent.createChooser(
+                        shareIntent,
+                        getString(R.string.share_logs_chooser_title)
+                    )
+                    startActivity(chooser)
+                }.onFailure { error ->
+                    val reason = error.message ?: error.javaClass.simpleName
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.share_logs_failed, reason),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
     }
 }
