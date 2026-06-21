@@ -242,23 +242,22 @@ class ConnectionController: NSObject {
         log("Advert seen tag=\(tagHex) psm=\(psm) rssi=\(rssi) [\(kind)]\(scanningFor)")
     }
 
-    /// Per-peripheral throttle for `logAdvertMissingManufacturerData`. Queue-only.
-    private var lastMissingMfrLog: [UUID: Date] = [:]
+    /// Per-peripheral throttle for `logUnusableAdvert`. Queue-only.
+    private var lastUnusableAdvertLog: [UUID: Date] = [:]
 
-    /// We discovered a ClipRelay device's primary advertisement (service UUID)
-    /// but the scan-response manufacturer data carrying the device tag + PSM was
-    /// absent. This is the exact failure where macOS can never read the PSM and
-    /// so never connects. Broad scanning (see `ensureScanning`) is meant to
-    /// avoid it — a recurring line here means the scan response still isn't
-    /// reaching CoreBluetooth even without a service filter. Throttled per
-    /// peripheral.
-    private func logAdvertMissingManufacturerData(peripheral: CBPeripheral, rssi: NSNumber) {
+    /// We saw a packet from a ClipRelay device we can't act on, plus why. The
+    /// two reasons must stay distinct in diagnostics: "scan response not
+    /// delivered" (the central never learns the PSM — the failure broad scanning
+    /// targets) vs. a ClipRelay payload that arrived but carried an unusable
+    /// PSM (a phone advertising before its L2CAP server allocated one).
+    /// Throttled per peripheral.
+    private func logUnusableAdvert(peripheral: CBPeripheral, rssi: NSNumber, reason: String) {
         let id = peripheral.identifier
         let now = Date()
-        guard now.timeIntervalSince(lastMissingMfrLog[id] ?? .distantPast) > 3.0 else { return }
-        lastMissingMfrLog[id] = now
+        guard now.timeIntervalSince(lastUnusableAdvertLog[id] ?? .distantPast) > 3.0 else { return }
+        lastUnusableAdvertLog[id] = now
         let scanningFor = pairingTag.map { " scanningForPairingTag=\(Self.hex($0))" } ?? ""
-        log("Advert seen (ClipRelay service UUID) but NO manufacturer data — scan response not delivered, can't read PSM rssi=\(rssi)\(scanningFor)")
+        log("Advert from \(id.uuidString.prefix(8))… unusable: \(reason) rssi=\(rssi)\(scanningFor)")
     }
 
     /// Full NSError detail. `localizedDescription` alone hides the CoreBluetooth
@@ -547,8 +546,8 @@ extension ConnectionController {
         queue.async { [self] in
             pairingPrivateKey = privateKey
             pairingTag = tag
-            lastAdvertLog.removeAll()       // fresh advert-sighting log for this pairing window
-            lastMissingMfrLog.removeAll()   // …and a fresh missing-scan-response log
+            lastAdvertLog.removeAll()         // fresh advert-sighting log for this pairing window
+            lastUnusableAdvertLog.removeAll() // …and a fresh unusable-advert log
             log("Pairing started — scanning for pairing tag \(Self.hex(tag))")
             pairingPhase = .scanning
             ensureScanning()
@@ -734,12 +733,21 @@ extension ConnectionController: CBCentralManagerDelegate {
               let deviceTag = Self.extractDeviceTag(from: manufacturerData),
               let psm = Self.extractPSM(from: manufacturerData)
         else {
-            // No usable ClipRelay manufacturer data in this packet. If the
-            // primary advert still carries our service UUID, the scan response
-            // wasn't delivered — the exact failure where macOS can't read the
-            // PSM. Log it; a later duplicate callback usually carries the data.
-            if (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.contains(Self.serviceUUID) == true {
-                logAdvertMissingManufacturerData(peripheral: peripheral, rssi: RSSI)
+            // Couldn't read a tag+PSM. Separate the two reasons so diagnostics
+            // stay precise.
+            let mfrData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
+            if let mfrData, Self.isClipRelayManufacturerData(mfrData) {
+                // ClipRelay payload present but tag/PSM unusable (PSM=0): the
+                // phone is advertising before its L2CAP server allocated a PSM.
+                logUnusableAdvert(peripheral: peripheral, rssi: RSSI,
+                                  reason: "ClipRelay manufacturer data present but PSM=0 (L2CAP server not ready)")
+            } else if (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.contains(Self.serviceUUID) == true {
+                // Primary advert (service UUID) seen but scan-response
+                // manufacturer data absent — the scan response wasn't delivered,
+                // so we can't read the PSM. A later duplicate callback usually
+                // carries it.
+                logUnusableAdvert(peripheral: peripheral, rssi: RSSI,
+                                  reason: "NO manufacturer data — scan response not delivered, can't read PSM")
             }
             return
         }
