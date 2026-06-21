@@ -242,6 +242,24 @@ class ConnectionController: NSObject {
         log("Advert seen tag=\(tagHex) psm=\(psm) rssi=\(rssi) [\(kind)]\(scanningFor)")
     }
 
+    /// Per-peripheral throttle for `logUnusableAdvert`. Queue-only.
+    private var lastUnusableAdvertLog: [UUID: Date] = [:]
+
+    /// We saw a packet from a ClipRelay device we can't act on, plus why. The
+    /// two reasons must stay distinct in diagnostics: "scan response not
+    /// delivered" (the central never learns the PSM — the failure broad scanning
+    /// targets) vs. a ClipRelay payload that arrived but carried an unusable
+    /// PSM (a phone advertising before its L2CAP server allocated one).
+    /// Throttled per peripheral.
+    private func logUnusableAdvert(peripheral: CBPeripheral, rssi: NSNumber, reason: String) {
+        let id = peripheral.identifier
+        let now = Date()
+        guard now.timeIntervalSince(lastUnusableAdvertLog[id] ?? .distantPast) > 3.0 else { return }
+        lastUnusableAdvertLog[id] = now
+        let scanningFor = pairingTag.map { " scanningForPairingTag=\(Self.hex($0))" } ?? ""
+        log("Advert from \(id.uuidString.prefix(8))… unusable: \(reason) rssi=\(rssi)\(scanningFor)")
+    }
+
     /// Full NSError detail. `localizedDescription` alone hides the CoreBluetooth
     /// domain/code we need to tell apart L2CAP open failures (e.g. encryption
     /// insufficient vs. peer removed pairing vs. unsupported).
@@ -329,8 +347,14 @@ class ConnectionController: NSObject {
             || devices.values.contains { $0.state.isIdle && !$0.suspended }
         if needScan && !centralManager.isScanning {
             log("Scanning (paired: \(devices.count), pairing: \(pairingTag != nil))")
+            // Scan broadly (no service filter) and match in didDiscover. A
+            // service-UUID-filtered scan makes some Android BLE stacks withhold
+            // the scan-response manufacturer data (device tag + PSM) from
+            // CoreBluetooth: the central discovers the primary advert but never
+            // reads the PSM, so it can never connect. A broad scan delivers the
+            // scan response reliably; we filter on the manufacturer data below.
             centralManager.scanForPeripherals(
-                withServices: [Self.serviceUUID],
+                withServices: nil,
                 options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
             )
         } else if !needScan && centralManager.isScanning {
@@ -468,6 +492,16 @@ class ConnectionController: NSObject {
 
     // MARK: - Manufacturer Data Extraction
 
+    /// True if this manufacturer-data blob is a ClipRelay advert: company ID
+    /// 0xFFFF (the SIG test/dev id, little-endian `FF FF`) followed by the
+    /// 10-byte tag+PSM payload. Needed now that we scan broadly — without the
+    /// service-UUID filter, didDiscover also fires for unrelated devices whose
+    /// own manufacturer data must not be misread as a tag+PSM.
+    static func isClipRelayManufacturerData(_ data: Data) -> Bool {
+        guard data.count >= 12 else { return false }
+        return data[data.startIndex] == 0xFF && data[data.startIndex + 1] == 0xFF
+    }
+
     static func extractDeviceTag(from manufacturerData: Data) -> Data? {
         guard manufacturerData.count >= 10 else { return nil }
         return manufacturerData[2..<10]
@@ -512,7 +546,8 @@ extension ConnectionController {
         queue.async { [self] in
             pairingPrivateKey = privateKey
             pairingTag = tag
-            lastAdvertLog.removeAll()  // fresh advert-sighting log for this pairing window
+            lastAdvertLog.removeAll()         // fresh advert-sighting log for this pairing window
+            lastUnusableAdvertLog.removeAll() // …and a fresh unusable-advert log
             log("Pairing started — scanning for pairing tag \(Self.hex(tag))")
             pairingPhase = .scanning
             ensureScanning()
@@ -690,10 +725,32 @@ extension ConnectionController: CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        // We scan broadly (see ensureScanning), so didDiscover fires for every
+        // BLE device. The tag + PSM live in the scan-response manufacturer data
+        // (company 0xFFFF); that payload alone identifies a ClipRelay device.
         guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
+              Self.isClipRelayManufacturerData(manufacturerData),
               let deviceTag = Self.extractDeviceTag(from: manufacturerData),
               let psm = Self.extractPSM(from: manufacturerData)
-        else { return }
+        else {
+            // Couldn't read a tag+PSM. Separate the two reasons so diagnostics
+            // stay precise.
+            let mfrData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
+            if let mfrData, Self.isClipRelayManufacturerData(mfrData) {
+                // ClipRelay payload present but tag/PSM unusable (PSM=0): the
+                // phone is advertising before its L2CAP server allocated a PSM.
+                logUnusableAdvert(peripheral: peripheral, rssi: RSSI,
+                                  reason: "ClipRelay manufacturer data present but PSM=0 (L2CAP server not ready)")
+            } else if (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.contains(Self.serviceUUID) == true {
+                // Primary advert (service UUID) seen but scan-response
+                // manufacturer data absent — the scan response wasn't delivered,
+                // so we can't read the PSM. A later duplicate callback usually
+                // carries it.
+                logUnusableAdvert(peripheral: peripheral, rssi: RSSI,
+                                  reason: "NO manufacturer data — scan response not delivered, can't read PSM")
+            }
+            return
+        }
 
         logAdvertSighting(deviceTag: deviceTag, psm: psm, rssi: RSSI)
 
