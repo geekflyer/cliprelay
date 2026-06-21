@@ -101,6 +101,29 @@ final class ConnectionControllerTests: XCTestCase {
         XCTAssertNil(ConnectionController.extractPSM(from: data))
     }
 
+    // MARK: - ClipRelay Manufacturer Data Filter Tests
+
+    func testIsClipRelayManufacturerDataAcceptsValidPayload() {
+        let data = Data([0xFF, 0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x00, 0x83])
+        XCTAssertTrue(ConnectionController.isClipRelayManufacturerData(data))
+    }
+
+    func testIsClipRelayManufacturerDataRejectsOtherCompanyID() {
+        // Apple company ID (0x004C, little-endian 0x4C 0x00) with a full-length
+        // payload must not be mistaken for a ClipRelay tag+PSM under broad scan.
+        let data = Data([0x4C, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x00, 0x83])
+        XCTAssertFalse(ConnectionController.isClipRelayManufacturerData(data))
+    }
+
+    func testIsClipRelayManufacturerDataRejectsShortData() {
+        let data = Data([0xFF, 0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x00])
+        XCTAssertFalse(ConnectionController.isClipRelayManufacturerData(data))
+    }
+
+    func testIsClipRelayManufacturerDataRejectsEmptyData() {
+        XCTAssertFalse(ConnectionController.isClipRelayManufacturerData(Data()))
+    }
+
     // MARK: - State Tests
 
     func testInitialStateIsDisconnected() {

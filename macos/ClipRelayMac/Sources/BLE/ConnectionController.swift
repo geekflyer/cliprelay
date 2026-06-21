@@ -242,6 +242,25 @@ class ConnectionController: NSObject {
         log("Advert seen tag=\(tagHex) psm=\(psm) rssi=\(rssi) [\(kind)]\(scanningFor)")
     }
 
+    /// Per-peripheral throttle for `logAdvertMissingManufacturerData`. Queue-only.
+    private var lastMissingMfrLog: [UUID: Date] = [:]
+
+    /// We discovered a ClipRelay device's primary advertisement (service UUID)
+    /// but the scan-response manufacturer data carrying the device tag + PSM was
+    /// absent. This is the exact failure where macOS can never read the PSM and
+    /// so never connects. Broad scanning (see `ensureScanning`) is meant to
+    /// avoid it — a recurring line here means the scan response still isn't
+    /// reaching CoreBluetooth even without a service filter. Throttled per
+    /// peripheral.
+    private func logAdvertMissingManufacturerData(peripheral: CBPeripheral, rssi: NSNumber) {
+        let id = peripheral.identifier
+        let now = Date()
+        guard now.timeIntervalSince(lastMissingMfrLog[id] ?? .distantPast) > 3.0 else { return }
+        lastMissingMfrLog[id] = now
+        let scanningFor = pairingTag.map { " scanningForPairingTag=\(Self.hex($0))" } ?? ""
+        log("Advert seen (ClipRelay service UUID) but NO manufacturer data — scan response not delivered, can't read PSM rssi=\(rssi)\(scanningFor)")
+    }
+
     /// Full NSError detail. `localizedDescription` alone hides the CoreBluetooth
     /// domain/code we need to tell apart L2CAP open failures (e.g. encryption
     /// insufficient vs. peer removed pairing vs. unsupported).
@@ -329,8 +348,14 @@ class ConnectionController: NSObject {
             || devices.values.contains { $0.state.isIdle && !$0.suspended }
         if needScan && !centralManager.isScanning {
             log("Scanning (paired: \(devices.count), pairing: \(pairingTag != nil))")
+            // Scan broadly (no service filter) and match in didDiscover. A
+            // service-UUID-filtered scan makes some Android BLE stacks withhold
+            // the scan-response manufacturer data (device tag + PSM) from
+            // CoreBluetooth: the central discovers the primary advert but never
+            // reads the PSM, so it can never connect. A broad scan delivers the
+            // scan response reliably; we filter on the manufacturer data below.
             centralManager.scanForPeripherals(
-                withServices: [Self.serviceUUID],
+                withServices: nil,
                 options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
             )
         } else if !needScan && centralManager.isScanning {
@@ -468,6 +493,16 @@ class ConnectionController: NSObject {
 
     // MARK: - Manufacturer Data Extraction
 
+    /// True if this manufacturer-data blob is a ClipRelay advert: company ID
+    /// 0xFFFF (the SIG test/dev id, little-endian `FF FF`) followed by the
+    /// 10-byte tag+PSM payload. Needed now that we scan broadly — without the
+    /// service-UUID filter, didDiscover also fires for unrelated devices whose
+    /// own manufacturer data must not be misread as a tag+PSM.
+    static func isClipRelayManufacturerData(_ data: Data) -> Bool {
+        guard data.count >= 12 else { return false }
+        return data[data.startIndex] == 0xFF && data[data.startIndex + 1] == 0xFF
+    }
+
     static func extractDeviceTag(from manufacturerData: Data) -> Data? {
         guard manufacturerData.count >= 10 else { return nil }
         return manufacturerData[2..<10]
@@ -512,7 +547,8 @@ extension ConnectionController {
         queue.async { [self] in
             pairingPrivateKey = privateKey
             pairingTag = tag
-            lastAdvertLog.removeAll()  // fresh advert-sighting log for this pairing window
+            lastAdvertLog.removeAll()       // fresh advert-sighting log for this pairing window
+            lastMissingMfrLog.removeAll()   // …and a fresh missing-scan-response log
             log("Pairing started — scanning for pairing tag \(Self.hex(tag))")
             pairingPhase = .scanning
             ensureScanning()
@@ -690,10 +726,23 @@ extension ConnectionController: CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        // We scan broadly (see ensureScanning), so didDiscover fires for every
+        // BLE device. The tag + PSM live in the scan-response manufacturer data
+        // (company 0xFFFF); that payload alone identifies a ClipRelay device.
         guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
+              Self.isClipRelayManufacturerData(manufacturerData),
               let deviceTag = Self.extractDeviceTag(from: manufacturerData),
               let psm = Self.extractPSM(from: manufacturerData)
-        else { return }
+        else {
+            // No usable ClipRelay manufacturer data in this packet. If the
+            // primary advert still carries our service UUID, the scan response
+            // wasn't delivered — the exact failure where macOS can't read the
+            // PSM. Log it; a later duplicate callback usually carries the data.
+            if (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.contains(Self.serviceUUID) == true {
+                logAdvertMissingManufacturerData(peripheral: peripheral, rssi: RSSI)
+            }
+            return
+        }
 
         logAdvertSighting(deviceTag: deviceTag, psm: psm, rssi: RSSI)
 
