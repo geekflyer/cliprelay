@@ -212,6 +212,36 @@ class ConnectionController: NSObject {
         DiagnosticLog.shared.log(message, category: "Connection")
     }
 
+    static func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Per-tag throttle for `logAdvertSighting`. Queue-only (didDiscover runs on `queue`).
+    private var lastAdvertLog: [String: Date] = [:]
+
+    /// Log every ClipRelay advertisement we actually receive (throttled per tag),
+    /// matching or not. Distinguishes "scanning but never sees the phone" (stale
+    /// scan / RF) from "sees it but the tag doesn't match" (tag-scheme bug):
+    /// a failed pair with NO sighting line ⇒ the advert never reached us; a
+    /// sighting line tagged `no-match` while we're scanning for a different
+    /// pairing tag ⇒ mismatch.
+    private func logAdvertSighting(deviceTag: Data, psm: CBL2CAPPSM, rssi: NSNumber) {
+        let tagHex = Self.hex(deviceTag)
+        let now = Date()
+        guard now.timeIntervalSince(lastAdvertLog[tagHex] ?? .distantPast) > 3.0 else { return }
+        lastAdvertLog[tagHex] = now
+        let kind: String
+        if pairingTag == deviceTag {
+            kind = "pairing-match"
+        } else if pairingManager.loadDevices().contains(where: { pairingManager.scanTag(for: $0) == deviceTag }) {
+            kind = "paired-match"
+        } else {
+            kind = "no-match"
+        }
+        let scanningFor = pairingTag.map { " scanningForPairingTag=\(Self.hex($0))" } ?? ""
+        log("Advert seen tag=\(tagHex) psm=\(psm) rssi=\(rssi) [\(kind)]\(scanningFor)")
+    }
+
     /// Full NSError detail. `localizedDescription` alone hides the CoreBluetooth
     /// domain/code we need to tell apart L2CAP open failures (e.g. encryption
     /// insufficient vs. peer removed pairing vs. unsupported).
@@ -482,6 +512,8 @@ extension ConnectionController {
         queue.async { [self] in
             pairingPrivateKey = privateKey
             pairingTag = tag
+            lastAdvertLog.removeAll()  // fresh advert-sighting log for this pairing window
+            log("Pairing started — scanning for pairing tag \(Self.hex(tag))")
             pairingPhase = .scanning
             ensureScanning()
         }
@@ -662,6 +694,8 @@ extension ConnectionController: CBCentralManagerDelegate {
               let deviceTag = Self.extractDeviceTag(from: manufacturerData),
               let psm = Self.extractPSM(from: manufacturerData)
         else { return }
+
+        logAdvertSighting(deviceTag: deviceTag, psm: psm, rssi: RSSI)
 
         // Active pairing request takes priority
         if let pairingTag, pairingTag == deviceTag {
