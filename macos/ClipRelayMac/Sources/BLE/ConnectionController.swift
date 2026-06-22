@@ -726,8 +726,10 @@ extension ConnectionController: CBCentralManagerDelegate {
         rssi RSSI: NSNumber
     ) {
         // We scan broadly (see ensureScanning), so didDiscover fires for every
-        // BLE device. The tag + PSM live in the scan-response manufacturer data
-        // (company 0xFFFF); that payload alone identifies a ClipRelay device.
+        // BLE device. The tag + PSM are in the 0xFFFF manufacturer data, which
+        // CoreBluetooth surfaces here regardless of whether the peripheral
+        // advertises it in the primary advert or the scan response; that payload
+        // alone identifies a ClipRelay device.
         guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
               Self.isClipRelayManufacturerData(manufacturerData),
               let deviceTag = Self.extractDeviceTag(from: manufacturerData),
