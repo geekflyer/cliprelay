@@ -3,8 +3,8 @@
 // `os.Logger` output is invisible to the unified log / `log show` in our SPM
 // release builds, so users (and the maintainer) cannot see why BLE pairing or
 // reconnection fails on shipped builds. This logger mirrors the critical BLE
-// and pairing events to a rotating file that the menu-bar "Share Logs" action
-// can read back, regardless of how os_log is configured.
+// and pairing events to a rotating file that the menu-bar "Copy Diagnostic
+// Logs to Clipboard" action can read back, regardless of how os_log is configured.
 
 import Foundation
 import os

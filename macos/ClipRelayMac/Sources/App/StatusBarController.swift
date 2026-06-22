@@ -4,6 +4,7 @@ import AppKit
 import Foundation
 import QuartzCore
 import Sparkle
+import UserNotifications
 
 final class StatusBarController {
     var onPairNewDeviceRequested: (() -> Void)?
@@ -33,7 +34,6 @@ final class StatusBarController {
 
     private var baseStatusBarImage: NSImage?
     private var syncPulseTimer: Timer?
-    private var sharingPicker: NSSharingServicePicker?
 
     init(updaterController: SPUStandardUpdaterController) {
         self.updaterController = updaterController
@@ -275,9 +275,9 @@ final class StatusBarController {
         let emailItem = NSMenuItem(title: "Email Support\u{2026}", action: #selector(handleOpenEmail), keyEquivalent: "")
         emailItem.target = self
         supportMenu.addItem(emailItem)
-        let shareLogsItem = NSMenuItem(title: "Share Logs\u{2026}", action: #selector(handleShareLogs), keyEquivalent: "")
-        shareLogsItem.target = self
-        supportMenu.addItem(shareLogsItem)
+        let copyLogsItem = NSMenuItem(title: "Copy Diagnostic Logs to Clipboard", action: #selector(handleCopyLogs), keyEquivalent: "")
+        copyLogsItem.target = self
+        supportMenu.addItem(copyLogsItem)
         supportMenu.addItem(NSMenuItem.separator())
         let discussionsItem = NSMenuItem(title: "Community Discussions\u{2026}", action: #selector(handleOpenDiscussions), keyEquivalent: "")
         discussionsItem.target = self
@@ -439,14 +439,28 @@ final class StatusBarController {
     }
 
     @objc
-    private func handleShareLogs() {
+    private func handleCopyLogs() {
         let context = deviceContext()
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        DispatchQueue.global(qos: .userInitiated).async {
             let text = LogShareExporter.exportLogs(deviceContext: context)
             DispatchQueue.main.async {
-                self?.presentSharingPicker(for: text)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                // The clipboard monitor caps synced text at 100 KB, so the full
+                // log dump stays local and is not pushed to paired devices.
+                Self.notifyLogsCopied(byteCount: text.utf8.count)
             }
         }
+    }
+
+    private static func notifyLogsCopied(byteCount: Int) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let kb = max(1, byteCount / 1024)
+        let content = UNMutableNotificationContent()
+        content.title = "Logs copied to clipboard"
+        content.body = "\(kb) KB ready to paste into a bug report."
+        let request = UNNotificationRequest(identifier: "logs-copied", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     @objc
@@ -488,18 +502,6 @@ final class StatusBarController {
             ("Paired Devices", "\(trustedPeers.count) (\(connectedPeers.count) connected)"),
             ("Flags", flags),
         ]
-    }
-
-    private func presentSharingPicker(for text: String) {
-        guard let button = statusItem.button else {
-            // No anchor for the picker — fall back to copying the logs.
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            return
-        }
-        let picker = NSSharingServicePicker(items: [text])
-        sharingPicker = picker
-        picker.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
     @objc
