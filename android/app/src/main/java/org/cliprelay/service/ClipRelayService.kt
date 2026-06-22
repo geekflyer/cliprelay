@@ -82,7 +82,12 @@ class ClipRelayService : Service(), L2capServerCallback {
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
         private const val CLIPBOARD_DEBOUNCE_MS = 200L
-        private const val PAIRING_TIMEOUT_MS = 20_000L
+        // Matches the 60s handshake-level pairing timeout in Session
+        // (pairingTimeoutMs). A 20s cap here used to abort handshakes the
+        // session layer was still pursuing; 60s also gives the Mac central more
+        // advertising events to catch a scan response when its Wi-Fi/BT radio is
+        // in a power-save state that drops the occasional SCAN_RSP.
+        private const val PAIRING_TIMEOUT_MS = 60_000L
     }
 
     // BLE components
