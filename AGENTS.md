@@ -30,6 +30,7 @@
 - Keychain profile name: `ClipRelay`
 - Use with: `xcrun notarytool submit <file> --keychain-profile "ClipRelay" --wait`
 - Check history: `xcrun notarytool history --keychain-profile "ClipRelay"`
+- For a **local notarized DMG** (standalone install, no Sparkle release), use the `notarize-mac-build` skill — it carries the full runbook (prereqs, `publish-mac.sh --wait`, notarytool-profile setup from 1Password, and the `op signin` gotcha), kept out of always-loaded context.
 
 ## Android UI Design Verification
 - After any visual/design change to the Android app, take a screenshot of the running app to verify the result before reporting completion.
