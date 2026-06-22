@@ -73,17 +73,18 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
             .setConnectable(true)
             .build()
 
-        // Primary advertisement: service UUID only (for central scan filtering).
-        // Must stay under 31 bytes: 3 (flags) + 18 (128-bit UUID) = 21 bytes.
-        val advertiseData = AdvertiseData.Builder()
-            .setIncludeDeviceName(false)
-            .addServiceUuid(serviceUuid)
-            .build()
-
-        // Scan response: device tag + PSM as manufacturer data.
-        // We intentionally do NOT include the local device name since BLE scan responses have a
-        // strict 31-byte budget and long Bluetooth names can prevent advertising from starting.
-        val scanResponseBuilder = AdvertiseData.Builder()
+        // Primary advertisement: device tag + PSM as manufacturer data.
+        // This is deliberately in the PRIMARY advert (ADV_IND), not the scan
+        // response: the central receives the primary advert passively, whereas
+        // the scan response requires an active SCAN_REQ/SCAN_RSP exchange that
+        // some macOS radios drop for tens of seconds under Wi-Fi/BT power-save —
+        // which made pairing/reconnect crawl. With the payload here, the central
+        // gets everything it needs from the packet it already receives reliably.
+        // The macOS central scans broadly (withServices: nil) and matches on this
+        // 0xFFFF manufacturer payload, so it no longer needs the service UUID in
+        // the primary advert. Budget: 3 (flags) + 14 (mfr data: 2 header + 2
+        // company id + 10 payload) = 17 bytes, well under the 31-byte limit.
+        val advertiseBuilder = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
         val tag = deviceTag
         if (tag != null) {
@@ -93,9 +94,20 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
             payload[tag.size] = (psm shr 8).toByte()
             payload[tag.size + 1] = (psm and 0xFF).toByte()
             // 0xFFFF = Bluetooth SIG reserved for testing/development
-            scanResponseBuilder.addManufacturerData(0xFFFF, payload)
+            advertiseBuilder.addManufacturerData(0xFFFF, payload)
         }
-        val scanResponse = scanResponseBuilder.build()
+        val advertiseData = advertiseBuilder.build()
+
+        // Scan response: service UUID. The current macOS central no longer needs
+        // it (it matches on the manufacturer payload above), but we keep
+        // advertising it for debuggability and any future service-based
+        // discovery. We intentionally do NOT include the local device name since
+        // scan responses have a strict 31-byte budget and long Bluetooth names
+        // can prevent advertising from starting. 128-bit UUID = 18 bytes.
+        val scanResponse = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .addServiceUuid(serviceUuid)
+            .build()
 
         val advertiseCallback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
