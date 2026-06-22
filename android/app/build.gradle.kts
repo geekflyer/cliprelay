@@ -91,6 +91,13 @@ android {
                 "proguard-rules.pro"
             )
 
+            // Bundle native debug symbols (ML Kit .so libs from quickie) into the AAB
+            // so Play Console can symbolicate native crashes/ANRs. Kills the
+            // "you've not uploaded debug symbols" warning. FULL = names + line numbers.
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
+
             if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
             }
