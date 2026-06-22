@@ -226,5 +226,15 @@
                        length="2249935"
                        type="application/octet-stream" />
         </item>
+            <item>
+            <title>Version 0.7.0 (1ce210f)</title>
+            <pubDate>Mon, 22 Jun 2026 02:18:28 +0000</pubDate>
+            <sparkle:version>431</sparkle:version>
+            <sparkle:shortVersionString>0.7.0 (1ce210f)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.7.0/ClipRelay-0.7.0.dmg"
+                       sparkle:edSignature="+6ItajjsO+zYPz9EADby38cKi4tG7JII6gWyrbLvxSR2NpkFrCD7WQqlBmvdEX9rGI221I4vWFP7MXQ1baUxDw=="
+                       length="2249940"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
