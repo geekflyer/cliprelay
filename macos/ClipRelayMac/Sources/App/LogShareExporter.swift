@@ -1,10 +1,10 @@
 import Foundation
 
 enum LogShareExporter {
-    // Shared as plain text via NSSharingServicePicker rather than a .txt file —
-    // text drops straight into Mail/Messages/Notes or the pasteboard. The
-    // diagnostic log is already bounded by rotation; cap each section's tail so
-    // a debug-build unified-log dump can't bloat the share.
+    // Exported as plain text that's copied to the pasteboard so it drops
+    // straight into a GitHub issue, email, or chat. The diagnostic log is
+    // already bounded by rotation; cap each section's tail so a debug-build
+    // unified-log dump can't bloat the copy.
     private static let maxDiagnosticChars = 400_000
     private static let maxUnifiedLogChars = 200_000
 
