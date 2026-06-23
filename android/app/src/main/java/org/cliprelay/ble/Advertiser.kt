@@ -84,19 +84,26 @@ class Advertiser(private val context: Context, private val serviceUuid: ParcelUu
         // 0xFFFF manufacturer payload, so it no longer needs the service UUID in
         // the primary advert. Budget: 3 (flags) + 14 (mfr data: 2 header + 2
         // company id + 10 payload) = 17 bytes, well under the 31-byte limit.
-        val advertiseBuilder = AdvertiseData.Builder()
-            .setIncludeDeviceName(false)
+        // The tag+PSM ride in the PRIMARY advert (see above). With a null tag the
+        // primary advert would be EMPTY and the central can't see us at all — it
+        // matches on this 0xFFFF payload, and the service UUID now lives only in
+        // the scan response. So never advertise without a tag: retry until the
+        // session/service sets it (callers restart() once the tag lands).
         val tag = deviceTag
-        if (tag != null) {
-            // Pack: [device_tag: 8 bytes][psm: 2 bytes big-endian]
-            val payload = ByteArray(tag.size + 2)
-            System.arraycopy(tag, 0, payload, 0, tag.size)
-            payload[tag.size] = (psm shr 8).toByte()
-            payload[tag.size + 1] = (psm and 0xFF).toByte()
-            // 0xFFFF = Bluetooth SIG reserved for testing/development
-            advertiseBuilder.addManufacturerData(0xFFFF, payload)
+        if (tag == null) {
+            scheduleRetry("deviceTag not set yet")
+            return
         }
-        val advertiseData = advertiseBuilder.build()
+        // Pack: [device_tag: 8 bytes][psm: 2 bytes big-endian]
+        val payload = ByteArray(tag.size + 2)
+        System.arraycopy(tag, 0, payload, 0, tag.size)
+        payload[tag.size] = (psm shr 8).toByte()
+        payload[tag.size + 1] = (psm and 0xFF).toByte()
+        // 0xFFFF = Bluetooth SIG reserved for testing/development
+        val advertiseData = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .addManufacturerData(0xFFFF, payload)
+            .build()
 
         // Scan response: service UUID. The current macOS central no longer needs
         // it (it matches on the manufacturer payload above), but we keep
