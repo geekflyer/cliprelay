@@ -377,6 +377,13 @@ class ClipRelayService : Service(), L2capServerCallback {
         val serviceUUID = java.util.UUID.fromString("c10b0001-1234-5678-9abc-def012345678")
 
         val started = runCatching {
+            // Replace any prior BLE session first — a lingering advertiser keeps
+            // broadcasting a stale PSM and can block the new one (single LE slot).
+            advertiser?.stop()
+            advertiser = null
+            l2capServer?.stop()
+            l2capServer = null
+
             // 1. Start L2CAP server, get PSM
             val l2cap = L2capServer(adapter, this)
             val psm = l2cap.start()
