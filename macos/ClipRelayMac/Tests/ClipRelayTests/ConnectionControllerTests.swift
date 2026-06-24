@@ -1,3 +1,4 @@
+import CoreBluetooth
 import XCTest
 @testable import ClipRelay
 
@@ -122,6 +123,25 @@ final class ConnectionControllerTests: XCTestCase {
 
     func testIsClipRelayManufacturerDataRejectsEmptyData() {
         XCTAssertFalse(ConnectionController.isClipRelayManufacturerData(Data()))
+    }
+
+    // MARK: - Stale-Bond Detection Tests
+
+    func testStaleBondErrorMatchesCode14() {
+        XCTAssertTrue(ConnectionController.isStaleBondError(CBError(.peerRemovedPairingInformation)))
+    }
+
+    func testStaleBondErrorRejectsTransientConnectErrors() {
+        // These must keep retrying — they are not a dead OS bond.
+        XCTAssertFalse(ConnectionController.isStaleBondError(CBError(.connectionTimeout)))
+        XCTAssertFalse(ConnectionController.isStaleBondError(CBError(.connectionFailed)))
+        XCTAssertFalse(ConnectionController.isStaleBondError(CBError(.peripheralDisconnected)))
+    }
+
+    func testStaleBondErrorRejectsNilAndForeignDomain() {
+        XCTAssertFalse(ConnectionController.isStaleBondError(nil))
+        // Same numeric code (14) in another domain must not match.
+        XCTAssertFalse(ConnectionController.isStaleBondError(NSError(domain: "Foo", code: 14)))
     }
 
     // MARK: - State Tests
