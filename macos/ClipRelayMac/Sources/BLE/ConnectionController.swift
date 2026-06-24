@@ -74,8 +74,9 @@ final class DeviceConnection {
     var backoff = ReconnectBackoff()
     /// Earliest time the next connect attempt may start (per-device flap guard).
     var nextAttemptAt = Date.distantPast
-    /// Set on version mismatch: stays paired but no reconnect attempts (and no
-    /// repeated alerts) until the next Bluetooth power cycle.
+    /// Set on version mismatch or a stale OS bond (CBError 14): stays paired but
+    /// no reconnect attempts (and no repeated alerts) until the next Bluetooth
+    /// power cycle.
     var suspended = false
     var adapter: SessionAdapter?
     var settingsProvider: DeviceSettingsProvider?
@@ -100,6 +101,10 @@ enum ConnectionError {
     case versionMismatch(Int)
     case sessionError(String)
     case bleError(String)
+    /// macOS holds a stale LE bond for the phone (the phone was unpaired/reset
+    /// on its side). The link is rejected before L2CAP and no API can clear the
+    /// bond — the user must Forget the device in System Settings → Bluetooth.
+    case peerRemovedPairing
 }
 
 // MARK: - Delegate
@@ -125,6 +130,15 @@ class ConnectionController: NSObject {
     static let maxReconnectDelay: TimeInterval = 30.0
     static let healthCheckInterval: TimeInterval = 60.0
     static let connectingTimeout: TimeInterval = 15.0
+    /// A pairing `connect()` that produces neither didConnect nor
+    /// didFailToConnect within this window is "stalled" — CoreBluetooth has no
+    /// connect timeout, so a stale OS bond can hang the link silently with no
+    /// error to catch. Checked by a dedicated one-shot timer (not the 60s
+    /// health check) so the user staring at the pairing spinner gets a fast hint.
+    static let pairingConnectTimeout: TimeInterval = 15.0
+    /// Consecutive stalled pairing connects before we surface the stale-bond
+    /// hint. ≥2 so a single transient connect failure doesn't trip it.
+    static let pairingConnectStallThreshold = 2
 
     // MARK: Queue & Logging
 
@@ -174,6 +188,11 @@ class ConnectionController: NSObject {
     private var pairingChannel: CBL2CAPChannel?
     private var pairingConnectingStartTime: Date?
     private var pairingAdapter: SessionAdapter?
+    /// One-shot timer for the silent-stall detection (see pairingConnectTimeout).
+    private var pairingConnectTimer: DispatchSourceTimer?
+    /// Count of consecutive stalled pairing connects. Reset on a fresh pairing,
+    /// on connect progress (didConnect), and after the hint is surfaced.
+    private var pairingConnectStalls = 0
 
     // MARK: Dedup
 
@@ -514,6 +533,15 @@ class ConnectionController: NSObject {
         return CBL2CAPPSM(psm)
     }
 
+    /// True only for CBError 14 (`peerRemovedPairingInformation`): macOS still
+    /// holds an LE bond/LTK the phone no longer has, so the connection is
+    /// rejected at the link layer, every attempt, before L2CAP. Deliberately
+    /// narrow — transient connect errors (timeout/connectionFailed/
+    /// peripheralDisconnected) must stay on the normal retry path.
+    static func isStaleBondError(_ error: Error?) -> Bool {
+        (error as? CBError)?.code == .peerRemovedPairingInformation
+    }
+
     // MARK: - Disconnect
 
     func disconnect() {
@@ -550,6 +578,8 @@ extension ConnectionController {
             lastUnusableAdvertLog.removeAll() // …and a fresh unusable-advert log
             log("Pairing started — scanning for pairing tag \(Self.hex(tag))")
             pairingPhase = .scanning
+            pairingConnectStalls = 0          // fresh pairing window
+            cancelPairingConnectTimer()
             ensureScanning()
         }
         return PairingInfo(uri: uri)
@@ -579,9 +609,55 @@ extension ConnectionController {
         pairingPeripheral = nil
         pairingChannel = nil
         pairingConnectingStartTime = nil
+        cancelPairingConnectTimer()  // counter intentionally NOT reset here —
+        // retries must accumulate toward the stall threshold.
         pairingAdapter = nil
         pairingPhase = .scanning
         ensureScanning()
+    }
+
+    // MARK: Stalled-connect detection (silent stale-bond)
+
+    private func schedulePairingConnectTimeout() {
+        cancelPairingConnectTimer()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + Self.pairingConnectTimeout)
+        timer.setEventHandler { [weak self] in self?.handlePairingConnectTimeout() }
+        pairingConnectTimer = timer
+        timer.resume()
+    }
+
+    private func cancelPairingConnectTimer() {
+        pairingConnectTimer?.cancel()
+        pairingConnectTimer = nil
+    }
+
+    /// The pairing `connect()` produced no callback within the window. Unlike a
+    /// clean CBError 14, this stale-bond variant is silent — the only signal is
+    /// the stall itself. Count it; after `pairingConnectStallThreshold` in a row
+    /// (target still seen, connect still hanging) surface the hint and stop.
+    private func handlePairingConnectTimeout() {
+        cancelPairingConnectTimer()
+        // Only a true stall counts: still pairing, still waiting on this connect.
+        // A late fire after didConnect / code-14 abort / success lands here as a
+        // no-op (phase moved on).
+        guard pairingTag != nil, case .connecting = pairingPhase else { return }
+        pairingConnectStalls += 1
+        log("Pairing connect stalled (\(pairingConnectStalls)/\(Self.pairingConnectStallThreshold)) — no didConnect/didFailToConnect in \(Int(Self.pairingConnectTimeout))s")
+        if pairingConnectStalls >= Self.pairingConnectStallThreshold {
+            log("Repeated pairing-connect stalls — likely stale OS bond; surfacing hint, stopping pairing")
+            pairingConnectStalls = 0
+            pairingTag = nil
+            pairingPrivateKey = nil
+            abortPairingAttempt()
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.didEncounterError(error: .peerRemovedPairing)
+            }
+        } else {
+            // Cancel this hung attempt and fall back to scanning; the next advert
+            // re-issues connect (and reschedules the timer).
+            abortPairingAttempt()
+        }
     }
 
     // MARK: Sending
@@ -703,7 +779,7 @@ extension ConnectionController: CBCentralManagerDelegate {
             for device in devices.values {
                 device.backoff.reset()
                 device.nextAttemptAt = .distantPast
-                device.suspended = false  // version-mismatch suspension lifts on BT cycle
+                device.suspended = false  // version-mismatch / stale-bond suspension lifts on BT cycle
             }
             startHealthCheck()
             ensureScanning()
@@ -765,6 +841,7 @@ extension ConnectionController: CBCentralManagerDelegate {
             pairingConnectingStartTime = Date()
             peripheral.delegate = self
             central.connect(peripheral, options: nil)
+            schedulePairingConnectTimeout()
             ensureScanning()
             return
         }
@@ -788,6 +865,8 @@ extension ConnectionController: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         if peripheral === pairingPeripheral, case .connecting(_, let psm) = pairingPhase {
+            cancelPairingConnectTimer()
+            pairingConnectStalls = 0  // got a link — not a silent stall
             pairingPhase = .l2capOpening(peripheral)
             pairingConnectingStartTime = Date()  // reset for L2CAP open timeout
             log("Pairing: connected, opening L2CAP channel psm=\(psm)")
@@ -813,6 +892,32 @@ extension ConnectionController: CBCentralManagerDelegate {
     ) {
         log("didFailToConnect: \(describe(error))")
         central.cancelPeripheralConnection(peripheral)
+
+        // Stale OS-level Bluetooth bond. Retrying is futile — every attempt is
+        // rejected the same way until the user removes the device in System
+        // Settings → Bluetooth (no CoreBluetooth API can clear the bond). Stop
+        // the retry/pairing loop and surface the one actionable fix, exactly as
+        // the version-mismatch path does. The suspension lifts on the next
+        // Bluetooth power cycle (so re-pairing after a Forget works).
+        if Self.isStaleBondError(error) {
+            log("Stale OS bond (peer removed pairing information) — suspending until Bluetooth power cycle")
+            if peripheral === pairingPeripheral {
+                pairingConnectStalls = 0
+                pairingTag = nil
+                pairingPrivateKey = nil
+                abortPairingAttempt()
+            } else if let device = device(of: peripheral) {
+                closeConnection(of: device)
+                device.suspended = true
+                notifyConnectionChanged()
+                ensureScanning()
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.didEncounterError(error: .peerRemovedPairing)
+            }
+            return
+        }
+
         if peripheral === pairingPeripheral {
             abortPairingAttempt()
             return

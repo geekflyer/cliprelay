@@ -320,6 +320,11 @@ extension AppDelegate: ConnectionControllerDelegate {
                 message: "App Update Required",
                 info: "Your Android app needs to be updated to continue syncing. Update via Google Play."
             )
+        case .peerRemovedPairing:
+            showBluetoothAlert(
+                message: "Potentially Stale Bluetooth Pairing",
+                info: "macOS may be holding an outdated system Bluetooth pairing for this phone, which can block ClipRelay from connecting. Open Bluetooth settings, click the ⓘ next to the phone, choose \"Forget This Device,\" then pair again in ClipRelay."
+            )
         default: break
         }
     }
