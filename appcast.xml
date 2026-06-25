@@ -236,5 +236,15 @@
                        length="2249940"
                        type="application/octet-stream" />
         </item>
+            <item>
+            <title>Version 0.7.2 (386c37e)</title>
+            <pubDate>Thu, 25 Jun 2026 18:07:29 +0000</pubDate>
+            <sparkle:version>440</sparkle:version>
+            <sparkle:shortVersionString>0.7.2 (386c37e)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.7.2/ClipRelay-0.7.2.dmg"
+                       sparkle:edSignature="MwHDPo87il+4QIJ06VAjxdCJq6n9oaaatOiuTa30iSqszkfbhSqewneLTbXOheW6WEjXBRr3ZhtNnjGgs18TDg=="
+                       length="2257777"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
