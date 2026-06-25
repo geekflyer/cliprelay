@@ -55,10 +55,20 @@
             android:excludeFromRecents="true"
             android:noHistory="true" />
 
-        <activity android:name=".ui.MainActivity" android:exported="true">
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Lets a regular QR scanner open the pairing link (cliprelay://pair?k=…&n=…). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cliprelay" android:host="pair" />
             </intent-filter>
             <meta-data
                 android:name="android.app.shortcuts"
