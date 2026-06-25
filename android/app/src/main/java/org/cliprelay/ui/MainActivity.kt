@@ -93,12 +93,22 @@ class MainActivity : AppCompatActivity() {
         startServiceSafely(queryIntent)
     }
 
+    // Set when a cliprelay://pair deep link arrives before BLE permission is granted, so the
+    // post-grant callback resumes pairing from the link instead of opening the camera scanner.
+    private var pendingDeepLinkInfo: org.cliprelay.pairing.PairingInfo? = null
+
     private val pairPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
         if (BlePermissions.hasRequiredRuntimePermissions(this)) {
             ensureServiceRunning()
-            launchQrScanner()
+            val deepLink = pendingDeepLinkInfo
+            if (deepLink != null) {
+                pendingDeepLinkInfo = null
+                startPairingFromInfo(deepLink)
+            } else {
+                launchQrScanner()
+            }
         } else {
             // Denied again — re-show the explanation. If Android will no longer
             // show the system prompt, the dialog routes to app settings instead.
@@ -286,6 +296,15 @@ class MainActivity : AppCompatActivity() {
                 },
             )
         }
+
+        // A cliprelay://pair link may have launched us (e.g. from a system QR scanner).
+        if (savedInstanceState == null) handlePairingDeepLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePairingDeepLink(intent)
     }
 
     override fun onResume() {
@@ -323,6 +342,40 @@ class MainActivity : AppCompatActivity() {
 
     private fun launchQrScanner() {
         scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
+    }
+
+    /**
+     * Handle a cliprelay://pair?k=…&n=… deep link (e.g. opened from a regular QR scanner).
+     * Consumes the intent's data so a config-change recreate doesn't re-trigger pairing.
+     */
+    private fun handlePairingDeepLink(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val info = intent.data?.toString()?.let { org.cliprelay.pairing.PairingUriParser.parse(it) }
+        intent.data = null
+        if (info == null) return
+        if (BlePermissions.hasRequiredRuntimePermissions(this)) {
+            startPairingFromInfo(info)
+        } else {
+            pendingDeepLinkInfo = info
+            blePermissionPermanentlyDenied = BlePermissions.requiredRuntimePermissions()
+                .none { shouldShowRequestPermissionRationale(it) }
+            showBlePermissionDialog = true
+        }
+    }
+
+    /** Store the Mac's key/name and signal the service to begin pairing — same path as the scanner. */
+    private fun startPairingFromInfo(info: org.cliprelay.pairing.PairingInfo) {
+        getSharedPreferences(ClipRelayService.PREFS_NAME, MODE_PRIVATE).edit()
+            .putString("pending_pairing_pubkey", info.publicKeyHex)
+            .putString(ClipRelayService.KEY_PENDING_PAIRING_NAME, info.deviceName ?: "")
+            .apply()
+        val pairIntent = Intent(this, ClipRelayService::class.java).apply {
+            action = ClipRelayService.ACTION_START_PAIRING
+        }
+        if (startServiceSafely(pairIntent)) {
+            viewModel.onPairingStarted()
+            Toast.makeText(this, "Pairing…", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun ensureServiceRunning() {
