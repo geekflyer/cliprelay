@@ -689,6 +689,22 @@ extension ConnectionController {
         }
     }
 
+    /// Drops the reconnect-replay cache. Called when "Don't Sync Passwords & Secrets"
+    /// is turned on: text cached while the filter was off may be a secret, and
+    /// replaying it on reconnect would bypass the filter.
+    func clearPendingClipboard() {
+        queue.async { [self] in
+            guard pendingClipboard != nil else { return }
+            pendingClipboard = nil
+            log("Cleared cached clipboard (skip-secrets enabled)")
+        }
+    }
+
+    /// Test-only synchronous view of the replay cache.
+    var hasPendingClipboard: Bool {
+        queue.sync { pendingClipboard != nil }
+    }
+
     func sendImage(_ data: Data, contentType: String) {
         queue.async { [self] in
             let hash = Session.sha256Hex(data)

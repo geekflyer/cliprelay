@@ -12,6 +12,8 @@ final class StatusBarController {
     var onToggleLaunchAtLogin: (() -> Void)?
     var isLaunchAtLoginEnabled: (() -> Bool)?
     var onToggleImageSync: (() -> Void)?
+    /// Fired when "Don't Sync Passwords & Secrets" flips to ON.
+    var onSkipSecretsEnabled: (() -> Void)?
     var isImageSyncEnabled: (() -> Bool)?
     var isDeviceConnected: (() -> Bool)?
     var bleStateProvider: (() -> String)?
@@ -427,6 +429,9 @@ final class StatusBarController {
     @objc
     private func handleToggleSkipSecrets() {
         ClipboardMonitor.skipSecretsEnabled.toggle()
+        if ClipboardMonitor.skipSecretsEnabled {
+            onSkipSecretsEnabled?()
+        }
         renderMenu()
     }
 

@@ -210,4 +210,12 @@ final class ConnectionControllerTests: XCTestCase {
         controller.sendClipboard("hello")
         controller.sendClipboard("hello") // double send should not crash
     }
+
+    func testClearPendingClipboardDropsReplayCache() {
+        let controller = makeController()
+        controller.sendClipboard("hunter2") // no device ready → cached for replay
+        XCTAssertTrue(controller.hasPendingClipboard)
+        controller.clearPendingClipboard()
+        XCTAssertFalse(controller.hasPendingClipboard)
+    }
 }
