@@ -13,8 +13,6 @@ final class StatusBarController {
     var isLaunchAtLoginEnabled: (() -> Bool)?
     var onToggleImageSync: (() -> Void)?
     var isImageSyncEnabled: (() -> Bool)?
-    var onToggleSkipSecrets: (() -> Void)?
-    var isSkipSecretsEnabled: (() -> Bool)?
     var isDeviceConnected: (() -> Bool)?
     var bleStateProvider: (() -> String)?
 
@@ -266,7 +264,7 @@ final class StatusBarController {
         copies as concealed, such as Bitwarden, 1Password and KeePassXC. \
         Note: copies made from browser extensions aren't flagged and will still sync.
         """
-        if isSkipSecretsEnabled?() == true {
+        if ClipboardMonitor.skipSecretsEnabled {
             skipSecretsItem.state = .on
         }
         menu.addItem(skipSecretsItem)
@@ -428,7 +426,7 @@ final class StatusBarController {
 
     @objc
     private func handleToggleSkipSecrets() {
-        onToggleSkipSecrets?()
+        ClipboardMonitor.skipSecretsEnabled.toggle()
         renderMenu()
     }
 
@@ -471,8 +469,9 @@ final class StatusBarController {
             DispatchQueue.main.async {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
-                // The clipboard monitor caps synced text at 100 KB, so the full
-                // log dump stays local and is not pushed to paired devices.
+                // Mark the copy concealed so the skip-secrets filter keeps the log dump
+                // local; the 100 KB sync cap only catches dumps that outgrow it.
+                NSPasteboard.general.setString("", forType: ClipboardMonitor.concealedType)
                 Self.notifyLogsCopied(byteCount: text.utf8.count)
             }
         }
@@ -516,7 +515,7 @@ final class StatusBarController {
         #endif
         let flags = [
             "imageSync=\(isImageSyncEnabled?() ?? false)",
-            "skipSecrets=\(isSkipSecretsEnabled?() ?? true)",
+            "skipSecrets=\(ClipboardMonitor.skipSecretsEnabled)",
             "autoUpdate=\(updaterController.updater.automaticallyChecksForUpdates)",
             "betaChannel=\(isBetaChannelEnabled)",
         ].joined(separator: ", ")

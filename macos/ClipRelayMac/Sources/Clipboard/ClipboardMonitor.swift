@@ -65,7 +65,13 @@ final class ClipboardMonitor {
         lastChangeCount = pasteboard.changeCount
 
         // Don't sync password-manager / secret copies that mark themselves concealed (#70).
-        if Self.skipSecretsEnabled, Self.isConcealed(pasteboard.types) { return }
+        // Check every item's types: pasteboard.types only reflects the first item.
+        if Self.skipSecretsEnabled,
+           Self.isConcealed((pasteboard.types ?? []) + (pasteboard.pasteboardItems ?? []).flatMap(\.types)) {
+            // Clear the dedup hash so re-copying the previous content still syncs.
+            lastHash = nil
+            return
+        }
 
         // Images take priority over text
         if let (imageData, contentType) = pasteboardImage(pasteboard) {

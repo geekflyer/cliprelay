@@ -91,12 +91,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController.isImageSyncEnabled = { [weak self] in
             self?.connectionController?.isImageSyncEnabled ?? false
         }
-        statusBarController.onToggleSkipSecrets = {
-            ClipboardMonitor.skipSecretsEnabled.toggle()
-        }
-        statusBarController.isSkipSecretsEnabled = {
-            ClipboardMonitor.skipSecretsEnabled
-        }
         statusBarController.isDeviceConnected = { [weak self] in
             self?.connectionController?.isConnected ?? false
         }
