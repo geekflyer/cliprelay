@@ -252,6 +252,23 @@ final class StatusBarController {
         }
         menu.addItem(imageSyncItem)
 
+        let skipSecretsItem = NSMenuItem(
+            title: "Don\u{2019}t Sync Passwords & Secrets",
+            action: #selector(handleToggleSkipSecrets),
+            keyEquivalent: ""
+        )
+        skipSecretsItem.target = self
+        skipSecretsItem.toolTip = """
+        When on, clipboard copies that an app marks as secret (concealed) are not sent to \
+        your phone — so passwords stay on this Mac. Works with password managers that flag \
+        copies as concealed, such as Bitwarden, 1Password and KeePassXC. \
+        Note: copies made from browser extensions aren't flagged and will still sync.
+        """
+        if ClipboardMonitor.skipSecretsEnabled {
+            skipSecretsItem.state = .on
+        }
+        menu.addItem(skipSecretsItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -408,6 +425,12 @@ final class StatusBarController {
     }
 
     @objc
+    private func handleToggleSkipSecrets() {
+        ClipboardMonitor.skipSecretsEnabled.toggle()
+        renderMenu()
+    }
+
+    @objc
     private func handleVisitWebsite() {
         if let url = URL(string: "https://cliprelay.org") {
             NSWorkspace.shared.open(url)
@@ -446,8 +469,9 @@ final class StatusBarController {
             DispatchQueue.main.async {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
-                // The clipboard monitor caps synced text at 100 KB, so the full
-                // log dump stays local and is not pushed to paired devices.
+                // Mark the copy concealed so the skip-secrets filter keeps the log dump
+                // local; the 100 KB sync cap only catches dumps that outgrow it.
+                NSPasteboard.general.setString("", forType: ClipboardMonitor.concealedType)
                 Self.notifyLogsCopied(byteCount: text.utf8.count)
             }
         }
@@ -491,6 +515,7 @@ final class StatusBarController {
         #endif
         let flags = [
             "imageSync=\(isImageSyncEnabled?() ?? false)",
+            "skipSecrets=\(ClipboardMonitor.skipSecretsEnabled)",
             "autoUpdate=\(updaterController.updater.automaticallyChecksForUpdates)",
             "betaChannel=\(isBetaChannelEnabled)",
         ].joined(separator: ", ")

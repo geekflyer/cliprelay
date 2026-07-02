@@ -15,6 +15,23 @@ final class ClipboardMonitor {
         return milliseconds / 1000
     }()
 
+    /// De-facto standard marker password managers (Bitwarden, 1Password, …) put on the
+    /// pasteboard for secret copies. See nspasteboard.org and issue #70.
+    static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+
+    static let skipSecretsDefaultsKey = "skipPasswordsAndSecrets"
+
+    /// When on, concealed (password-manager) copies are not synced. Defaults to on.
+    static var skipSecretsEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: skipSecretsDefaultsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: skipSecretsDefaultsKey) }
+    }
+
+    /// True if the pasteboard carries the concealed marker. Pure for testability.
+    static func isConcealed(_ types: [NSPasteboard.PasteboardType]?) -> Bool {
+        types?.contains(concealedType) ?? false
+    }
+
     private let pasteboard = NSPasteboard.general
     private let onChange: (String) -> Void
     private let pollInterval: TimeInterval
@@ -46,6 +63,15 @@ final class ClipboardMonitor {
     private func poll() {
         guard pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
+
+        // Don't sync password-manager / secret copies that mark themselves concealed (#70).
+        // Check every item's types: pasteboard.types only reflects the first item.
+        if Self.skipSecretsEnabled,
+           Self.isConcealed((pasteboard.types ?? []) + (pasteboard.pasteboardItems ?? []).flatMap(\.types)) {
+            // Clear the dedup hash so re-copying the previous content still syncs.
+            lastHash = nil
+            return
+        }
 
         // Images take priority over text
         if let (imageData, contentType) = pasteboardImage(pasteboard) {
