@@ -13,6 +13,8 @@ final class StatusBarController {
     var isLaunchAtLoginEnabled: (() -> Bool)?
     var onToggleImageSync: (() -> Void)?
     var isImageSyncEnabled: (() -> Bool)?
+    var onToggleSkipSecrets: (() -> Void)?
+    var isSkipSecretsEnabled: (() -> Bool)?
     var isDeviceConnected: (() -> Bool)?
     var bleStateProvider: (() -> String)?
 
@@ -252,6 +254,23 @@ final class StatusBarController {
         }
         menu.addItem(imageSyncItem)
 
+        let skipSecretsItem = NSMenuItem(
+            title: "Don\u{2019}t Sync Passwords & Secrets",
+            action: #selector(handleToggleSkipSecrets),
+            keyEquivalent: ""
+        )
+        skipSecretsItem.target = self
+        skipSecretsItem.toolTip = """
+        When on, clipboard copies that an app marks as secret (concealed) are not sent to \
+        your phone — so passwords stay on this Mac. Works with password managers that flag \
+        copies as concealed, such as Bitwarden, 1Password and KeePassXC. \
+        Note: copies made from browser extensions aren't flagged and will still sync.
+        """
+        if isSkipSecretsEnabled?() == true {
+            skipSecretsItem.state = .on
+        }
+        menu.addItem(skipSecretsItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -408,6 +427,12 @@ final class StatusBarController {
     }
 
     @objc
+    private func handleToggleSkipSecrets() {
+        onToggleSkipSecrets?()
+        renderMenu()
+    }
+
+    @objc
     private func handleVisitWebsite() {
         if let url = URL(string: "https://cliprelay.org") {
             NSWorkspace.shared.open(url)
@@ -491,6 +516,7 @@ final class StatusBarController {
         #endif
         let flags = [
             "imageSync=\(isImageSyncEnabled?() ?? false)",
+            "skipSecrets=\(isSkipSecretsEnabled?() ?? true)",
             "autoUpdate=\(updaterController.updater.automaticallyChecksForUpdates)",
             "betaChannel=\(isBetaChannelEnabled)",
         ].joined(separator: ", ")
