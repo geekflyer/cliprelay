@@ -246,5 +246,15 @@
                        length="2257777"
                        type="application/octet-stream" />
         </item>
+            <item>
+            <title>Version 0.7.3 (aa172cf)</title>
+            <pubDate>Thu, 02 Jul 2026 04:29:04 +0000</pubDate>
+            <sparkle:version>443</sparkle:version>
+            <sparkle:shortVersionString>0.7.3 (aa172cf)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.7.3/ClipRelay-0.7.3.dmg"
+                       sparkle:edSignature="S6RdiE5UnCq+qmL1Xr0oVYDJZLEpp4ZDVAVPj/q0xmk8/CKgodwnOunoDm10dLX1ecJjWExCsrej3S7z+c0DBw=="
+                       length="2261025"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
