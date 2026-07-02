@@ -88,6 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController.onToggleImageSync = { [weak self] in
             self?.connectionController?.toggleImageSync()
         }
+        statusBarController.onSkipSecretsEnabled = { [weak self] in
+            // Text cached for reconnect-replay while the filter was off may be a
+            // secret — drop it so it can't bypass the filter on reconnect.
+            self?.connectionController?.clearPendingClipboard()
+        }
         statusBarController.isImageSyncEnabled = { [weak self] in
             self?.connectionController?.isImageSyncEnabled ?? false
         }
