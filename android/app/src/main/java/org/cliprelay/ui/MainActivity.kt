@@ -24,15 +24,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.appupdate.AppUpdateOptions
-import com.google.android.play.core.install.InstallStateUpdatedListener
 import com.google.android.play.core.install.model.AppUpdateType
-import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
 import org.cliprelay.R
 import org.cliprelay.feedback.LogShareExporter
@@ -55,25 +50,14 @@ class MainActivity : AppCompatActivity() {
     private var showBlePermissionDialog by mutableStateOf(false)
     private var blePermissionPermanentlyDenied by mutableStateOf(false)
 
-    // Play In-App Updates (flexible flow): Play shows its own update sheet and
-    // downloads in the background. Once downloaded, the update installs silently
-    // the next time the whole app leaves the foreground (no restart prompt);
-    // BootCompletedReceiver restarts the sync service after the install.
+    // Play In-App Updates (immediate flow): Play runs the whole update fullscreen —
+    // download, install, automatic app restart — so the user never keeps using a
+    // stale version after accepting. BootCompletedReceiver restarts the sync
+    // service after the install.
     private val appUpdateManager by lazy { AppUpdateManagerFactory.create(this) }
-    private var updateDownloaded = false
     private val updateFlowLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
-    ) { /* User accepted or declined Play's update sheet — nothing to do either way. */ }
-    private val installStateListener = InstallStateUpdatedListener { state ->
-        if (state.installStatus() == InstallStatus.DOWNLOADED) updateDownloaded = true
-    }
-    // ProcessLifecycleOwner, not Activity.onStop: the activity also stops when the
-    // QR scanner or onboarding opens, and installing there would kill mid-pairing.
-    private val backgroundInstallObserver = object : DefaultLifecycleObserver {
-        override fun onStop(owner: LifecycleOwner) {
-            if (updateDownloaded) appUpdateManager.completeUpdate()
-        }
-    }
+    ) { /* User accepted or declined Play's update screen — nothing to do either way. */ }
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -329,34 +313,32 @@ class MainActivity : AppCompatActivity() {
         // A cliprelay://pair link may have launched us (e.g. from a system QR scanner).
         if (savedInstanceState == null) handlePairingDeepLink(intent)
 
-        appUpdateManager.registerListener(installStateListener)
-        ProcessLifecycleOwner.get().lifecycle.addObserver(backgroundInstallObserver)
-        // savedInstanceState guard: don't re-show Play's update sheet on rotation.
-        if (savedInstanceState == null) checkForAppUpdate()
+        // savedInstanceState guard: don't re-show Play's update screen on rotation.
+        if (savedInstanceState == null) checkForAppUpdate(resumeOnly = false)
     }
 
-    override fun onDestroy() {
-        ProcessLifecycleOwner.get().lifecycle.removeObserver(backgroundInstallObserver)
-        appUpdateManager.unregisterListener(installStateListener)
-        super.onDestroy()
-    }
-
-    private fun checkForAppUpdate() {
+    /**
+     * Start (or, on resume, re-attach to) Play's immediate update flow. With
+     * [resumeOnly], only re-enter a flow the user already accepted — never start
+     * a new prompt, so backing out of the update isn't met with an instant re-ask.
+     * On failure (no Play Store, offline): stays silent.
+     */
+    private fun checkForAppUpdate(resumeOnly: Boolean) {
         appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
-            if (info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
-                info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)
-            ) {
+            val shouldLaunch = when (info.updateAvailability()) {
+                UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS -> true
+                UpdateAvailability.UPDATE_AVAILABLE ->
+                    !resumeOnly && info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
+                else -> false
+            }
+            if (shouldLaunch) {
                 appUpdateManager.startUpdateFlowForResult(
                     info,
                     updateFlowLauncher,
-                    AppUpdateOptions.defaultOptions(AppUpdateType.FLEXIBLE)
+                    AppUpdateOptions.defaultOptions(AppUpdateType.IMMEDIATE)
                 )
-            } else if (info.installStatus() == InstallStatus.DOWNLOADED) {
-                // Update finished downloading in a previous session — install on next background.
-                updateDownloaded = true
             }
         }
-        // On failure (no Play Store, offline): stay silent.
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -367,6 +349,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // If the user backed out mid-install (e.g. switched apps during Play's
+        // update screen), re-attach to the in-progress update.
+        checkForAppUpdate(resumeOnly = true)
         val filter = IntentFilter(ClipRelayService.ACTION_CONNECTION_STATE).also {
             it.addAction(ClipRelayService.ACTION_PAIRING_COMPLETE)
             it.addAction(ClipRelayService.ACTION_PAIRING_STATUS)
