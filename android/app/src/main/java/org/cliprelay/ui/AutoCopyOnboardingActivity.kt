@@ -70,6 +70,7 @@ class AutoCopyOnboardingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableLightEdgeToEdge()
         settingsStore = ClipboardSettingsStore(this)
 
         setContent {

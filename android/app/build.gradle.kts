@@ -189,6 +189,8 @@ dependencies {
     // no-ops on devices where the app wasn't installed from the Play Store.
     implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // Play in-app review (rating dialog without leaving the app).
+    implementation("com.google.android.play:review:2.0.2")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")

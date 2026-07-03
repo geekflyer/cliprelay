@@ -22,11 +22,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -164,25 +167,29 @@ fun ClipRelayScreen(
                 )
             }
     ) {
-        // Scrollable so the footer stays reachable when the Mac list grows the
-        // card beyond the screen. When everything fits, SpaceBetween with a
-        // min-height of the viewport reproduces the old centered layout.
+        // Scrollable so the card (which contains the footer buttons) stays fully
+        // reachable when the Mac list grows it beyond the screen; the clipped
+        // card edge doubles as the scroll affordance. When everything fits,
+        // SpaceBetween with a min-height of the viewport centers the layout.
+        // Insets handled inside the scroll column so content scrolls behind
+        // the transparent status and gesture bars (edge-to-edge).
         BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+            modifier = Modifier.fillMaxSize()
         ) {
             val viewportHeight = maxHeight
+            val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .heightIn(min = viewportHeight),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(
+                    modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars)
+                )
                 Spacer(modifier = Modifier.height(12.dp))
                 StatusChip(state = state)
             }
@@ -204,21 +211,51 @@ fun ClipRelayScreen(
                     onHideClipboardSettingChanged = onHideClipboardSettingChanged,
                     onAutoCopySettingChanged = onAutoCopySettingChanged,
                     onImageSyncSettingChanged = onImageSyncSettingChanged,
-                    onAutoCopyFixClick = onAutoCopyFixClick
+                    onAutoCopyFixClick = onAutoCopyFixClick,
+                    footer = {
+                        FooterSection(
+                            isPaired = isPaired,
+                            bleState = when {
+                                isConnected -> "connected"
+                                state is AppState.Paired -> "searching"
+                                state is AppState.Pairing -> "searching"
+                                else -> "unpaired"
+                            },
+                            onHelpClick = onHelpClick,
+                            onSupportLinkClick = onSupportLinkClick,
+                            onShareLogsClick = onShareLogsClick,
+                        )
+                    }
                 )
             }
-            FooterSection(
-                isPaired = isPaired,
-                bleState = when {
-                    isConnected -> "connected"
-                    state is AppState.Paired -> "searching"
-                    state is AppState.Pairing -> "searching"
-                    else -> "unpaired"
-                },
-                onHelpClick = onHelpClick,
-                onSupportLinkClick = onSupportLinkClick,
-                onShareLogsClick = onShareLogsClick,
+            Text(
+                text = "ClipRelay v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp)
             )
+            Spacer(
+                modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars)
+            )
+            }
+
+            // Bottom fade: clipped card content melts to white when more is below.
+            AnimatedVisibility(
+                visible = scrollState.canScrollForward,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.White)
+                            )
+                        )
+                )
             }
         }
 
@@ -341,7 +378,8 @@ private fun MainCard(
     onHideClipboardSettingChanged: (Boolean) -> Unit = {},
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
-    onAutoCopyFixClick: () -> Unit = {}
+    onAutoCopyFixClick: () -> Unit = {},
+    footer: @Composable () -> Unit = {}
 ) {
     val isPaired = state !is AppState.Unpaired
     val isConnected = state is AppState.Paired && state.anyConnected
@@ -604,6 +642,7 @@ private fun MainCard(
                 onEnabledChange = onAutoCopySettingChanged,
                 onFixClick = onAutoCopyFixClick
             )
+            footer()
         }
     }
 }
@@ -1195,7 +1234,9 @@ private fun FooterSection(
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
     ) {
         if (isPaired) {
             Button(
@@ -1217,15 +1258,23 @@ private fun FooterSection(
             }
             Spacer(modifier = Modifier.height(8.dp))
         }
-        TextButton(onClick = { showSupportDialog = true }) {
-            Text("Feedback & Support", fontSize = 13.sp)
+        Button(
+            onClick = { showSupportDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0x1400FFD5),
+                contentColor = Teal
+            ),
+            elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp)
+        ) {
+            Text(
+                text = "💬 Feedback & Support",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "ClipRelay v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
-            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 
     if (showSupportDialog) {
@@ -1256,9 +1305,6 @@ private fun SupportDialog(
         title = { Text("Feedback & Support") },
         text = {
             Column {
-                TextButton(onClick = onShareLogsClick) {
-                    Text(stringResource(R.string.support_share_logs), modifier = Modifier.fillMaxWidth())
-                }
                 TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.gitHubIssueUrl(bleState)) }) {
                     Text("Report Issue on GitHub", modifier = Modifier.fillMaxWidth())
                 }
@@ -1267,6 +1313,12 @@ private fun SupportDialog(
                 }
                 TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.DISCUSSIONS_URL) }) {
                     Text("Community Discussions", modifier = Modifier.fillMaxWidth())
+                }
+                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.PLAY_STORE_URL) }) {
+                    Text("Rate on Play Store", modifier = Modifier.fillMaxWidth())
+                }
+                TextButton(onClick = onShareLogsClick) {
+                    Text(stringResource(R.string.support_share_logs), modifier = Modifier.fillMaxWidth())
                 }
             }
         },
