@@ -3,6 +3,7 @@ package org.cliprelay.ui
 // Main activity: handles permissions, QR scanning results, and hosts the Compose UI.
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -289,7 +290,11 @@ class MainActivity : AppCompatActivity() {
                     onboardingLauncher.launch(Intent(this, AutoCopyOnboardingActivity::class.java))
                 },
                 onSupportLinkClick = { url ->
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    } catch (e: ActivityNotFoundException) {
+                        Toast.makeText(this, "No app available to open this link", Toast.LENGTH_SHORT).show()
+                    }
                 },
                 onShareLogsClick = { bleState ->
                     shareLogs(bleState)
