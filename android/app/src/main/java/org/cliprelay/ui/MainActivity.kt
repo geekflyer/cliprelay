@@ -25,6 +25,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.appupdate.AppUpdateOptions
+import com.google.android.play.core.install.InstallStateUpdatedListener
+import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.InstallStatus
+import com.google.android.play.core.install.model.UpdateAvailability
 import org.cliprelay.R
 import org.cliprelay.feedback.LogShareExporter
 import org.cliprelay.pairing.PairingStore
@@ -45,6 +51,17 @@ class MainActivity : AppCompatActivity() {
     // the connectedDevice foreground service cannot start and pairing would fail.
     private var showBlePermissionDialog by mutableStateOf(false)
     private var blePermissionPermanentlyDenied by mutableStateOf(false)
+
+    // Play In-App Updates (flexible flow): Play shows its own update sheet and
+    // downloads in the background; we only surface the "restart to finish" step.
+    private val appUpdateManager by lazy { AppUpdateManagerFactory.create(this) }
+    private var showUpdateReadyDialog by mutableStateOf(false)
+    private val updateFlowLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { /* User accepted or declined Play's update sheet — nothing to do either way. */ }
+    private val installStateListener = InstallStateUpdatedListener { state ->
+        if (state.installStatus() == InstallStatus.DOWNLOADED) showUpdateReadyDialog = true
+    }
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -175,6 +192,13 @@ class MainActivity : AppCompatActivity() {
                 VersionMismatchDialog(onDismiss = { viewModel.onVersionMismatchDismissed() })
             }
 
+            if (showUpdateReadyDialog) {
+                UpdateReadyDialog(
+                    onRestart = { appUpdateManager.completeUpdate() },
+                    onLater = { showUpdateReadyDialog = false }
+                )
+            }
+
             if (showBlePermissionDialog) {
                 BlePermissionDialog(
                     permanentlyDenied = blePermissionPermanentlyDenied,
@@ -299,6 +323,33 @@ class MainActivity : AppCompatActivity() {
 
         // A cliprelay://pair link may have launched us (e.g. from a system QR scanner).
         if (savedInstanceState == null) handlePairingDeepLink(intent)
+
+        appUpdateManager.registerListener(installStateListener)
+        // savedInstanceState guard: don't re-show Play's update sheet on rotation.
+        if (savedInstanceState == null) checkForAppUpdate()
+    }
+
+    override fun onDestroy() {
+        appUpdateManager.unregisterListener(installStateListener)
+        super.onDestroy()
+    }
+
+    private fun checkForAppUpdate() {
+        appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
+            if (info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
+                info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)
+            ) {
+                appUpdateManager.startUpdateFlowForResult(
+                    info,
+                    updateFlowLauncher,
+                    AppUpdateOptions.defaultOptions(AppUpdateType.FLEXIBLE)
+                )
+            } else if (info.installStatus() == InstallStatus.DOWNLOADED) {
+                // Update finished downloading in a previous session — offer the restart.
+                showUpdateReadyDialog = true
+            }
+        }
+        // On failure (no Play Store, offline): stay silent.
     }
 
     override fun onNewIntent(intent: Intent) {
