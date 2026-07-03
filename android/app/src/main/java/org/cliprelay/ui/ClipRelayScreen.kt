@@ -1238,8 +1238,22 @@ private fun FooterSection(
             }
             Spacer(modifier = Modifier.height(8.dp))
         }
-        TextButton(onClick = { showSupportDialog = true }) {
-            Text("Feedback & Support", fontSize = 13.sp)
+        Button(
+            onClick = { showSupportDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0x1400FFD5),
+                contentColor = Teal
+            ),
+            elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp)
+        ) {
+            Text(
+                text = "💬 Feedback & Support",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
