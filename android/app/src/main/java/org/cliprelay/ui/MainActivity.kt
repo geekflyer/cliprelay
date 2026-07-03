@@ -24,15 +24,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import org.cliprelay.R
 import org.cliprelay.feedback.LogShareExporter
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.permissions.BlePermissions
+import org.cliprelay.review.ReviewPromptStore
 import org.cliprelay.service.ClipboardAccessibilityService
 import org.cliprelay.service.ClipRelayService
 import org.cliprelay.settings.ClipboardSettingsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -40,6 +44,7 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private lateinit var clipboardSettingsStore: ClipboardSettingsStore
+    private val reviewPromptStore by lazy { ReviewPromptStore(this) }
 
     // Pairing is gated on the BLE ("Nearby devices") runtime permission: without it
     // the connectedDevice foreground service cannot start and pairing would fail.
@@ -72,6 +77,7 @@ class MainActivity : AppCompatActivity() {
                 ClipRelayService.ACTION_CLIPBOARD_TRANSFER -> {
                     val fromMac = intent.getBooleanExtra(ClipRelayService.EXTRA_FROM_MAC, true)
                     viewModel.onClipboardTransfer(fromMac)
+                    maybeAskForReview()
                 }
                 ClipRelayService.ACTION_VERSION_MISMATCH -> {
                     viewModel.onVersionMismatch()
@@ -152,6 +158,18 @@ class MainActivity : AppCompatActivity() {
         requestRuntimePermissions()
         ensureServiceRunning()
         clipboardSettingsStore = ClipboardSettingsStore(this)
+
+        // Second review-prompt trigger: the app has been open for a while (syncs that
+        // satisfied the gate may all have happened in the background). Cancelled on
+        // pause, restarted on resume, so it's 15s of continuous foreground time.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                delay(15_000)
+                if (reviewPromptAllowedNow()) {
+                    reviewPromptStore.maybeLaunchReviewFlow(this@MainActivity)
+                }
+            }
+        }
 
         val pairingStore = PairingStore(this)
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
@@ -334,6 +352,25 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         unregisterReceiver(connectionReceiver)
     }
+
+    /**
+     * Ask for a Play Store review right after a successful sync (the user just saw
+     * the app work), if the [ReviewPromptStore] gate allows. Delayed slightly so the
+     * transfer beam animation finishes before the dialog appears.
+     */
+    private fun maybeAskForReview() {
+        lifecycleScope.launch {
+            delay(1_500)
+            if (reviewPromptAllowedNow()) {
+                reviewPromptStore.maybeLaunchReviewFlow(this@MainActivity)
+            }
+        }
+    }
+
+    /** UI-state guard shared by both review triggers: never prompt over an in-progress pairing. */
+    private fun reviewPromptAllowedNow(): Boolean =
+        lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+            viewModel.state.value !is AppState.Pairing
 
     /** Read the paired Macs from the store and apply per-Mac connection flags. */
     private fun loadMacsForUi(connectedIds: Set<String>): List<PairedMacUi> =
