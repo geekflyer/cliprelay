@@ -174,10 +174,11 @@ fun ClipRelayScreen(
                 .navigationBarsPadding()
         ) {
             val viewportHeight = maxHeight
+            val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .heightIn(min = viewportHeight),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
@@ -221,7 +222,31 @@ fun ClipRelayScreen(
                     }
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "ClipRelay v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            }
+
+            // Bottom fade: clipped card content melts to white when more is below.
+            AnimatedVisibility(
+                visible = scrollState.canScrollForward,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.White)
+                            )
+                        )
+                )
             }
         }
 
@@ -1241,12 +1266,6 @@ private fun FooterSection(
                 modifier = Modifier.padding(vertical = 4.dp)
             )
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "ClipRelay v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_HASH})",
-            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 
     if (showSupportDialog) {
