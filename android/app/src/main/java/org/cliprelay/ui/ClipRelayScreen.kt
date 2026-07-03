@@ -1268,6 +1268,9 @@ private fun SupportDialog(
                 TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.DISCUSSIONS_URL) }) {
                     Text("Community Discussions", modifier = Modifier.fillMaxWidth())
                 }
+                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.PLAY_STORE_URL) }) {
+                    Text("Rate on Play Store", modifier = Modifier.fillMaxWidth())
+                }
             }
         },
         confirmButton = {},

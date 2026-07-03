@@ -36,6 +36,7 @@ import org.cliprelay.protocol.Session
 import org.cliprelay.protocol.SessionCallback
 import org.cliprelay.protocol.SessionMode
 import org.cliprelay.protocol.VersionMismatchException
+import org.cliprelay.review.ReviewPromptStore
 import org.cliprelay.settings.ClipboardSettingsStore
 import java.io.IOException
 import java.security.MessageDigest
@@ -111,6 +112,7 @@ class ClipRelayService : Service(), L2capServerCallback {
     private lateinit var clipboardWriter: ClipboardWriter
     private lateinit var clipboardSettingsStore: ClipboardSettingsStore
     private lateinit var pairingStore: PairingStore
+    private val reviewPromptStore by lazy { ReviewPromptStore(this) }
     private val executor = Executors.newSingleThreadExecutor()
     private val clipboardAutoClearHandler = Handler(Looper.getMainLooper())
     private var pendingClipboardAutoClear: Runnable? = null
@@ -984,6 +986,8 @@ class ClipRelayService : Service(), L2capServerCallback {
     // ── Broadcasts ────────────────────────────────────────────────────
 
     private fun sendClipboardTransferBroadcast(fromMac: Boolean) {
+        // Count before broadcasting so MainActivity's review-prompt check sees this sync.
+        reviewPromptStore.recordSync()
         val intent = Intent(ACTION_CLIPBOARD_TRANSFER)
         intent.setPackage(packageName)
         intent.putExtra(EXTRA_FROM_MAC, fromMac)
