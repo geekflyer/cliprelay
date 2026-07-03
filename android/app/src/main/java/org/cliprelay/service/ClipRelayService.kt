@@ -5,6 +5,7 @@ package org.cliprelay.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
@@ -997,6 +998,7 @@ class ClipRelayService : Service(), L2capServerCallback {
         intent.putStringArrayListExtra(EXTRA_CONNECTED_IDS, ArrayList())
         if (deviceName != null) intent.putExtra(EXTRA_DEVICE_NAME, deviceName)
         sendBroadcast(intent)
+        updateNotification()
     }
 
     /** Broadcast the full per-Mac connection state (ids of Macs with a ready session). */
@@ -1015,6 +1017,7 @@ class ClipRelayService : Service(), L2capServerCallback {
         intent.putStringArrayListExtra(EXTRA_CONNECTED_IDS, ids)
         firstName?.let { intent.putExtra(EXTRA_DEVICE_NAME, it) }
         sendBroadcast(intent)
+        updateNotification()
     }
 
     /** Share-sheet target label: single Mac shows its name, several show a collective label. */
@@ -1052,11 +1055,39 @@ class ClipRelayService : Service(), L2capServerCallback {
         )
         manager.createNotificationChannel(channel)
 
+        val tapIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, org.cliprelay.ui.MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.service_notification_text))
+            .setContentText(notificationText())
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
+            .setContentIntent(tapIntent)
             .build()
+    }
+
+    private fun notificationText(): String {
+        val macs = pairingStore.loadPairedMacs()
+        if (macs.isEmpty()) return getString(R.string.notification_not_paired)
+        val ready = readySessions()
+        val connected = macs.filter { mac -> ready.any { it.secretHex == mac.secretHex } }
+        return when (connected.size) {
+            0 -> getString(R.string.notification_waiting)
+            1 -> getString(
+                R.string.notification_connected_one,
+                connected[0].name ?: ready[0].session?.remoteName ?: "Mac"
+            )
+            else -> getString(R.string.notification_connected_many, connected.size)
+        }
+    }
+
+    private fun updateNotification() {
+        if (!foregroundStarted) return
+        getSystemService(NotificationManager::class.java).notify(1001, buildNotification())
     }
 }
