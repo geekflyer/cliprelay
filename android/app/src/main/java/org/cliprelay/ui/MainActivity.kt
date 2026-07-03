@@ -24,15 +24,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import org.cliprelay.R
 import org.cliprelay.feedback.LogShareExporter
 import org.cliprelay.pairing.PairingStore
 import org.cliprelay.permissions.BlePermissions
+import org.cliprelay.review.ReviewPromptStore
 import org.cliprelay.service.ClipboardAccessibilityService
 import org.cliprelay.service.ClipRelayService
 import org.cliprelay.settings.ClipboardSettingsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -40,6 +43,7 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private lateinit var clipboardSettingsStore: ClipboardSettingsStore
+    private val reviewPromptStore by lazy { ReviewPromptStore(this) }
 
     // Pairing is gated on the BLE ("Nearby devices") runtime permission: without it
     // the connectedDevice foreground service cannot start and pairing would fail.
@@ -72,6 +76,7 @@ class MainActivity : AppCompatActivity() {
                 ClipRelayService.ACTION_CLIPBOARD_TRANSFER -> {
                     val fromMac = intent.getBooleanExtra(ClipRelayService.EXTRA_FROM_MAC, true)
                     viewModel.onClipboardTransfer(fromMac)
+                    maybeAskForReview()
                 }
                 ClipRelayService.ACTION_VERSION_MISMATCH -> {
                     viewModel.onVersionMismatch()
@@ -332,6 +337,21 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         unregisterReceiver(connectionReceiver)
+    }
+
+    /**
+     * Ask for a Play Store review right after a successful sync (the user just saw
+     * the app work), if the [ReviewPromptStore] gate allows. Delayed slightly so the
+     * transfer beam animation finishes before the dialog appears.
+     */
+    private fun maybeAskForReview() {
+        if (!reviewPromptStore.shouldPrompt()) return
+        lifecycleScope.launch {
+            delay(1_500)
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                reviewPromptStore.maybeLaunchReviewFlow(this@MainActivity)
+            }
+        }
     }
 
     /** Read the paired Macs from the store and apply per-Mac connection flags. */
