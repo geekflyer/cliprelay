@@ -27,6 +27,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.appupdate.AppUpdateOptions
+import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.UpdateAvailability
 import org.cliprelay.R
 import org.cliprelay.feedback.LogShareExporter
 import org.cliprelay.pairing.PairingStore
@@ -50,6 +54,15 @@ class MainActivity : AppCompatActivity() {
     // the connectedDevice foreground service cannot start and pairing would fail.
     private var showBlePermissionDialog by mutableStateOf(false)
     private var blePermissionPermanentlyDenied by mutableStateOf(false)
+
+    // Play In-App Updates (immediate flow): Play runs the whole update fullscreen —
+    // download, install, automatic app restart — so the user never keeps using a
+    // stale version after accepting. BootCompletedReceiver restarts the sync
+    // service after the install.
+    private val appUpdateManager by lazy { AppUpdateManagerFactory.create(this) }
+    private val updateFlowLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { /* User accepted or declined Play's update screen — nothing to do either way. */ }
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -318,6 +331,33 @@ class MainActivity : AppCompatActivity() {
 
         // A cliprelay://pair link may have launched us (e.g. from a system QR scanner).
         if (savedInstanceState == null) handlePairingDeepLink(intent)
+
+        // savedInstanceState guard: don't re-show Play's update screen on rotation.
+        if (savedInstanceState == null) checkForAppUpdate(resumeOnly = false)
+    }
+
+    /**
+     * Start (or, on resume, re-attach to) Play's immediate update flow. With
+     * [resumeOnly], only re-enter a flow the user already accepted — never start
+     * a new prompt, so backing out of the update isn't met with an instant re-ask.
+     * On failure (no Play Store, offline): stays silent.
+     */
+    private fun checkForAppUpdate(resumeOnly: Boolean) {
+        appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
+            val shouldLaunch = when (info.updateAvailability()) {
+                UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS -> true
+                UpdateAvailability.UPDATE_AVAILABLE ->
+                    !resumeOnly && info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
+                else -> false
+            }
+            if (shouldLaunch) {
+                appUpdateManager.startUpdateFlowForResult(
+                    info,
+                    updateFlowLauncher,
+                    AppUpdateOptions.defaultOptions(AppUpdateType.IMMEDIATE)
+                )
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -328,6 +368,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // If the user backed out mid-install (e.g. switched apps during Play's
+        // update screen), re-attach to the in-progress update.
+        checkForAppUpdate(resumeOnly = true)
         val filter = IntentFilter(ClipRelayService.ACTION_CONNECTION_STATE).also {
             it.addAction(ClipRelayService.ACTION_PAIRING_COMPLETE)
             it.addAction(ClipRelayService.ACTION_PAIRING_STATUS)
