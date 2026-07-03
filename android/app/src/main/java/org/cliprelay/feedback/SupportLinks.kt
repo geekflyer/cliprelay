@@ -39,5 +39,6 @@ object SupportLinks {
 
     const val DISCUSSIONS_URL = "https://github.com/geekflyer/cliprelay/discussions"
 
-    const val PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=org.cliprelay"
+    const val PLAY_STORE_URL =
+        "https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}"
 }

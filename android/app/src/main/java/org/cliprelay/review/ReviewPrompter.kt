@@ -28,14 +28,25 @@ object ReviewPromptGate {
 }
 
 /** Persists the sync counter and last-prompt timestamp in SharedPreferences. */
-class ReviewPromptStore(context: Context) {
+class ReviewPromptStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("review_prompt", Context.MODE_PRIVATE)
-    private val installTimeMs =
+    // Lazy: the service instance only ever records syncs and must not pay the
+    // PackageManager binder call on its session thread.
+    private val installTimeMs by lazy {
         context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
+    }
 
-    /** Called on every successful clipboard sync, either direction. */
+    /**
+     * Called on every successful clipboard sync, either direction. Runs on the BLE
+     * session thread, so it stops writing once the gate threshold is reached — after
+     * that the exact count no longer matters. (The read-modify-write is not atomic
+     * across session threads; a lost increment below the threshold only delays the
+     * prompt by one sync, so no locking.)
+     */
     fun recordSync() {
-        prefs.edit().putInt(KEY_SYNC_COUNT, prefs.getInt(KEY_SYNC_COUNT, 0) + 1).apply()
+        val count = prefs.getInt(KEY_SYNC_COUNT, 0)
+        if (count >= ReviewPromptGate.MIN_SYNCS) return
+        prefs.edit().putInt(KEY_SYNC_COUNT, count + 1).apply()
     }
 
     fun shouldPrompt(nowMs: Long = System.currentTimeMillis()): Boolean =

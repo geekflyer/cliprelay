@@ -164,7 +164,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 delay(15_000)
-                reviewPromptStore.maybeLaunchReviewFlow(this@MainActivity)
+                if (reviewPromptAllowedNow()) {
+                    reviewPromptStore.maybeLaunchReviewFlow(this@MainActivity)
+                }
             }
         }
 
@@ -356,14 +358,18 @@ class MainActivity : AppCompatActivity() {
      * transfer beam animation finishes before the dialog appears.
      */
     private fun maybeAskForReview() {
-        if (!reviewPromptStore.shouldPrompt()) return
         lifecycleScope.launch {
             delay(1_500)
-            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            if (reviewPromptAllowedNow()) {
                 reviewPromptStore.maybeLaunchReviewFlow(this@MainActivity)
             }
         }
     }
+
+    /** UI-state guard shared by both review triggers: never prompt over an in-progress pairing. */
+    private fun reviewPromptAllowedNow(): Boolean =
+        lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+            viewModel.state.value !is AppState.Pairing
 
     /** Read the paired Macs from the store and apply per-Mac connection flags. */
     private fun loadMacsForUi(connectedIds: Set<String>): List<PairedMacUi> =
