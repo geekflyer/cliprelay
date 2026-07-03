@@ -1339,28 +1339,6 @@ fun BlePermissionDialog(
     )
 }
 
-// ─── Update Ready Dialog ──────────────────────────────────────────────────────
-@Composable
-fun UpdateReadyDialog(onRestart: () -> Unit, onLater: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onLater,
-        title = { Text("Update Ready") },
-        text = {
-            Text("A new version of ClipRelay has been downloaded. Restart the app to finish updating.")
-        },
-        confirmButton = {
-            TextButton(onClick = onRestart) {
-                Text("Restart")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onLater) {
-                Text("Later")
-            }
-        }
-    )
-}
-
 // ─── Version Mismatch Dialog ──────────────────────────────────────────────────
 @Composable
 fun VersionMismatchDialog(onDismiss: () -> Unit) {

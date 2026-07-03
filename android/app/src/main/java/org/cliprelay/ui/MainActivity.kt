@@ -24,6 +24,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.appupdate.AppUpdateOptions
@@ -53,14 +56,23 @@ class MainActivity : AppCompatActivity() {
     private var blePermissionPermanentlyDenied by mutableStateOf(false)
 
     // Play In-App Updates (flexible flow): Play shows its own update sheet and
-    // downloads in the background; we only surface the "restart to finish" step.
+    // downloads in the background. Once downloaded, the update installs silently
+    // the next time the whole app leaves the foreground (no restart prompt);
+    // BootCompletedReceiver restarts the sync service after the install.
     private val appUpdateManager by lazy { AppUpdateManagerFactory.create(this) }
-    private var showUpdateReadyDialog by mutableStateOf(false)
+    private var updateDownloaded = false
     private val updateFlowLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { /* User accepted or declined Play's update sheet — nothing to do either way. */ }
     private val installStateListener = InstallStateUpdatedListener { state ->
-        if (state.installStatus() == InstallStatus.DOWNLOADED) showUpdateReadyDialog = true
+        if (state.installStatus() == InstallStatus.DOWNLOADED) updateDownloaded = true
+    }
+    // ProcessLifecycleOwner, not Activity.onStop: the activity also stops when the
+    // QR scanner or onboarding opens, and installing there would kill mid-pairing.
+    private val backgroundInstallObserver = object : DefaultLifecycleObserver {
+        override fun onStop(owner: LifecycleOwner) {
+            if (updateDownloaded) appUpdateManager.completeUpdate()
+        }
     }
 
     private val connectionReceiver = object : BroadcastReceiver() {
@@ -192,13 +204,6 @@ class MainActivity : AppCompatActivity() {
                 VersionMismatchDialog(onDismiss = { viewModel.onVersionMismatchDismissed() })
             }
 
-            if (showUpdateReadyDialog) {
-                UpdateReadyDialog(
-                    onRestart = { appUpdateManager.completeUpdate() },
-                    onLater = { showUpdateReadyDialog = false }
-                )
-            }
-
             if (showBlePermissionDialog) {
                 BlePermissionDialog(
                     permanentlyDenied = blePermissionPermanentlyDenied,
@@ -325,11 +330,13 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState == null) handlePairingDeepLink(intent)
 
         appUpdateManager.registerListener(installStateListener)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(backgroundInstallObserver)
         // savedInstanceState guard: don't re-show Play's update sheet on rotation.
         if (savedInstanceState == null) checkForAppUpdate()
     }
 
     override fun onDestroy() {
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(backgroundInstallObserver)
         appUpdateManager.unregisterListener(installStateListener)
         super.onDestroy()
     }
@@ -345,8 +352,8 @@ class MainActivity : AppCompatActivity() {
                     AppUpdateOptions.defaultOptions(AppUpdateType.FLEXIBLE)
                 )
             } else if (info.installStatus() == InstallStatus.DOWNLOADED) {
-                // Update finished downloading in a previous session — offer the restart.
-                showUpdateReadyDialog = true
+                // Update finished downloading in a previous session — install on next background.
+                updateDownloaded = true
             }
         }
         // On failure (no Play Store, offline): stay silent.

@@ -1,6 +1,8 @@
 package org.cliprelay.service
 
-// Starts the ClipRelay foreground service automatically after device boot.
+// Starts the ClipRelay foreground service automatically after device boot or
+// after the app is updated (Play auto-update or in-app update), so clipboard
+// sync resumes without waiting for the user to reopen the app.
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -16,7 +18,9 @@ class BootCompletedReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        if (action != Intent.ACTION_BOOT_COMPLETED) {
+        if (action != Intent.ACTION_BOOT_COMPLETED &&
+            action != Intent.ACTION_MY_PACKAGE_REPLACED
+        ) {
             return
         }
 
