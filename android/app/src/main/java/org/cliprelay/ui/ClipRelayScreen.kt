@@ -233,10 +233,10 @@ fun ClipRelayScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(40.dp)
+                        .height(48.dp)
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color.Transparent, bgBottom)
+                                listOf(Color.Transparent, Color(0x26000000))
                             )
                         )
                 )
