@@ -167,9 +167,10 @@ fun ClipRelayScreen(
                 )
             }
     ) {
-        // Scrollable so the footer stays reachable when the Mac list grows the
-        // card beyond the screen. When everything fits, SpaceBetween with a
-        // min-height of the viewport reproduces the old centered layout.
+        // Scrollable so the card (which contains the footer buttons) stays fully
+        // reachable when the Mac list grows it beyond the screen; the clipped
+        // card edge doubles as the scroll affordance. When everything fits,
+        // SpaceBetween with a min-height of the viewport centers the layout.
         // Insets handled inside the scroll column so content scrolls behind
         // the transparent status and gesture bars (edge-to-edge).
         BoxWithConstraints(
