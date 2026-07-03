@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import org.cliprelay.R
 import org.cliprelay.feedback.LogShareExporter
 import org.cliprelay.pairing.PairingStore
@@ -156,6 +157,16 @@ class MainActivity : AppCompatActivity() {
         requestRuntimePermissions()
         ensureServiceRunning()
         clipboardSettingsStore = ClipboardSettingsStore(this)
+
+        // Second review-prompt trigger: the app has been open for a while (syncs that
+        // satisfied the gate may all have happened in the background). Cancelled on
+        // pause, restarted on resume, so it's 15s of continuous foreground time.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                delay(15_000)
+                reviewPromptStore.maybeLaunchReviewFlow(this@MainActivity)
+            }
+        }
 
         val pairingStore = PairingStore(this)
         val autoClearEnabled = clipboardSettingsStore.isAutoClearSyncedClipboardEnabled()
