@@ -1304,9 +1304,6 @@ private fun SupportDialog(
         title = { Text("Feedback & Support") },
         text = {
             Column {
-                TextButton(onClick = onShareLogsClick) {
-                    Text(stringResource(R.string.support_share_logs), modifier = Modifier.fillMaxWidth())
-                }
                 TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.gitHubIssueUrl(bleState)) }) {
                     Text("Report Issue on GitHub", modifier = Modifier.fillMaxWidth())
                 }
@@ -1315,6 +1312,9 @@ private fun SupportDialog(
                 }
                 TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.DISCUSSIONS_URL) }) {
                     Text("Community Discussions", modifier = Modifier.fillMaxWidth())
+                }
+                TextButton(onClick = onShareLogsClick) {
+                    Text(stringResource(R.string.support_share_logs), modifier = Modifier.fillMaxWidth())
                 }
             }
         },
