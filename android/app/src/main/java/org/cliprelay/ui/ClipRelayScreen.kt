@@ -174,11 +174,10 @@ fun ClipRelayScreen(
                 .navigationBarsPadding()
         ) {
             val viewportHeight = maxHeight
-            val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(scrollState)
+                    .verticalScroll(rememberScrollState())
                     .heightIn(min = viewportHeight),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
@@ -205,41 +204,24 @@ fun ClipRelayScreen(
                     onHideClipboardSettingChanged = onHideClipboardSettingChanged,
                     onAutoCopySettingChanged = onAutoCopySettingChanged,
                     onImageSyncSettingChanged = onImageSyncSettingChanged,
-                    onAutoCopyFixClick = onAutoCopyFixClick
-                )
-            }
-            FooterSection(
-                isPaired = isPaired,
-                bleState = when {
-                    isConnected -> "connected"
-                    state is AppState.Paired -> "searching"
-                    state is AppState.Pairing -> "searching"
-                    else -> "unpaired"
-                },
-                onHelpClick = onHelpClick,
-                onSupportLinkClick = onSupportLinkClick,
-                onShareLogsClick = onShareLogsClick,
-            )
-            }
-
-            // Bottom fade scrim: signals more content (help/feedback footer)
-            // below the fold when the Mac list grows the card past the viewport.
-            AnimatedVisibility(
-                visible = scrollState.canScrollForward,
-                modifier = Modifier.align(Alignment.BottomCenter),
-                enter = fadeIn(tween(200)),
-                exit = fadeOut(tween(200))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0x26000000))
-                            )
+                    onAutoCopyFixClick = onAutoCopyFixClick,
+                    footer = {
+                        FooterSection(
+                            isPaired = isPaired,
+                            bleState = when {
+                                isConnected -> "connected"
+                                state is AppState.Paired -> "searching"
+                                state is AppState.Pairing -> "searching"
+                                else -> "unpaired"
+                            },
+                            onHelpClick = onHelpClick,
+                            onSupportLinkClick = onSupportLinkClick,
+                            onShareLogsClick = onShareLogsClick,
                         )
+                    }
                 )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
             }
         }
 
@@ -362,7 +344,8 @@ private fun MainCard(
     onHideClipboardSettingChanged: (Boolean) -> Unit = {},
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
-    onAutoCopyFixClick: () -> Unit = {}
+    onAutoCopyFixClick: () -> Unit = {},
+    footer: @Composable () -> Unit = {}
 ) {
     val isPaired = state !is AppState.Unpaired
     val isConnected = state is AppState.Paired && state.anyConnected
@@ -625,6 +608,7 @@ private fun MainCard(
                 onEnabledChange = onAutoCopySettingChanged,
                 onFixClick = onAutoCopyFixClick
             )
+            footer()
         }
     }
 }
@@ -1216,7 +1200,9 @@ private fun FooterSection(
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 28.dp, vertical = 16.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
     ) {
         if (isPaired) {
             Button(
