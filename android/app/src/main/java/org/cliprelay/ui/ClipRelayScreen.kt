@@ -174,10 +174,11 @@ fun ClipRelayScreen(
                 .navigationBarsPadding()
         ) {
             val viewportHeight = maxHeight
+            val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .heightIn(min = viewportHeight),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
@@ -219,6 +220,26 @@ fun ClipRelayScreen(
                 onSupportLinkClick = onSupportLinkClick,
                 onShareLogsClick = onShareLogsClick,
             )
+            }
+
+            // Bottom fade scrim: signals more content (help/feedback footer)
+            // below the fold when the Mac list grows the card past the viewport.
+            AnimatedVisibility(
+                visible = scrollState.canScrollForward,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, bgBottom)
+                            )
+                        )
+                )
             }
         }
 
