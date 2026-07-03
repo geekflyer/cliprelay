@@ -25,10 +25,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -169,12 +170,10 @@ fun ClipRelayScreen(
         // Scrollable so the footer stays reachable when the Mac list grows the
         // card beyond the screen. When everything fits, SpaceBetween with a
         // min-height of the viewport reproduces the old centered layout.
-        // Bottom inset handled inside the scroll column so content scrolls
-        // behind the transparent gesture bar (edge-to-edge).
+        // Insets handled inside the scroll column so content scrolls behind
+        // the transparent status and gesture bars (edge-to-edge).
         BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
+            modifier = Modifier.fillMaxSize()
         ) {
             val viewportHeight = maxHeight
             val scrollState = rememberScrollState()
@@ -187,6 +186,9 @@ fun ClipRelayScreen(
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(
+                    modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars)
+                )
                 Spacer(modifier = Modifier.height(12.dp))
                 StatusChip(state = state)
             }
