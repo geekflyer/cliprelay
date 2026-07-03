@@ -1078,10 +1078,13 @@ class ClipRelayService : Service(), L2capServerCallback {
         val connected = macs.filter { mac -> ready.any { it.secretHex == mac.secretHex } }
         return when (connected.size) {
             0 -> getString(R.string.notification_waiting)
-            1 -> getString(
-                R.string.notification_connected_one,
-                connected[0].name ?: ready[0].session?.remoteName ?: "Mac"
-            )
+            1 -> {
+                val match = ready.firstOrNull { it.secretHex == connected[0].secretHex }
+                getString(
+                    R.string.notification_connected_one,
+                    connected[0].name ?: match?.session?.remoteName ?: "Mac"
+                )
+            }
             else -> getString(R.string.notification_connected_many, connected.size)
         }
     }

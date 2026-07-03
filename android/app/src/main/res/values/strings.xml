@@ -2,7 +2,7 @@
     <string name="app_name">ClipRelay</string>
     <string name="service_channel_name">Clipboard Sync</string>
     <string name="notification_not_paired">Not paired yet — tap to set up</string>
-    <string name="notification_waiting">Waiting for your Mac…</string>
+    <string name="notification_waiting">Searching for your Mac…</string>
     <string name="notification_connected_one">Connected to %1$s</string>
     <string name="notification_connected_many">Connected to %1$d Macs</string>
     <string name="main_title">ClipRelay</string>
