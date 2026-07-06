@@ -58,9 +58,6 @@ class MainViewModel : ViewModel() {
     private val _otpRelayEnabled = MutableStateFlow(false)
     val otpRelayEnabled: StateFlow<Boolean> = _otpRelayEnabled.asStateFlow()
 
-    private val _otpRelayAccessGranted = MutableStateFlow(false)
-    val otpRelayAccessGranted: StateFlow<Boolean> = _otpRelayAccessGranted.asStateFlow()
-
     private val _showVersionMismatch = MutableStateFlow(false)
     val showVersionMismatch: StateFlow<Boolean> = _showVersionMismatch.asStateFlow()
 
@@ -174,10 +171,6 @@ class MainViewModel : ViewModel() {
 
     fun onOtpRelaySettingChanged(enabled: Boolean) {
         _otpRelayEnabled.value = enabled
-    }
-
-    fun onOtpRelayAccessChanged(granted: Boolean) {
-        _otpRelayAccessGranted.value = granted
     }
 
     fun onVersionMismatch() {

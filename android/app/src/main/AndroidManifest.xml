@@ -102,15 +102,24 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <service
-            android:name=".otp.OtpNotificationListener"
+        <!-- Experimental OTP relay: reads a single incoming OTP SMS via the
+             SMS User Consent API after a one-tap system dialog. -->
+        <activity
+            android:name=".otp.SmsConsentActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ClipRelay.Transparent"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+
+        <receiver
+            android:name=".otp.SmsUserConsentReceiver"
             android:exported="true"
-            android:label="@string/otp_listener_label"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            android:permission="com.google.android.gms.auth.api.phone.permission.SEND">
             <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
+                <action android:name="com.google.android.gms.auth.api.phone.SMS_RETRIEVED" />
             </intent-filter>
-        </service>
+        </receiver>
 
         <service
             android:name=".service.ClipboardTileService"

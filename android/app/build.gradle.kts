@@ -189,6 +189,10 @@ dependencies {
     // no-ops on devices where the app wasn't installed from the Play Store.
     implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // SMS User Consent API: read a single incoming OTP SMS after a one-tap system
+    // consent dialog — no SMS permission, and not subject to Android 15+ OTP
+    // notification redaction. Requires Google Play services (no-ops without it).
+    implementation("com.google.android.gms:play-services-auth-api-phone:18.0.2")
     // Play in-app review (rating dialog without leaving the app).
     implementation("com.google.android.play:review:2.0.2")
     implementation("androidx.activity:activity-ktx:1.9.3")

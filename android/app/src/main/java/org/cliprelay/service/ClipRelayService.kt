@@ -26,6 +26,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import org.cliprelay.R
 import org.cliprelay.ble.Advertiser
+import org.cliprelay.otp.SmsOtpController
 import org.cliprelay.ble.L2capServer
 import org.cliprelay.ble.L2capServerCallback
 import org.cliprelay.crypto.E2ECrypto
@@ -214,6 +215,11 @@ class ClipRelayService : Service(), L2capServerCallback {
 
         loadPairingState()
         DebugSmokeProbe.reset(this)
+
+        // Reopen the SMS OTP consent window after a reboot/process restart.
+        // ponytail: re-armed here + on timeout/consume; a wakeup every ~5 min while
+        // enabled. Gate on a connected Mac if that battery cost ever matters.
+        SmsOtpController.armIfEnabled(this)
 
         // On Android 14+ a connectedDevice foreground service may not enter the
         // foreground without the Bluetooth runtime permissions — startForeground

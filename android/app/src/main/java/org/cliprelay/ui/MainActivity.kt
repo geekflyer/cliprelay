@@ -39,7 +39,7 @@ import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.review.ReviewPromptStore
 import org.cliprelay.service.ClipboardAccessibilityService
 import org.cliprelay.service.ClipRelayService
-import org.cliprelay.otp.OtpNotificationListener
+import org.cliprelay.otp.SmsOtpController
 import org.cliprelay.settings.ClipboardSettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -203,11 +203,9 @@ class MainActivity : AppCompatActivity() {
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
             val imageSyncEnabled by viewModel.imageSyncEnabled.collectAsState()
             val otpRelayEnabled by viewModel.otpRelayEnabled.collectAsState()
-            val otpRelayAccessGranted by viewModel.otpRelayAccessGranted.collectAsState()
             val showVersionMismatch by viewModel.showVersionMismatch.collectAsState()
             val pairingFailed by viewModel.pairingFailed.collectAsState()
             var showAccessibilityDisclosure by remember { mutableStateOf(false) }
-            var showOtpDisclosure by remember { mutableStateOf(false) }
 
             if (showVersionMismatch) {
                 VersionMismatchDialog(onDismiss = { viewModel.onVersionMismatchDismissed() })
@@ -251,22 +249,6 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            if (showOtpDisclosure) {
-                OtpDisclosureDialog(
-                    onAllow = {
-                        showOtpDisclosure = false
-                        viewModel.onOtpRelaySettingChanged(true)
-                        clipboardSettingsStore.setOtpRelayEnabled(true)
-                        startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    },
-                    onDeny = {
-                        showOtpDisclosure = false
-                        viewModel.onOtpRelaySettingChanged(false)
-                        clipboardSettingsStore.setOtpRelayEnabled(false)
-                    }
-                )
-            }
-
             ClipRelayScreen(
                 state = state,
                 showBurst = showBurst,
@@ -277,7 +259,6 @@ class MainActivity : AppCompatActivity() {
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
                 otpRelayEnabled = otpRelayEnabled,
-                otpRelayAccessGranted = otpRelayAccessGranted,
                 pairingFailed = pairingFailed,
                 onPairingCancelClick = {
                     viewModel.onPairingCancelled()
@@ -342,15 +323,9 @@ class MainActivity : AppCompatActivity() {
                     showAccessibilityDisclosure = true
                 },
                 onOtpRelaySettingChanged = { enabled ->
-                    if (enabled && !OtpNotificationListener.isAccessGranted(this)) {
-                        showOtpDisclosure = true
-                    } else {
-                        viewModel.onOtpRelaySettingChanged(enabled)
-                        clipboardSettingsStore.setOtpRelayEnabled(enabled)
-                    }
-                },
-                onOtpRelayFixClick = {
-                    showOtpDisclosure = true
+                    viewModel.onOtpRelaySettingChanged(enabled)
+                    clipboardSettingsStore.setOtpRelayEnabled(enabled)
+                    if (enabled) SmsOtpController.arm(this)
                 },
                 onHelpClick = {
                     onboardingLauncher.launch(Intent(this, AutoCopyOnboardingActivity::class.java))
@@ -424,9 +399,8 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         viewModel.onAccessibilityStateChanged(isAccessibilityServiceEnabled())
-        viewModel.onOtpRelayAccessChanged(OtpNotificationListener.isAccessGranted(this))
-        // Access granted but not yet delivering (fresh grant / app update) → bind now.
-        OtpNotificationListener.requestRebindIfGranted(this)
+        // Keep the SMS consent window open while the app is in the foreground.
+        SmsOtpController.armIfEnabled(this)
         viewModel.onImageSyncSettingChanged(PairingStore(this).isRichMediaEnabled())
         val queryIntent = Intent(this, ClipRelayService::class.java)
         queryIntent.action = ClipRelayService.ACTION_QUERY_CONNECTION
