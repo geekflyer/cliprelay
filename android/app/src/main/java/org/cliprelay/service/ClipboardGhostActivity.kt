@@ -74,6 +74,25 @@ class ClipboardGhostActivity : ComponentActivity() {
             return true
         }
 
+        // Check freshness via metadata BEFORE reading the clip data: a stale
+        // clip means the detection was a false positive (dismissed toolbar,
+        // stray System UI window) or the app hasn't written the new clip yet —
+        // never forward it; a retry may pick up a late write. Metadata reads
+        // don't trigger the system's "app pasted from your clipboard" banner,
+        // so discarded false positives stay invisible to the user.
+        val description = try {
+            clipboardManager.primaryClipDescription
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Clipboard metadata access denied: ${e.message}")
+            null
+        }
+        if (description != null &&
+            !AutoCopyHeuristics.isClipFresh(description.timestamp, System.currentTimeMillis())
+        ) {
+            Log.d(TAG, "Clipboard content is stale — not forwarding")
+            return false
+        }
+
         val clip = try {
             clipboardManager.primaryClip
         } catch (e: SecurityException) {
@@ -82,14 +101,6 @@ class ClipboardGhostActivity : ComponentActivity() {
         }
         if (clip == null || clip.itemCount == 0) {
             Log.d(TAG, "Clipboard empty")
-            return false
-        }
-
-        // A clip older than the detected copy means the detection was a false
-        // positive (e.g. a dismissed toolbar) or the app hasn't written the new
-        // clip yet — never forward it. A retry may pick up the late write.
-        if (!AutoCopyHeuristics.isClipFresh(clip.description?.timestamp, System.currentTimeMillis())) {
-            Log.d(TAG, "Clipboard content is stale — not forwarding")
             return false
         }
 

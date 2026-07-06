@@ -86,7 +86,12 @@ class ClipboardAccessibilityService : AccessibilityService() {
             null
         }
         val tsFresh = AutoCopyHeuristics.isClipTimestampFresh(timestampMs, System.currentTimeMillis())
-        val isOverlay = tsFresh || eventSourceHasClipboardId(event)
+        val isOverlay = tsFresh ||
+            AutoCopyHeuristics.looksLikeClipboardOverlay(
+                event.className?.toString(),
+                event.text.map { it?.toString() }
+            ) ||
+            isClipboardOverlayWindow(event)
         if (BuildConfig.DEBUG) Log.v(TAG, "sysui window: clip ts=$timestampMs overlay=$isOverlay")
         if (!isOverlay) return
 
@@ -95,20 +100,51 @@ class ClipboardAccessibilityService : AccessibilityService() {
         notifyService()
     }
 
-    private fun eventSourceHasClipboardId(event: AccessibilityEvent): Boolean {
-        val root = event.source ?: return false
+    private fun isClipboardOverlayWindow(event: AccessibilityEvent): Boolean {
+        // The overlay usually doesn't attach an event source, so also look the
+        // window up by id: AOSP titles it "ClipboardOverlay", and its view IDs
+        // are com.android.systemui:id/clipboard_*.
+        event.source?.let { source ->
+            val hit = try {
+                nodeTreeHasClipboardId(source)
+            } finally {
+                @Suppress("DEPRECATION")
+                source.recycle()
+            }
+            if (hit) return true
+        }
+
+        val window = try {
+            windows.firstOrNull { it.id == event.windowId }
+        } catch (t: Throwable) {
+            null
+        }
+        if (window == null) {
+            if (BuildConfig.DEBUG) Log.v(TAG, "sysui window ${event.windowId}: not in windows list")
+            return false
+        }
+        val title = window.title?.toString() ?: ""
+        if (BuildConfig.DEBUG) Log.v(TAG, "sysui window ${event.windowId}: title=$title")
+        if (title.contains("clipboard", ignoreCase = true)) return true
+
+        val root = window.root ?: return false
+        return nodeTreeHasClipboardId(root)
+    }
+
+    private fun nodeTreeHasClipboardId(root: AccessibilityNodeInfo): Boolean {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var inspected = 0
         var found = false
+        val seenIds = if (BuildConfig.DEBUG) mutableListOf<String>() else null
 
         while (queue.isNotEmpty() && inspected < MAX_OVERLAY_SCAN_NODES) {
             val node = queue.removeFirst()
             inspected += 1
             try {
                 val id = node.viewIdResourceName
+                if (id != null) seenIds?.takeIf { it.size < 8 }?.add(id)
                 if (id != null && id.contains("clipboard")) {
-                    if (BuildConfig.DEBUG) Log.v(TAG, "clipboard view id: $id")
                     found = true
                     break
                 }
@@ -125,6 +161,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
             @Suppress("DEPRECATION")
             queue.removeFirst().recycle()
         }
+        if (seenIds != null) Log.v(TAG, "scanned ids ($inspected nodes): $seenIds")
         return found
     }
 

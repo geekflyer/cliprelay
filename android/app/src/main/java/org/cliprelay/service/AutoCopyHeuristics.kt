@@ -65,6 +65,21 @@ internal object AutoCopyHeuristics {
         return nowMs - timestampMs <= OVERLAY_CLIP_FRESH_MS
     }
 
+    /**
+     * Shape of the Android 13+ clipboard preview overlay as seen in window
+     * events: a plain FrameLayout whose text is exactly one non-blank item
+     * (the copied text). Other System UI windows (shade, volume, keyguard)
+     * carry zero or several text items. Verified on Pixel/Android 16, where
+     * the overlay exposes no view IDs, no window title, and no readable clip
+     * metadata — this shape is the only remaining signal. False positives are
+     * cheap: the ghost activity discards them via the clip-freshness check
+     * before reading any data.
+     */
+    fun looksLikeClipboardOverlay(className: String?, texts: List<String?>): Boolean {
+        if (className != "android.widget.FrameLayout") return false
+        return texts.count { !it.isNullOrBlank() } == 1
+    }
+
     // "Copy" (imperative) across locales.
     private val COPY_WORDS = setOf(
         "copy", "copy text",            // English

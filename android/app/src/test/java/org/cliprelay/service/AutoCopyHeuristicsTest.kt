@@ -82,6 +82,16 @@ class AutoCopyHeuristicsTest {
     }
 
     @Test
+    fun `overlay shape is a FrameLayout with exactly one non-blank text`() {
+        assertTrue(AutoCopyHeuristics.looksLikeClipboardOverlay("android.widget.FrameLayout", listOf("found a taxi ")))
+        // shade: multiple items or empty
+        assertFalse(AutoCopyHeuristics.looksLikeClipboardOverlay("android.widget.FrameLayout", listOf("Notification shade.", "00:29", "Mon, Jul 6")))
+        assertFalse(AutoCopyHeuristics.looksLikeClipboardOverlay("android.widget.FrameLayout", listOf()))
+        assertFalse(AutoCopyHeuristics.looksLikeClipboardOverlay("android.widget.FrameLayout", listOf("", null)))
+        assertFalse(AutoCopyHeuristics.looksLikeClipboardOverlay("android.view.View", listOf("text")))
+    }
+
+    @Test
     fun `overlay trigger requires a known, recent timestamp`() {
         val now = 1_000_000L
         assertTrue(AutoCopyHeuristics.isClipTimestampFresh(now - 1_000L, now))
