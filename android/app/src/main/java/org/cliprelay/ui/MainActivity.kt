@@ -325,7 +325,7 @@ class MainActivity : AppCompatActivity() {
                 onOtpRelaySettingChanged = { enabled ->
                     viewModel.onOtpRelaySettingChanged(enabled)
                     clipboardSettingsStore.setOtpRelayEnabled(enabled)
-                    if (enabled) SmsOtpController.arm(this)
+                    if (enabled) SmsOtpController.armIfEligible(this)
                 },
                 onHelpClick = {
                     onboardingLauncher.launch(Intent(this, AutoCopyOnboardingActivity::class.java))
@@ -399,8 +399,8 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         viewModel.onAccessibilityStateChanged(isAccessibilityServiceEnabled())
-        // Keep the SMS consent window open while the app is in the foreground.
-        SmsOtpController.armIfEnabled(this)
+        // Keep the SMS consent window open while foreground, but only if a Mac is connected.
+        SmsOtpController.armIfEligible(this)
         viewModel.onImageSyncSettingChanged(PairingStore(this).isRichMediaEnabled())
         val queryIntent = Intent(this, ClipRelayService::class.java)
         queryIntent.action = ClipRelayService.ACTION_QUERY_CONNECTION

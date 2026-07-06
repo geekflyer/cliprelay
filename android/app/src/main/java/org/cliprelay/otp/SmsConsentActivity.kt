@@ -27,7 +27,7 @@ class SmsConsentActivity : ComponentActivity() {
             relayOtp(result.data?.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE))
         }
         // Reopen the window for the next code, then close.
-        SmsOtpController.armIfEnabled(this)
+        SmsOtpController.armIfEligible(this)
         finish()
     }
 

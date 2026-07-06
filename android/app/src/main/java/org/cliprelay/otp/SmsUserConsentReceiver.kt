@@ -12,6 +12,7 @@ import android.util.Log
 import com.google.android.gms.auth.api.phone.SmsRetriever
 import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Status
+import org.cliprelay.service.ClipRelayService
 import org.cliprelay.settings.ClipboardSettingsStore
 
 class SmsUserConsentReceiver : BroadcastReceiver() {
@@ -32,6 +33,9 @@ class SmsUserConsentReceiver : BroadcastReceiver() {
 
         when (status?.statusCode) {
             CommonStatusCodes.SUCCESS -> {
+                // Connection may have dropped during the window — don't prompt if
+                // there's no Mac to receive the code.
+                if (!ClipRelayService.anyMacConnected) return
                 val consentIntent: Intent? =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         extras.getParcelable(SmsRetriever.EXTRA_CONSENT_INTENT, Intent::class.java)
@@ -48,8 +52,8 @@ class SmsUserConsentReceiver : BroadcastReceiver() {
                     .onFailure { Log.w(TAG, "Could not launch consent activity", it) }
             }
             CommonStatusCodes.TIMEOUT -> {
-                // Window expired with no matching SMS — reopen it.
-                SmsOtpController.arm(context)
+                // Window expired with no matching SMS — reopen it if still eligible.
+                SmsOtpController.armIfEligible(context)
             }
         }
     }

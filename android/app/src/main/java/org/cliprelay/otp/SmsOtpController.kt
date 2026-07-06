@@ -7,6 +7,7 @@ package org.cliprelay.otp
 import android.content.Context
 import android.util.Log
 import com.google.android.gms.auth.api.phone.SmsRetriever
+import org.cliprelay.service.ClipRelayService
 import org.cliprelay.settings.ClipboardSettingsStore
 
 object SmsOtpController {
@@ -24,7 +25,13 @@ object SmsOtpController {
         }
     }
 
-    fun armIfEnabled(context: Context) {
-        if (ClipboardSettingsStore(context).isOtpRelayEnabled()) arm(context)
+    /** Arm only if the feature is on AND a Mac is connected — no point popping the
+     *  consent dialog when there's nowhere to relay the code. */
+    fun armIfEligible(context: Context) {
+        if (ClipboardSettingsStore(context).isOtpRelayEnabled() &&
+            ClipRelayService.anyMacConnected
+        ) {
+            arm(context)
+        }
     }
 }
