@@ -1,6 +1,7 @@
 // Core app delegate: wires together BLE, clipboard, pairing, and UI subsystems.
 
 import AppKit
+import Carbon
 import CoreBluetooth
 import CryptoKit
 import os
@@ -134,12 +135,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .noPeering
         }
         telemetryManager?.start()
+
+        // A manual launch (Finder/Spotlight/Dock) should always show visible UI,
+        // because the menu bar icon can be hidden (e.g. under the notch). Login
+        // autostart stays silent.
+        if !launchedAsLoginItem {
+            // Defer one runloop turn so the status item exists before the menu pops.
+            DispatchQueue.main.async { [weak self] in
+                self?.showEntryUI()
+            }
+        }
     }
 
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Escape hatch when the menu bar icon is hidden (e.g. under the notch):
-        // reopening the app from Finder/Launchpad opens pairing directly when
-        // unpaired, otherwise shows the status menu at the mouse location.
+    /// True when this launch came from the login item (autostart), detected via
+    /// the kAELaunchedAsLogInItem property on the opening AppleEvent. Must be
+    /// read during applicationDidFinishLaunching while the event is current.
+    private var launchedAsLoginItem: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
+        return event.eventID == AEEventID(kAEOpenApplication)
+            && event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue
+                == OSType(keyAELaunchedAsLogInItem)
+    }
+
+    /// Entry UI for launches/reopens where the user acted deliberately:
+    /// unpaired opens pairing, paired shows the status menu at the cursor.
+    private func showEntryUI() {
         NSApp.activate(ignoringOtherApps: true)
         if pairingManager.loadDevices().isEmpty {
             if !awaitingNewPairingConnection {
@@ -148,6 +168,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             statusBarController.popUpMenuAtMouse()
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Escape hatch when the menu bar icon is hidden (e.g. under the notch):
+        // reopening the app from Finder/Launchpad shows the entry UI.
+        showEntryUI()
         return true
     }
 
