@@ -9,14 +9,18 @@ internal object AutoCopyHeuristics {
     const val MAX_CLIP_AGE_MS = 10_000L
 
     /**
-     * Exact match for short "Copy" action labels on clicked nodes.
-     * Exact (not contains) to avoid firing on labels like "Copy link address…"
-     * summaries or arbitrary sentences containing "copy".
+     * Match for "Copy"-style action labels on clicked nodes: either an exact
+     * copy word, or a label starting with one ("Copy to clipboard",
+     * "Copy message text"). Not a free contains — arbitrary sentences merely
+     * mentioning "copy" ("How to copy files") must not fire.
      */
     fun isCopyLabel(text: String): Boolean {
         val normalized = text.lowercase().trim()
         if (normalized.contains("copyright")) return false
-        return normalized in COPY_WORDS
+        if (normalized in COPY_WORDS) return true
+        // "copy of X" is a noun phrase (file listings), not a copy action
+        if (normalized.startsWith("copy of ")) return false
+        return COPY_PREFIXES.any { normalized.startsWith("$it ") }
     }
 
     /** Toolbar/window text: any copy word contained (Chrome-style toolbars). */
@@ -115,6 +119,14 @@ internal object AutoCopyHeuristics {
         "ನಕಲಿಸಲಾಗಿದೆ",                  // Kannada
         "പകർത്തി",                      // Malayalam
         "ਕਾਪੀ ਕੀਤਾ",                    // Punjabi
+    )
+
+    // Verb-first languages where "<verb> <object>" labels ("Copy to clipboard",
+    // "Texto copiar" doesn't exist — object-first languages stay exact-match).
+    private val COPY_PREFIXES = setOf(
+        "copy", "copiar", "copier", "kopieren", "kopiëren", "copia", "copiare",
+        "копировать", "скопировать", "kopyala", "kopiuj", "skopiuj",
+        "kopírovat", "kopiera", "kopioi", "कॉपी",
     )
 
     private val COPYRIGHT_WORDS = setOf("copyright", "©")

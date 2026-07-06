@@ -22,6 +22,7 @@ import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import org.cliprelay.BuildConfig
 import org.cliprelay.settings.ClipboardSettingsStore
 
 class ClipboardAccessibilityService : AccessibilityService() {
@@ -53,6 +54,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
     // ── "Copied" toast detection (most reliable) ─────────────────────
 
     private fun handleNotificationEvent(event: AccessibilityEvent) {
+        logEventIfDebug("toast", event)
         if (event.className != "android.widget.Toast") return
         val text = event.text.joinToString(" ")
         if (AutoCopyHeuristics.isCopiedConfirmation(text)) {
@@ -65,12 +67,16 @@ class ClipboardAccessibilityService : AccessibilityService() {
     // ── TYPE_VIEW_CLICKED detection (most apps) ──────────────────────
 
     private fun handleClickEvent(event: AccessibilityEvent) {
-        // Check source node for ACTION_COPY (Tier 1)
+        logEventIfDebug("click", event)
+
+        // Check source node for ACTION_COPY or a copy label/contentDescription.
+        // Icon-only toolbar buttons (e.g. Messages' selection bar) carry the
+        // label only in the node's contentDescription, never in event.text.
         val source = event.source
         if (source != null) {
             try {
-                if (hasActionCopy(source)) {
-                    Log.d(TAG, "ACTION_COPY detected on clicked node")
+                if (hasActionCopy(source) || nodeHasCopyLabel(source)) {
+                    Log.d(TAG, "Copy action detected on clicked node")
                     copyToolbarVisible = false
                     notifyService()
                     return
@@ -80,7 +86,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Check event text for "Copy" (Tier 3)
+        // Check event text/contentDescription for "Copy"
         if (isCopyText(event)) {
             Log.d(TAG, "Copy text detected in click event")
             copyToolbarVisible = false
@@ -91,9 +97,12 @@ class ClipboardAccessibilityService : AccessibilityService() {
     // ── TYPE_WINDOW_STATE_CHANGED detection (Chrome, etc.) ───────────
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
+        logEventIfDebug("window", event)
         val text = event.text.joinToString(" ")
 
-        val hasCopyOption = AutoCopyHeuristics.containsCopyWord(text)
+        // Icon-only selection toolbars (Messages etc.) expose no window text —
+        // fall back to a bounded scan of the active window for a copy button.
+        val hasCopyOption = AutoCopyHeuristics.containsCopyWord(text) || windowHasCopyAffordance()
 
         if (hasCopyOption) {
             // Toolbar with "Copy" option appeared — just note it, don't act yet
@@ -116,12 +125,71 @@ class ClipboardAccessibilityService : AccessibilityService() {
         return node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_COPY }
     }
 
+    private fun nodeHasCopyLabel(node: AccessibilityNodeInfo): Boolean {
+        node.text?.toString()?.let { if (AutoCopyHeuristics.isCopyLabel(it)) return true }
+        node.contentDescription?.toString()?.let { if (AutoCopyHeuristics.isCopyLabel(it)) return true }
+        return false
+    }
+
     private fun isCopyText(event: AccessibilityEvent): Boolean {
-        return AutoCopyHeuristics.isCopyLabel(event.text.joinToString(" "))
+        if (AutoCopyHeuristics.isCopyLabel(event.text.joinToString(" "))) return true
+        val desc = event.contentDescription?.toString() ?: return false
+        return AutoCopyHeuristics.isCopyLabel(desc)
+    }
+
+    /**
+     * Bounded breadth-first scan of the active window for a clickable copy
+     * button. Breadth-first so shallow toolbar buttons are found before the
+     * node budget is spent on deep content.
+     */
+    private fun windowHasCopyAffordance(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var inspected = 0
+        var found = false
+
+        while (queue.isNotEmpty() && inspected < MAX_WINDOW_SCAN_NODES) {
+            val node = queue.removeFirst()
+            inspected += 1
+            try {
+                if ((node.isClickable || node.isLongClickable) &&
+                    (hasActionCopy(node) || nodeHasCopyLabel(node))
+                ) {
+                    found = true
+                    break
+                }
+                for (index in 0 until node.childCount) {
+                    node.getChild(index)?.let(queue::addLast)
+                }
+            } finally {
+                @Suppress("DEPRECATION")
+                node.recycle()
+            }
+        }
+
+        while (queue.isNotEmpty()) {
+            @Suppress("DEPRECATION")
+            queue.removeFirst().recycle()
+        }
+        return found
+    }
+
+    // Debug builds log every processed event so silent detection misses are
+    // diagnosable from `adb logcat -s ClipboardA11y` without a rebuild.
+    private fun logEventIfDebug(kind: String, event: AccessibilityEvent) {
+        if (!BuildConfig.DEBUG) return
+        val desc = event.contentDescription ?: ""
+        Log.v(
+            TAG,
+            "event=$kind pkg=${event.packageName} class=${event.className} " +
+                "text=${event.text} desc=$desc"
+        )
     }
 
     companion object {
         private const val TAG = "ClipboardA11y"
+        private const val MAX_WINDOW_SCAN_NODES = 96
     }
 
     private fun notifyService() {

@@ -18,8 +18,17 @@ class AutoCopyHeuristicsTest {
     }
 
     @Test
-    fun `copy label rejects sentences and copyright`() {
-        assertFalse(AutoCopyHeuristics.isCopyLabel("Copy link address to clipboard now"))
+    fun `copy-prefixed action labels match`() {
+        // Icon buttons often carry these as contentDescription
+        assertTrue(AutoCopyHeuristics.isCopyLabel("Copy to clipboard"))
+        assertTrue(AutoCopyHeuristics.isCopyLabel("Copy message text"))
+        assertTrue(AutoCopyHeuristics.isCopyLabel("Copy link address"))
+    }
+
+    @Test
+    fun `copy label rejects sentences, noun phrases and copyright`() {
+        assertFalse(AutoCopyHeuristics.isCopyLabel("How to copy files"))
+        assertFalse(AutoCopyHeuristics.isCopyLabel("Copy of Report.docx"))
         assertFalse(AutoCopyHeuristics.isCopyLabel("Copyright 2026"))
         assertFalse(AutoCopyHeuristics.isCopyLabel("Paste"))
     }
