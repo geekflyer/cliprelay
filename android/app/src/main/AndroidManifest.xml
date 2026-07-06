@@ -103,6 +103,16 @@
         </service>
 
         <service
+            android:name=".otp.OtpNotificationListener"
+            android:exported="true"
+            android:label="@string/otp_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".service.ClipboardTileService"
             android:exported="true"
             android:icon="@drawable/ic_tile_send"

@@ -95,6 +95,8 @@ fun ClipRelayScreen(
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
+    otpRelayEnabled: Boolean = false,
+    otpRelayAccessGranted: Boolean = true,
     pairingFailed: Boolean = false,
     onPairingCancelClick: () -> Unit = {},
     onPairingErrorDismiss: () -> Unit = {},
@@ -106,6 +108,8 @@ fun ClipRelayScreen(
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {},
+    onOtpRelaySettingChanged: (Boolean) -> Unit = {},
+    onOtpRelayFixClick: () -> Unit = {},
     onHelpClick: () -> Unit = {},
     onSupportLinkClick: (String) -> Unit = {},
     onShareLogsClick: (String) -> Unit = {},
@@ -202,6 +206,8 @@ fun ClipRelayScreen(
                     autoCopyEnabled = autoCopyEnabled,
                     autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                     imageSyncEnabled = imageSyncEnabled,
+                    otpRelayEnabled = otpRelayEnabled,
+                    otpRelayAccessGranted = otpRelayAccessGranted,
                     pairingFailed = pairingFailed,
                     onPairingCancelClick = onPairingCancelClick,
                     onPairingErrorDismiss = onPairingErrorDismiss,
@@ -212,6 +218,8 @@ fun ClipRelayScreen(
                     onAutoCopySettingChanged = onAutoCopySettingChanged,
                     onImageSyncSettingChanged = onImageSyncSettingChanged,
                     onAutoCopyFixClick = onAutoCopyFixClick,
+                    onOtpRelaySettingChanged = onOtpRelaySettingChanged,
+                    onOtpRelayFixClick = onOtpRelayFixClick,
                     footer = {
                         FooterSection(
                             isPaired = isPaired,
@@ -369,6 +377,8 @@ private fun MainCard(
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
+    otpRelayEnabled: Boolean = false,
+    otpRelayAccessGranted: Boolean = true,
     pairingFailed: Boolean = false,
     onPairingCancelClick: () -> Unit = {},
     onPairingErrorDismiss: () -> Unit = {},
@@ -379,6 +389,8 @@ private fun MainCard(
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {},
+    onOtpRelaySettingChanged: (Boolean) -> Unit = {},
+    onOtpRelayFixClick: () -> Unit = {},
     footer: @Composable () -> Unit = {}
 ) {
     val isPaired = state !is AppState.Unpaired
@@ -641,6 +653,13 @@ private fun MainCard(
                 accessibilityEnabled = autoCopyAccessibilityEnabled,
                 onEnabledChange = onAutoCopySettingChanged,
                 onFixClick = onAutoCopyFixClick
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OtpRelaySettingRow(
+                enabled = otpRelayEnabled,
+                accessGranted = otpRelayAccessGranted,
+                onEnabledChange = onOtpRelaySettingChanged,
+                onFixClick = onOtpRelayFixClick
             )
             footer()
         }
@@ -1031,6 +1050,91 @@ private fun AutoCopySettingRow(
 }
 
 @Composable
+private fun OtpRelaySettingRow(
+    enabled: Boolean,
+    accessGranted: Boolean = true,
+    onEnabledChange: (Boolean) -> Unit,
+    onFixClick: () -> Unit = {}
+) {
+    val isBroken = enabled && !accessGranted
+    val warningColor = Color(0xFFE57373)
+
+    val toggleBg = if (enabled) Color(0x1400FFD5) else Color(0x08000000)
+    val toggleBorder = when {
+        isBroken -> warningColor.copy(alpha = 0.5f)
+        enabled -> Color(0x2B00FFD5)
+        else -> Color(0x14000000)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(toggleBg)
+            .border(if (isBroken) 2.dp else 1.dp, toggleBorder, RoundedCornerShape(18.dp))
+            .then(
+                if (isBroken)
+                    // In broken state, tapping the row opens notification-access settings
+                    Modifier.clickable(onClick = onFixClick)
+                else
+                    Modifier.toggleable(
+                        value = enabled,
+                        role = Role.Switch,
+                        onValueChange = onEnabledChange
+                    )
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (isBroken) {
+            Text(
+                text = "⚠️",
+                fontSize = 24.sp,
+                modifier = Modifier.padding(end = 10.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.otp_relay_setting_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xCC000000)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (isBroken)
+                    stringResource(R.string.otp_relay_needs_access)
+                else if (enabled)
+                    stringResource(R.string.otp_relay_setting_subtitle_on)
+                else
+                    stringResource(R.string.otp_relay_setting_subtitle_off),
+                fontSize = 12.sp,
+                fontWeight = if (isBroken) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (isBroken) warningColor else Color(0x80000000),
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Switch(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Teal,
+                checkedTrackColor = Aqua.copy(alpha = 0.45f),
+                checkedBorderColor = Aqua.copy(alpha = 0.60f),
+                uncheckedThumbColor = Color(0xFF7A7A7A),
+                uncheckedTrackColor = Color(0x15000000),
+                uncheckedBorderColor = Color(0x40000000)
+            )
+        )
+    }
+}
+
+@Composable
 private fun ImageSyncSettingRow(
     enabled: Boolean,
     onEnabledChange: (Boolean) -> Unit
@@ -1347,6 +1451,29 @@ fun AccessibilityDisclosureDialog(
         dismissButton = {
             TextButton(onClick = onDeny) {
                 Text(stringResource(R.string.accessibility_disclosure_deny))
+            }
+        },
+    )
+}
+
+// ─── OTP Relay Disclosure Dialog ──────────────────────────────────────────────
+@Composable
+fun OtpDisclosureDialog(
+    onAllow: () -> Unit,
+    onDeny: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { /* Do not dismiss on outside tap — require explicit button */ },
+        title = { Text(stringResource(R.string.otp_disclosure_title)) },
+        text = { Text(stringResource(R.string.otp_disclosure_body)) },
+        confirmButton = {
+            TextButton(onClick = onAllow) {
+                Text(stringResource(R.string.otp_disclosure_allow))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDeny) {
+                Text(stringResource(R.string.otp_disclosure_deny))
             }
         },
     )

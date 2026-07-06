@@ -43,6 +43,15 @@
     <string name="tile_label">Send to Mac</string>
     <string name="tile_not_paired">Not paired</string>
     <string name="auto_copy_needs_accessibility">Not working — tap to enable Accessibility permission</string>
+    <string name="otp_listener_label">ClipRelay OTP relay</string>
+    <string name="otp_relay_setting_title">OTP auto-relay (experimental)</string>
+    <string name="otp_relay_setting_subtitle_on">Verification codes from notifications are sent to your Mac clipboard</string>
+    <string name="otp_relay_setting_subtitle_off">Send verification codes from notifications to your Mac automatically. Requires Notification access.</string>
+    <string name="otp_relay_needs_access">Not working — tap to grant Notification access</string>
+    <string name="otp_disclosure_title">Notification Access</string>
+    <string name="otp_disclosure_body">ClipRelay reads incoming notifications on this phone to spot one-time verification codes. When a code is found, only the code is sent — end-to-end encrypted over Bluetooth — to your paired Mac\'s clipboard.\n\nNotification content is processed on-device only and is never stored or shared.\n\nOn the next screen, allow notification access for ClipRelay.</string>
+    <string name="otp_disclosure_allow">Continue</string>
+    <string name="otp_disclosure_deny">Cancel</string>
     <string name="image_sync_setting_title">Image sync (experimental)</string>
     <string name="image_sync_setting_subtitle">Sync clipboard images. Requires devices to be on the same Wi-Fi.</string>
     <string name="accessibility_disclosure_title">Accessibility Permission</string>
