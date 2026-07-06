@@ -39,7 +39,7 @@
     <string name="onboarding_auto_caveat_notification">Shows a system notification each time</string>
     <string name="onboarding_auto_caveat_reliability">May not detect all copy actions</string>
     <string name="onboarding_got_it">Got it</string>
-    <string name="accessibility_service_description">Detects when you copy text so it can be automatically sent to your paired Mac. Only monitors tap actions — does not read screen content.</string>
+    <string name="accessibility_service_description">Detects when you copy text so it can be automatically sent to your paired Mac. Only monitors tap actions and “copied” confirmation messages — does not read other screen content.</string>
     <string name="tile_label">Send to Mac</string>
     <string name="tile_not_paired">Not paired</string>
     <string name="auto_copy_needs_accessibility">Not working — tap to enable Accessibility permission</string>

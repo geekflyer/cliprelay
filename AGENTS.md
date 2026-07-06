@@ -23,6 +23,7 @@
 - After every major code change (new feature, bug fix, refactor), restart both apps so the user can immediately verify the fix:
   - **Mac**: Kill any running ClipRelay process (`pkill -f ClipRelay`) and relaunch with `open dist/ClipRelay.app`
   - **Android**: Install the new APK (`adb install -r dist/cliprelay-debug.apk`), force-stop the app (`adb shell am force-stop org.cliprelay`), and relaunch (`adb shell am start -n org.cliprelay/.ui.MainActivity`)
+    - `force-stop` can leave the ClipboardAccessibilityService **unbound** (auto-copy silently dead) even though it still shows as enabled. After relaunching, check `adb shell dumpsys accessibility | grep "Bound services"` — if empty, rebind with: `adb shell settings put secure enabled_accessibility_services org.cliprelay/org.cliprelay.service.ClipboardAccessibilityService`
     - If install fails with `INSTALL_FAILED_VERSION_DOWNGRADE` or `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (the device has a higher-`versionCode` or release/Play-Store-signed build, and the local debug APK is `versionCode` 1 with the debug signature), just **uninstall first, then install**: `adb uninstall org.cliprelay && adb install dist/cliprelay-debug.apk`. The `-d` (allow-downgrade) flag does NOT help — it only works for debuggable installs, and it can't bridge a signature mismatch. Uninstalling wipes the app's data (pairing/settings), so the user will need to re-pair — which is fine, since they typically re-pair to test anyway.
 - Do not skip this step or tell the user to do it manually.
 
