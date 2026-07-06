@@ -138,10 +138,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Escape hatch when the menu bar icon is hidden (e.g. under the notch):
-        // reopening the app from Finder/Launchpad opens pairing directly.
+        // reopening the app from Finder/Launchpad opens pairing directly when
+        // unpaired, otherwise shows the status menu at the mouse location.
         NSApp.activate(ignoringOtherApps: true)
-        if pairingManager.loadDevices().isEmpty && !awaitingNewPairingConnection {
-            startPairing()
+        if pairingManager.loadDevices().isEmpty {
+            if !awaitingNewPairingConnection {
+                startPairing()
+            }
+        } else {
+            statusBarController.popUpMenuAtMouse()
         }
         return true
     }

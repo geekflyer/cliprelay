@@ -194,6 +194,13 @@ final class StatusBarController {
         renderMenu()
     }
 
+    /// Shows the status menu at the mouse location — escape hatch for when the
+    /// menu bar icon is inaccessible (e.g. hidden under the notch).
+    func popUpMenuAtMouse() {
+        renderMenu()
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
     private func renderMenu() {
         menu.removeAllItems()
 
