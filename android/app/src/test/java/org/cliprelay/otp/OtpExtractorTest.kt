@@ -76,6 +76,18 @@ class OtpExtractorTest {
     }
 
     @Test
+    fun `real amex safekey message`() {
+        assertEquals(
+            "699991",
+            OtpExtractor.extract(
+                "NEVER share this verification code, Amex will never call to ask " +
+                    "for it: 699991. If shared or not requested, call us using Contact " +
+                    "Us on the Amex website."
+            )
+        )
+    }
+
+    @Test
     fun `empty text`() {
         assertNull(OtpExtractor.extract(""))
     }

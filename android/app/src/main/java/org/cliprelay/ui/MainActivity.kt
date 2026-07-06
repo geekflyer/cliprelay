@@ -425,6 +425,8 @@ class MainActivity : AppCompatActivity() {
         )
         viewModel.onAccessibilityStateChanged(isAccessibilityServiceEnabled())
         viewModel.onOtpRelayAccessChanged(OtpNotificationListener.isAccessGranted(this))
+        // Access granted but not yet delivering (fresh grant / app update) → bind now.
+        OtpNotificationListener.requestRebindIfGranted(this)
         viewModel.onImageSyncSettingChanged(PairingStore(this).isRichMediaEnabled())
         val queryIntent = Intent(this, ClipRelayService::class.java)
         queryIntent.action = ClipRelayService.ACTION_QUERY_CONNECTION

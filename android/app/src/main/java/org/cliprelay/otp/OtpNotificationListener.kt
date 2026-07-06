@@ -5,6 +5,7 @@ package org.cliprelay.otp
 // clipboard push path. No SMS permission needed — Play-policy safe.
 
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
@@ -28,10 +29,26 @@ class OtpNotificationListener : NotificationListenerService() {
         fun isAccessGranted(context: Context): Boolean =
             NotificationManagerCompat.getEnabledListenerPackages(context)
                 .contains(context.packageName)
+
+        /**
+         * After the user grants access (or after an app update), Android marks the
+         * listener as *enabled* but does not always *bind* it, so no callbacks
+         * arrive until the next reboot. Asking the system to rebind connects it now.
+         */
+        fun requestRebindIfGranted(context: Context) {
+            if (!isAccessGranted(context)) return
+            runCatching {
+                requestRebind(ComponentName(context, OtpNotificationListener::class.java))
+            }.onFailure { Log.w(TAG, "requestRebind failed", it) }
+        }
     }
 
     private var lastOtp: String? = null
     private var lastOtpAtMs = 0L
+
+    override fun onListenerConnected() {
+        Log.i(TAG, "listener connected — now receiving notifications")
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName == packageName) return
@@ -40,12 +57,19 @@ class OtpNotificationListener : NotificationListenerService() {
         if (!ClipboardSettingsStore(this).isOtpRelayEnabled()) return
 
         val extras = sbn.notification.extras
-        val text = listOfNotNull(
+        val parts = mutableListOf<CharSequence?>(
             extras.getCharSequence(Notification.EXTRA_TITLE),
             extras.getCharSequence(Notification.EXTRA_TEXT),
             extras.getCharSequence(Notification.EXTRA_BIG_TEXT),
             extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString(" ")
-        ).joinToString(" ")
+        )
+        // MessagingStyle notifications (e.g. Google Messages) put the SMS body in
+        // EXTRA_MESSAGES rather than EXTRA_TEXT on some senders — read it too.
+        (extras.getParcelableArray(Notification.EXTRA_MESSAGES))?.forEach { msg ->
+            (msg as? android.os.Bundle)?.getCharSequence("text")?.let { parts.add(it) }
+        }
+        val text = parts.filterNotNull().joinToString(" ")
+        Log.d(TAG, "notification from ${sbn.packageName}, text len=${text.length}")
         if (text.isBlank()) return
 
         val otp = OtpExtractor.extract(text) ?: return
