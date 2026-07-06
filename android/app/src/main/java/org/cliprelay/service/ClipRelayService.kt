@@ -83,7 +83,8 @@ class ClipRelayService : Service(), L2capServerCallback {
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
 
         /** True while at least one Mac session is ready. Read by the OTP relay to
-         *  gate SMS consent-window arming on a live connection. */
+         *  gate SMS consent-window arming, and by the accessibility service to
+         *  disarm auto-copy detection entirely while disconnected. */
         @Volatile
         var anyMacConnected: Boolean = false
             private set
@@ -102,13 +103,6 @@ class ClipRelayService : Service(), L2capServerCallback {
         // After a Mac→Android clipboard write, ignore copy detections briefly —
         // the system "Copied" overlay/toast would otherwise echo it back.
         private const val INBOUND_SUPPRESS_MS = 2_000L
-        // Armed state for the accessibility service (same process): while no
-        // Mac session is ready, auto-copy event processing is skipped at the
-        // source — no window scans, no service pokes, no ghost launches.
-        @Volatile
-        var hasReadySession = false
-            internal set
-
         // Matches the 60s handshake-level pairing timeout in Session
         // (pairingTimeoutMs). A 20s cap here used to abort handshakes the
         // session layer was still pursuing; 60s also gives the Mac central more
@@ -214,7 +208,7 @@ class ClipRelayService : Service(), L2capServerCallback {
             sessions.clear()
             copy
         }
-        hasReadySession = false
+        anyMacConnected = false
         snapshot.forEach { it.close() }
     }
 
@@ -280,7 +274,7 @@ class ClipRelayService : Service(), L2capServerCallback {
 
     override fun onDestroy() {
         isDestroyed = true
-        hasReadySession = false
+        anyMacConnected = false
         clipboardAutoClearHandler.removeCallbacksAndMessages(null)
         clearPairingTimeout()
         // The receiver is only registered when startForeground succeeded in onCreate.
@@ -1071,7 +1065,6 @@ class ClipRelayService : Service(), L2capServerCallback {
 
     /** Broadcast the full per-Mac connection state (ids of Macs with a ready session). */
     private fun broadcastConnectionState() {
-        hasReadySession = readySessions().isNotEmpty()
         val macs = pairingStore.loadPairedMacs()
         val ids = ArrayList<String>()
         var firstName: String? = null

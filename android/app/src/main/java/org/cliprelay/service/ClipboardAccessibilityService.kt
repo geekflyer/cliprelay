@@ -48,7 +48,7 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
         // Disarmed while no Mac is connected — nothing could be forwarded, so
         // skip all scanning/detection work at the source.
-        if (!ClipRelayService.hasReadySession) return
+        if (!ClipRelayService.anyMacConnected) return
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> handleNotificationEvent(event)
