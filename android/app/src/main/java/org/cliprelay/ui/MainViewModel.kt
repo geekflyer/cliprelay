@@ -55,6 +55,9 @@ class MainViewModel : ViewModel() {
     private val _autoCopyAccessibilityEnabled = MutableStateFlow(false)
     val autoCopyAccessibilityEnabled: StateFlow<Boolean> = _autoCopyAccessibilityEnabled.asStateFlow()
 
+    private val _otpRelayEnabled = MutableStateFlow(false)
+    val otpRelayEnabled: StateFlow<Boolean> = _otpRelayEnabled.asStateFlow()
+
     private val _showVersionMismatch = MutableStateFlow(false)
     val showVersionMismatch: StateFlow<Boolean> = _showVersionMismatch.asStateFlow()
 
@@ -164,6 +167,10 @@ class MainViewModel : ViewModel() {
 
     fun onAccessibilityStateChanged(enabled: Boolean) {
         _autoCopyAccessibilityEnabled.value = enabled
+    }
+
+    fun onOtpRelaySettingChanged(enabled: Boolean) {
+        _otpRelayEnabled.value = enabled
     }
 
     fun onVersionMismatch() {

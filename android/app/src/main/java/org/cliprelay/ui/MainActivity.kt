@@ -39,6 +39,7 @@ import org.cliprelay.permissions.BlePermissions
 import org.cliprelay.review.ReviewPromptStore
 import org.cliprelay.service.ClipboardAccessibilityService
 import org.cliprelay.service.ClipRelayService
+import org.cliprelay.otp.SmsOtpController
 import org.cliprelay.settings.ClipboardSettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -191,6 +192,7 @@ class MainActivity : AppCompatActivity() {
         val imageSyncEnabled = pairingStore.isRichMediaEnabled()
         val hideClipboardEnabled = clipboardSettingsStore.isHideSyncedClipboardEnabled()
         viewModel.initState(loadMacsForUi(emptySet()), autoClearEnabled, autoCopyEnabled, imageSyncEnabled, hideClipboardEnabled)
+        viewModel.onOtpRelaySettingChanged(clipboardSettingsStore.isOtpRelayEnabled())
 
         setContent {
             val state by viewModel.state.collectAsState()
@@ -200,6 +202,7 @@ class MainActivity : AppCompatActivity() {
             val autoCopyEnabled by viewModel.autoCopyEnabled.collectAsState()
             val autoCopyAccessibilityEnabled by viewModel.autoCopyAccessibilityEnabled.collectAsState()
             val imageSyncEnabled by viewModel.imageSyncEnabled.collectAsState()
+            val otpRelayEnabled by viewModel.otpRelayEnabled.collectAsState()
             val showVersionMismatch by viewModel.showVersionMismatch.collectAsState()
             val pairingFailed by viewModel.pairingFailed.collectAsState()
             var showAccessibilityDisclosure by remember { mutableStateOf(false) }
@@ -255,6 +258,7 @@ class MainActivity : AppCompatActivity() {
                 autoCopyEnabled = autoCopyEnabled,
                 autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                 imageSyncEnabled = imageSyncEnabled,
+                otpRelayEnabled = otpRelayEnabled,
                 pairingFailed = pairingFailed,
                 onPairingCancelClick = {
                     viewModel.onPairingCancelled()
@@ -317,6 +321,11 @@ class MainActivity : AppCompatActivity() {
                 },
                 onAutoCopyFixClick = {
                     showAccessibilityDisclosure = true
+                },
+                onOtpRelaySettingChanged = { enabled ->
+                    viewModel.onOtpRelaySettingChanged(enabled)
+                    clipboardSettingsStore.setOtpRelayEnabled(enabled)
+                    if (enabled) SmsOtpController.armIfEligible(this)
                 },
                 onHelpClick = {
                     onboardingLauncher.launch(Intent(this, AutoCopyOnboardingActivity::class.java))
@@ -390,6 +399,8 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         viewModel.onAccessibilityStateChanged(isAccessibilityServiceEnabled())
+        // Keep the SMS consent window open while foreground, but only if a Mac is connected.
+        SmsOtpController.armIfEligible(this)
         viewModel.onImageSyncSettingChanged(PairingStore(this).isRichMediaEnabled())
         val queryIntent = Intent(this, ClipRelayService::class.java)
         queryIntent.action = ClipRelayService.ACTION_QUERY_CONNECTION

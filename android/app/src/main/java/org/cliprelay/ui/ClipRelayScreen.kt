@@ -95,6 +95,7 @@ fun ClipRelayScreen(
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
+    otpRelayEnabled: Boolean = false,
     pairingFailed: Boolean = false,
     onPairingCancelClick: () -> Unit = {},
     onPairingErrorDismiss: () -> Unit = {},
@@ -106,6 +107,7 @@ fun ClipRelayScreen(
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {},
+    onOtpRelaySettingChanged: (Boolean) -> Unit = {},
     onHelpClick: () -> Unit = {},
     onSupportLinkClick: (String) -> Unit = {},
     onShareLogsClick: (String) -> Unit = {},
@@ -202,6 +204,7 @@ fun ClipRelayScreen(
                     autoCopyEnabled = autoCopyEnabled,
                     autoCopyAccessibilityEnabled = autoCopyAccessibilityEnabled,
                     imageSyncEnabled = imageSyncEnabled,
+                    otpRelayEnabled = otpRelayEnabled,
                     pairingFailed = pairingFailed,
                     onPairingCancelClick = onPairingCancelClick,
                     onPairingErrorDismiss = onPairingErrorDismiss,
@@ -212,6 +215,7 @@ fun ClipRelayScreen(
                     onAutoCopySettingChanged = onAutoCopySettingChanged,
                     onImageSyncSettingChanged = onImageSyncSettingChanged,
                     onAutoCopyFixClick = onAutoCopyFixClick,
+                    onOtpRelaySettingChanged = onOtpRelaySettingChanged,
                     footer = {
                         FooterSection(
                             isPaired = isPaired,
@@ -369,6 +373,7 @@ private fun MainCard(
     autoCopyEnabled: Boolean,
     autoCopyAccessibilityEnabled: Boolean = false,
     imageSyncEnabled: Boolean = false,
+    otpRelayEnabled: Boolean = false,
     pairingFailed: Boolean = false,
     onPairingCancelClick: () -> Unit = {},
     onPairingErrorDismiss: () -> Unit = {},
@@ -379,6 +384,7 @@ private fun MainCard(
     onAutoCopySettingChanged: (Boolean) -> Unit,
     onImageSyncSettingChanged: (Boolean) -> Unit = {},
     onAutoCopyFixClick: () -> Unit = {},
+    onOtpRelaySettingChanged: (Boolean) -> Unit = {},
     footer: @Composable () -> Unit = {}
 ) {
     val isPaired = state !is AppState.Unpaired
@@ -634,6 +640,11 @@ private fun MainCard(
             ImageSyncSettingRow(
                 enabled = imageSyncEnabled,
                 onEnabledChange = onImageSyncSettingChanged
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OtpRelaySettingRow(
+                enabled = otpRelayEnabled,
+                onEnabledChange = onOtpRelaySettingChanged
             )
             Spacer(modifier = Modifier.height(8.dp))
             AutoCopySettingRow(
@@ -1015,6 +1026,62 @@ private fun AutoCopySettingRow(
 
         // In broken state, switch toggles off (disables auto-copy)
         // In normal state, switch toggles on/off as usual
+        Switch(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Teal,
+                checkedTrackColor = Aqua.copy(alpha = 0.45f),
+                checkedBorderColor = Aqua.copy(alpha = 0.60f),
+                uncheckedThumbColor = Color(0xFF7A7A7A),
+                uncheckedTrackColor = Color(0x15000000),
+                uncheckedBorderColor = Color(0x40000000)
+            )
+        )
+    }
+}
+
+@Composable
+private fun OtpRelaySettingRow(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
+) {
+    val toggleBg = if (enabled) Color(0x1400FFD5) else Color(0x08000000)
+    val toggleBorder = if (enabled) Color(0x2B00FFD5) else Color(0x14000000)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(toggleBg)
+            .border(1.dp, toggleBorder, RoundedCornerShape(18.dp))
+            .toggleable(
+                value = enabled,
+                role = Role.Switch,
+                onValueChange = onEnabledChange
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.otp_relay_setting_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xCC000000)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.otp_relay_setting_subtitle),
+                fontSize = 12.sp,
+                color = Color(0x80000000),
+                lineHeight = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
         Switch(
             checked = enabled,
             onCheckedChange = onEnabledChange,

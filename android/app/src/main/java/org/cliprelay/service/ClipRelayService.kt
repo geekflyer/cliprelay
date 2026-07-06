@@ -26,6 +26,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import org.cliprelay.R
 import org.cliprelay.ble.Advertiser
+import org.cliprelay.otp.SmsOtpController
 import org.cliprelay.ble.L2capServer
 import org.cliprelay.ble.L2capServerCallback
 import org.cliprelay.crypto.E2ECrypto
@@ -79,6 +80,12 @@ class ClipRelayService : Service(), L2capServerCallback {
 
         const val PREFS_NAME = "cliprelay_state"
         const val KEY_CONNECTED_DEVICE = "connected_device_name"
+
+        /** True while at least one Mac session is ready. Read by the OTP relay to
+         *  gate SMS consent-window arming on a live connection. */
+        @Volatile
+        var anyMacConnected: Boolean = false
+            private set
         const val KEY_PENDING_PAIRING_NAME = "pending_pairing_name"
 
         private const val TAG = "ClipRelayService"
@@ -214,6 +221,9 @@ class ClipRelayService : Service(), L2capServerCallback {
 
         loadPairingState()
         DebugSmokeProbe.reset(this)
+
+        // OTP consent window is armed on Mac connect (see broadcastConnectionState),
+        // not here — at startup no Mac is connected yet.
 
         // On Android 14+ a connectedDevice foreground service may not enter the
         // foreground without the Bluetooth runtime permissions — startForeground
@@ -1022,6 +1032,13 @@ class ClipRelayService : Service(), L2capServerCallback {
         firstName?.let { intent.putExtra(EXTRA_DEVICE_NAME, it) }
         sendBroadcast(intent)
         updateNotification()
+
+        // Arm the OTP SMS consent window when a Mac first connects; leave it to
+        // lapse on disconnect (no re-arm without a live connection).
+        val connected = ids.isNotEmpty()
+        val justConnected = connected && !anyMacConnected
+        anyMacConnected = connected
+        if (justConnected) SmsOtpController.armIfEligible(this)
     }
 
     /** Share-sheet target label: single Mac shows its name, several show a collective label. */
