@@ -46,6 +46,10 @@ class ClipboardAccessibilityService : AccessibilityService() {
         // Only process if auto-copy is enabled
         if (!::settingsStore.isInitialized || !settingsStore.isAutoCopyEnabled()) return
 
+        // Disarmed while no Mac is connected — nothing could be forwarded, so
+        // skip all scanning/detection work at the source.
+        if (!ClipRelayService.hasReadySession) return
+
         when (event.eventType) {
             AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> handleNotificationEvent(event)
             AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClickEvent(event)
