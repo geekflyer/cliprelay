@@ -8,6 +8,9 @@ internal object AutoCopyHeuristics {
     /** Clips older than this are treated as "the user did not just copy". */
     const val MAX_CLIP_AGE_MS = 10_000L
 
+    /** Overlay trigger: how recent the clip must be to count as "just copied". */
+    const val OVERLAY_CLIP_FRESH_MS = 3_000L
+
     /**
      * Match for "Copy"-style action labels on clicked nodes: either an exact
      * copy word, or a label starting with one ("Copy to clipboard",
@@ -48,6 +51,18 @@ internal object AutoCopyHeuristics {
     fun isClipFresh(timestampMs: Long?, nowMs: Long): Boolean {
         if (timestampMs == null || timestampMs <= 0L) return true
         return nowMs - timestampMs <= MAX_CLIP_AGE_MS
+    }
+
+    /**
+     * Strict freshness for the System UI overlay trigger: unlike [isClipFresh],
+     * an unknown timestamp counts as NOT fresh. This trigger fires on generic
+     * System UI windows (notification shade, volume), so without a provably
+     * fresh clip it must stay silent — a false positive here costs the user a
+     * visible "ClipRelay pasted from your clipboard" banner.
+     */
+    fun isClipTimestampFresh(timestampMs: Long?, nowMs: Long): Boolean {
+        if (timestampMs == null || timestampMs <= 0L) return false
+        return nowMs - timestampMs <= OVERLAY_CLIP_FRESH_MS
     }
 
     // "Copy" (imperative) across locales.

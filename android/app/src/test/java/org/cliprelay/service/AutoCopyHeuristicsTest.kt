@@ -80,4 +80,14 @@ class AutoCopyHeuristicsTest {
         assertTrue(AutoCopyHeuristics.isClipFresh(null, 1_000_000L))
         assertTrue(AutoCopyHeuristics.isClipFresh(0L, 1_000_000L))
     }
+
+    @Test
+    fun `overlay trigger requires a known, recent timestamp`() {
+        val now = 1_000_000L
+        assertTrue(AutoCopyHeuristics.isClipTimestampFresh(now - 1_000L, now))
+        assertFalse(AutoCopyHeuristics.isClipTimestampFresh(now - AutoCopyHeuristics.OVERLAY_CLIP_FRESH_MS - 1, now))
+        // unknown timestamp must NOT fire — false positives show a paste banner
+        assertFalse(AutoCopyHeuristics.isClipTimestampFresh(null, now))
+        assertFalse(AutoCopyHeuristics.isClipTimestampFresh(0L, now))
+    }
 }

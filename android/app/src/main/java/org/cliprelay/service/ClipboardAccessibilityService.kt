@@ -18,6 +18,8 @@ package org.cliprelay.service
 //      closed without an actual copy.
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -47,8 +49,83 @@ class ClipboardAccessibilityService : AccessibilityService() {
         when (event.eventType) {
             AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> handleNotificationEvent(event)
             AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClickEvent(event)
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
+                if (event.packageName == "com.android.systemui") {
+                    handleSystemUiWindow(event)
+                } else {
+                    handleWindowStateChanged(event)
+                }
         }
+    }
+
+    // ── System clipboard overlay detection (Android 13+) ─────────────
+    //
+    // Some apps' copy buttons emit no accessibility events at all (Google
+    // Messages' Compose selection toolbar). The only observable signal is the
+    // system's "copied" preview overlay: a System UI window event whose text
+    // is the copied content. Since notification shade/volume windows also
+    // arrive here, only fire when the clipboard was provably written within
+    // the last few seconds.
+
+    private fun handleSystemUiWindow(event: AccessibilityEvent) {
+        logEventIfDebug("sysui", event)
+        if (event.text.all { it.isNullOrBlank() }) return
+
+        // Two accept paths, because System UI also emits shade/volume windows
+        // here and a false positive costs the user a visible "ClipRelay pasted
+        // from your clipboard" banner:
+        //  1. Clipboard metadata timestamp is fresh (works where background
+        //     reads of primaryClipDescription are permitted).
+        //  2. The window's view IDs are clipboard-specific — AOSP's overlay
+        //     uses com.android.systemui:id/clipboard_* (works on Pixel, where
+        //     background metadata reads return null).
+        val timestampMs = try {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
+                ?.primaryClipDescription?.timestamp
+        } catch (t: Throwable) {
+            null
+        }
+        val tsFresh = AutoCopyHeuristics.isClipTimestampFresh(timestampMs, System.currentTimeMillis())
+        val isOverlay = tsFresh || eventSourceHasClipboardId(event)
+        if (BuildConfig.DEBUG) Log.v(TAG, "sysui window: clip ts=$timestampMs overlay=$isOverlay")
+        if (!isOverlay) return
+
+        Log.d(TAG, "System clipboard overlay detected")
+        copyToolbarVisible = false
+        notifyService()
+    }
+
+    private fun eventSourceHasClipboardId(event: AccessibilityEvent): Boolean {
+        val root = event.source ?: return false
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var inspected = 0
+        var found = false
+
+        while (queue.isNotEmpty() && inspected < MAX_OVERLAY_SCAN_NODES) {
+            val node = queue.removeFirst()
+            inspected += 1
+            try {
+                val id = node.viewIdResourceName
+                if (id != null && id.contains("clipboard")) {
+                    if (BuildConfig.DEBUG) Log.v(TAG, "clipboard view id: $id")
+                    found = true
+                    break
+                }
+                for (index in 0 until node.childCount) {
+                    node.getChild(index)?.let(queue::addLast)
+                }
+            } finally {
+                @Suppress("DEPRECATION")
+                node.recycle()
+            }
+        }
+
+        while (queue.isNotEmpty()) {
+            @Suppress("DEPRECATION")
+            queue.removeFirst().recycle()
+        }
+        return found
     }
 
     // ── "Copied" toast detection (most reliable) ─────────────────────
@@ -138,20 +215,26 @@ class ClipboardAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Bounded breadth-first scan of the active window for a clickable copy
-     * button. Breadth-first so shallow toolbar buttons are found before the
-     * node budget is spent on deep content.
+     * Bounded breadth-first scan of all interactive windows for a clickable
+     * copy button. All windows, not just the active one — selection toolbars
+     * are often separate popup windows. Breadth-first so shallow toolbar
+     * buttons are found before the node budget is spent on deep content.
      */
     private fun windowHasCopyAffordance(): Boolean {
-        val root = rootInActiveWindow ?: return false
+        val roots = try {
+            windows.mapNotNull { it.root }
+        } catch (t: Throwable) {
+            listOfNotNull(rootInActiveWindow)
+        }
+
+        var budget = MAX_WINDOW_SCAN_NODES
         val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        var inspected = 0
+        queue.addAll(roots)
         var found = false
 
-        while (queue.isNotEmpty() && inspected < MAX_WINDOW_SCAN_NODES) {
+        while (queue.isNotEmpty() && budget > 0) {
             val node = queue.removeFirst()
-            inspected += 1
+            budget -= 1
             try {
                 if ((node.isClickable || node.isLongClickable) &&
                     (hasActionCopy(node) || nodeHasCopyLabel(node))
@@ -189,7 +272,8 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "ClipboardA11y"
-        private const val MAX_WINDOW_SCAN_NODES = 96
+        private const val MAX_WINDOW_SCAN_NODES = 256
+        private const val MAX_OVERLAY_SCAN_NODES = 32
     }
 
     private fun notifyService() {
