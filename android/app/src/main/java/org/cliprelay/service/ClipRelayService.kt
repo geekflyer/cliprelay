@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.ParcelUuid
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.pm.ShortcutInfoCompat
@@ -90,7 +91,17 @@ class ClipRelayService : Service(), L2capServerCallback {
 
         private const val TAG = "ClipRelayService"
         private const val MAX_CLIPBOARD_BYTES = 102_400
-        private const val CLIPBOARD_DEBOUNCE_MS = 200L
+        // One copy often fires several detections (click + "Copied" toast +
+        // toolbar close); the first ghost read covers them all.
+        private const val CLIPBOARD_DEBOUNCE_MS = 700L
+        // Clears a stuck in-flight flag if the ghost activity never reports back.
+        private const val GHOST_WATCHDOG_MS = 4_000L
+        // Same-text sends are suppressed only briefly, so re-copying the same
+        // text later still syncs (the Mac clipboard may have changed since).
+        private const val SENT_TEXT_DEDUPE_WINDOW_MS = 3_000L
+        // After a Mac→Android clipboard write, ignore copy detections briefly —
+        // the system "Copied" overlay/toast would otherwise echo it back.
+        private const val INBOUND_SUPPRESS_MS = 2_000L
         // Matches the 60s handshake-level pairing timeout in Session
         // (pairingTimeoutMs). A 20s cap here used to abort handshakes the
         // session layer was still pursuing; 60s also gives the Mac central more
@@ -142,6 +153,11 @@ class ClipRelayService : Service(), L2capServerCallback {
     private var lastClipboardLaunchMs = 0L
     @Volatile
     private var ghostActivityInFlight = false
+    private var ghostWatchdog: Runnable? = null
+    @Volatile
+    private var lastSentTextAtMs = 0L
+    @Volatile
+    private var suppressAutoCopyUntilMs = 0L
 
     // ── Session handles ───────────────────────────────────────────────
 
@@ -582,6 +598,7 @@ class ClipRelayService : Service(), L2capServerCallback {
         if (decodedText.isEmpty()) return
 
         lastInboundHash = hash
+        suppressAutoCopyUntilMs = SystemClock.elapsedRealtime() + INBOUND_SUPPRESS_MS
         clipboardWriter.writeText(decodedText, markSensitive = clipboardSettingsStore.isHideSyncedClipboardEnabled())
         scheduleClipboardAutoClear(decodedText)
         sendClipboardTransferBroadcast(fromMac = true)
@@ -703,14 +720,16 @@ class ClipRelayService : Service(), L2capServerCallback {
             return
         }
 
-        // Dedup: skip if we already sent this exact text
+        // Dedup: skip if we sent this exact text a moment ago (double-fires from
+        // click + toast + toolbar detections). Time-windowed, not forever — the
+        // Mac clipboard may change in between, so re-copying must sync again.
         val textHash = MessageDigest.getInstance("SHA-256")
             .digest(plaintext).joinToString("") { "%02x".format(it) }
-        if (textHash == lastSentTextHash) {
-            Log.d(TAG, "Skipping send — same text already sent")
+        val now = SystemClock.elapsedRealtime()
+        if (textHash == lastSentTextHash && now - lastSentTextAtMs < SENT_TEXT_DEDUPE_WINDOW_MS) {
+            Log.d(TAG, "Skipping send — same text sent very recently")
             return
         }
-        lastSentTextHash = textHash
 
         val targets = readySessions()
         if (targets.isEmpty()) {
@@ -719,6 +738,10 @@ class ClipRelayService : Service(), L2capServerCallback {
         }
 
         targets.forEach { it.session?.sendClipboard(plaintext) }
+        // Record only after an actual send, so text "sent" while disconnected
+        // isn't suppressed after reconnecting.
+        lastSentTextHash = textHash
+        lastSentTextAtMs = now
         DebugSmokeProbe.onOutboundClipboardPublished(this, text)
     }
 
@@ -938,8 +961,16 @@ class ClipRelayService : Service(), L2capServerCallback {
             return
         }
 
-        // 200ms time guard to prevent double-fires from text classification
-        val now = System.currentTimeMillis()
+        // Monotonic clock — wall clock can jump and break the debounce window
+        val now = SystemClock.elapsedRealtime()
+
+        // Skip detections caused by our own Mac→Android clipboard write
+        if (now < suppressAutoCopyUntilMs) {
+            Log.d(TAG, "Skipping clipboard: inbound write suppression")
+            return
+        }
+
+        // Time guard to prevent double-fires (click + toast + toolbar close)
         if (now - lastClipboardLaunchMs < CLIPBOARD_DEBOUNCE_MS) {
             Log.d(TAG, "Skipping clipboard: debounce (${now - lastClipboardLaunchMs}ms)")
             return
@@ -957,16 +988,30 @@ class ClipRelayService : Service(), L2capServerCallback {
         // Only an Activity with window focus can call getPrimaryClip() successfully.
         Log.d(TAG, "Launching ghost activity for clipboard read")
         ghostActivityInFlight = true
+        // Watchdog: if the ghost never launches or dies before reporting back,
+        // clear the flag so auto-copy doesn't stay wedged until a restart.
+        ghostWatchdog?.let(clipboardAutoClearHandler::removeCallbacks)
+        ghostWatchdog = Runnable {
+            if (ghostActivityInFlight) {
+                Log.w(TAG, "Ghost activity watchdog fired — clearing in-flight flag")
+                clearGhostActivityInFlight()
+            }
+        }.also { clipboardAutoClearHandler.postDelayed(it, GHOST_WATCHDOG_MS) }
         val ghostIntent = Intent(this, ClipboardGhostActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or
                     Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
         }
-        startActivity(ghostIntent)
+        runCatching { startActivity(ghostIntent) }.onFailure {
+            Log.e(TAG, "Could not launch ghost activity", it)
+            clearGhostActivityInFlight()
+        }
     }
 
     fun clearGhostActivityInFlight() {
         ghostActivityInFlight = false
+        ghostWatchdog?.let(clipboardAutoClearHandler::removeCallbacks)
+        ghostWatchdog = null
     }
 
     // ── Direct Share shortcut ─────────────────────────────────────────

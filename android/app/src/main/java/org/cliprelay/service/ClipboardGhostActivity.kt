@@ -16,11 +16,16 @@ class ClipboardGhostActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "ClipboardGhost"
-        private const val SAFETY_TIMEOUT_MS = 2000L
+        private const val SAFETY_TIMEOUT_MS = 2500L
+        // Some apps write the clipboard a beat after the tap's accessibility
+        // event fires (Android 14 can lag 200-300ms) — retry once before giving up.
+        private const val RETRY_DELAY_MS = 500L
+        private const val MAX_READ_ATTEMPTS = 2
     }
 
     private val safetyHandler = Handler(Looper.getMainLooper())
     private var finished = false
+    private var readAttempts = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,39 +42,61 @@ class ClipboardGhostActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         Log.d(TAG, "onWindowFocusChanged: hasFocus=$hasFocus, finished=$finished")
-        if (!hasFocus || finished) return
+        if (!hasFocus || finished || readAttempts > 0) return
 
         // Post one extra frame after gaining focus to ensure clipboard access is ready
         window.decorView.post {
             if (finished) return@post
-            Log.d(TAG, "Reading clipboard after focus gained")
-            readClipboardAndForward()
-            finishGhost()
+            attemptClipboardRead()
         }
     }
 
-    private fun readClipboardAndForward() {
+    private fun attemptClipboardRead() {
+        if (finished) return
+        readAttempts += 1
+        Log.d(TAG, "Reading clipboard (attempt $readAttempts)")
+        if (readClipboardAndForward() || readAttempts >= MAX_READ_ATTEMPTS) {
+            finishGhost()
+        } else {
+            safetyHandler.postDelayed({ attemptClipboardRead() }, RETRY_DELAY_MS)
+        }
+    }
+
+    /**
+     * Reads the clipboard and forwards fresh text to the service.
+     * Returns true when done; false when a retry might still find the copied
+     * text (empty clipboard or a clip that predates the detected copy).
+     */
+    private fun readClipboardAndForward(): Boolean {
         val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         if (clipboardManager == null) {
             Log.w(TAG, "ClipboardManager unavailable")
-            return
+            return true
         }
 
         val clip = try {
             clipboardManager.primaryClip
         } catch (e: SecurityException) {
             Log.w(TAG, "Clipboard access denied: ${e.message}")
-            return
+            return false
         }
         if (clip == null || clip.itemCount == 0) {
             Log.d(TAG, "Clipboard empty")
-            return
+            return false
+        }
+
+        // A clip older than the detected copy means the detection was a false
+        // positive (e.g. a dismissed toolbar) or the app hasn't written the new
+        // clip yet — never forward it. A retry may pick up the late write.
+        if (!AutoCopyHeuristics.isClipFresh(clip.description?.timestamp, System.currentTimeMillis())) {
+            Log.d(TAG, "Clipboard content is stale — not forwarding")
+            return false
         }
 
         val text = clip.getItemAt(0).coerceToText(this)?.toString()
         if (text.isNullOrBlank()) {
             Log.d(TAG, "Clipboard text empty")
-            return
+            return false
         }
 
         // Forward to service via the same path as the share sheet
@@ -79,6 +106,7 @@ class ClipboardGhostActivity : ComponentActivity() {
         }
         startService(pushIntent)
         Log.d(TAG, "Forwarded clipboard text to service (${text.length} chars)")
+        return true
     }
 
     private fun finishGhost() {

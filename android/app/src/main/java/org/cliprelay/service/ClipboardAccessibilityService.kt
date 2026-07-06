@@ -4,13 +4,18 @@ package org.cliprelay.service
 // ClipRelayService to read and forward the clipboard.
 //
 // Detection strategy:
-//   1. TYPE_VIEW_CLICKED with ACTION_COPY or "Copy" text — works for most apps.
-//   2. TYPE_WINDOW_STATE_CHANGED toolbar tracking — catches apps like Chrome
+//   1. TYPE_NOTIFICATION_STATE_CHANGED toast containing a localized "copied"
+//      confirmation ("Copied to clipboard"). Fires after the clipboard was
+//      written, so there is no race with the write — most reliable signal.
+//   2. TYPE_VIEW_CLICKED with ACTION_COPY or "Copy" text — works for most apps.
+//   3. TYPE_WINDOW_STATE_CHANGED toolbar tracking — catches apps like Chrome
 //      that don't fire TYPE_VIEW_CLICKED for their toolbar buttons.
 //      When a text action toolbar containing "Copy" appears, we set a flag.
 //      When the toolbar closes (next window state change without copy text),
 //      we launch the ghost activity to check if the clipboard was updated.
 //      This avoids stealing focus while the toolbar is still visible.
+//      The ghost activity's clip-freshness check filters out toolbars that
+//      closed without an actual copy.
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
@@ -39,8 +44,21 @@ class ClipboardAccessibilityService : AccessibilityService() {
         if (!::settingsStore.isInitialized || !settingsStore.isAutoCopyEnabled()) return
 
         when (event.eventType) {
+            AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> handleNotificationEvent(event)
             AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClickEvent(event)
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
+        }
+    }
+
+    // ── "Copied" toast detection (most reliable) ─────────────────────
+
+    private fun handleNotificationEvent(event: AccessibilityEvent) {
+        if (event.className != "android.widget.Toast") return
+        val text = event.text.joinToString(" ")
+        if (AutoCopyHeuristics.isCopiedConfirmation(text)) {
+            Log.d(TAG, "Copied-confirmation toast detected")
+            copyToolbarVisible = false
+            notifyService()
         }
     }
 
@@ -73,9 +91,9 @@ class ClipboardAccessibilityService : AccessibilityService() {
     // ── TYPE_WINDOW_STATE_CHANGED detection (Chrome, etc.) ───────────
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
-        val text = event.text?.joinToString(" ")?.lowercase() ?: ""
+        val text = event.text.joinToString(" ")
 
-        val hasCopyOption = COPY_WORDS.any { text.contains(it) }
+        val hasCopyOption = AutoCopyHeuristics.containsCopyWord(text)
 
         if (hasCopyOption) {
             // Toolbar with "Copy" option appeared — just note it, don't act yet
@@ -99,46 +117,22 @@ class ClipboardAccessibilityService : AccessibilityService() {
     }
 
     private fun isCopyText(event: AccessibilityEvent): Boolean {
-        val text = event.text?.joinToString(" ")?.lowercase()?.trim() ?: return false
-        if (text.contains("copyright")) return false
-        return text in COPY_WORDS
+        return AutoCopyHeuristics.isCopyLabel(event.text.joinToString(" "))
     }
 
     companion object {
         private const val TAG = "ClipboardA11y"
-
-        private val COPY_WORDS = setOf(
-            "copy", "copy text",           // English
-            "copiar", "copiar texto",       // Spanish, Portuguese
-            "copier",                       // French
-            "kopieren",                     // German
-            "kopiëren",                     // Dutch
-            "copia", "copiare",             // Italian
-            "コピー",                        // Japanese
-            "복사",                          // Korean
-            "复制",                          // Chinese (Simplified)
-            "複製",                          // Chinese (Traditional)
-            "копировать", "скопировать",     // Russian
-            "kopyala",                      // Turkish
-            "คัดลอก",                       // Thai
-            "sao chép",                     // Vietnamese
-            "salin",                        // Filipino/Malay
-            "kopiuj", "skopiuj",            // Polish
-            "kopírovat",                    // Czech
-            "kopiera",                      // Swedish
-            "kopioi",                       // Finnish
-            "αντιγραφή",                    // Greek
-            "העתק",                         // Hebrew
-            "نسخ",                          // Arabic
-            "कॉपी करें",                     // Hindi
-        )
     }
 
     private fun notifyService() {
         val intent = Intent(this, ClipRelayService::class.java).apply {
             action = ClipRelayService.ACTION_ACCESSIBILITY_COPY_DETECTED
         }
-        startService(intent)
+        // Don't crash the accessibility service if the relay service can't be
+        // started right now (e.g. background start restrictions) — with no
+        // running service there is no session to send to anyway.
+        runCatching { startService(intent) }
+            .onFailure { Log.w(TAG, "Could not notify ClipRelayService", it) }
     }
 
     override fun onInterrupt() {
