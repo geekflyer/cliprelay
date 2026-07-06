@@ -642,16 +642,16 @@ private fun MainCard(
                 onEnabledChange = onImageSyncSettingChanged
             )
             Spacer(modifier = Modifier.height(8.dp))
+            OtpRelaySettingRow(
+                enabled = otpRelayEnabled,
+                onEnabledChange = onOtpRelaySettingChanged
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             AutoCopySettingRow(
                 enabled = autoCopyEnabled,
                 accessibilityEnabled = autoCopyAccessibilityEnabled,
                 onEnabledChange = onAutoCopySettingChanged,
                 onFixClick = onAutoCopyFixClick
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            OtpRelaySettingRow(
-                enabled = otpRelayEnabled,
-                onEnabledChange = onOtpRelaySettingChanged
             )
             footer()
         }
@@ -1073,10 +1073,7 @@ private fun OtpRelaySettingRow(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = if (enabled)
-                    stringResource(R.string.otp_relay_setting_subtitle_on)
-                else
-                    stringResource(R.string.otp_relay_setting_subtitle_off),
+                text = stringResource(R.string.otp_relay_setting_subtitle),
                 fontSize = 12.sp,
                 color = Color(0x80000000),
                 lineHeight = 16.sp

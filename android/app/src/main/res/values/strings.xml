@@ -44,8 +44,7 @@
     <string name="tile_not_paired">Not paired</string>
     <string name="auto_copy_needs_accessibility">Not working — tap to enable Accessibility permission</string>
     <string name="otp_relay_setting_title">OTP auto-relay (experimental)</string>
-    <string name="otp_relay_setting_subtitle_on">New SMS codes go to your Mac after a one-tap confirm</string>
-    <string name="otp_relay_setting_subtitle_off">Send SMS verification codes to your Mac. You confirm each code with one tap.</string>
+    <string name="otp_relay_setting_subtitle">Send SMS verification codes to your Mac. You confirm each code with one tap.</string>
     <string name="image_sync_setting_title">Image sync (experimental)</string>
     <string name="image_sync_setting_subtitle">Sync clipboard images. Requires devices to be on the same Wi-Fi.</string>
     <string name="accessibility_disclosure_title">Accessibility Permission</string>
