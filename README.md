@@ -24,6 +24,19 @@ Copy on one device, paste on the other. ClipRelay syncs your clipboard between A
 - **Image sync** *(experimental)* — transfer images (PNG/JPEG, up to 10 MB) between devices over a temporary local WiFi connection, with BLE for signaling. Both devices must be on the same WiFi network.
 - **Auto-copy on Android** *(experimental)* — automatically detects when you copy text on Android and syncs it to your Mac, no manual sharing needed. Uses Android's accessibility service.
 
+## Install
+
+**Mac** — [download the app](https://cliprelay.org/#download), or with [Homebrew](https://brew.sh):
+
+```sh
+brew tap geekflyer/cliprelay https://github.com/geekflyer/cliprelay
+brew install --cask cliprelay
+```
+
+The app auto-updates itself after install (via Sparkle), so `brew upgrade` is not needed.
+
+**Android** — get it on [Google Play](https://play.google.com/store/apps/details?id=org.cliprelay).
+
 ## Screenshots
 
 <p align="center">
