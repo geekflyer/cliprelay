@@ -29,8 +29,12 @@ object OtpExtractor {
     /** Returns the code nearest an OTP keyword, or null if none qualifies. */
     fun extract(text: String): String? {
         val lower = text.lowercase()
-        val keywordPositions = KEYWORDS.mapNotNull { kw ->
-            lower.indexOf(kw).takeIf { it >= 0 }
+        // All positions of each keyword — a keyword can recur, and the digit run
+        // nearest any occurrence should win the proximity check.
+        val keywordPositions = KEYWORDS.flatMap { kw ->
+            generateSequence(lower.indexOf(kw)) { prev ->
+                lower.indexOf(kw, prev + kw.length).takeIf { it >= 0 }
+            }.takeWhile { it >= 0 }.toList()
         }
         if (keywordPositions.isEmpty()) return null
 

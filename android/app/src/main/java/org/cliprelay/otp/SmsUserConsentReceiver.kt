@@ -49,7 +49,12 @@ class SmsUserConsentReceiver : BroadcastReceiver() {
                     putExtra(SmsConsentActivity.EXTRA_CONSENT_INTENT, consentIntent)
                 }
                 runCatching { context.startActivity(launch) }
-                    .onFailure { Log.w(TAG, "Could not launch consent activity", it) }
+                    .onFailure {
+                        // Window was consumed but the dialog never showed — re-arm so
+                        // the feature keeps listening instead of going silent.
+                        Log.w(TAG, "Could not launch consent activity", it)
+                        SmsOtpController.armIfEligible(context)
+                    }
             }
             CommonStatusCodes.TIMEOUT -> {
                 // Window expired with no matching SMS — reopen it if still eligible.

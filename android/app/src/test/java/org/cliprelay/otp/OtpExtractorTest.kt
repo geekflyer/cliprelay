@@ -88,6 +88,16 @@ class OtpExtractorTest {
     }
 
     @Test
+    fun `recurring keyword picks digits near the later occurrence`() {
+        assertEquals(
+            "738291",
+            OtpExtractor.extract(
+                "Code: see ticket 483920 for details. Your one-time code is 738291."
+            )
+        )
+    }
+
+    @Test
     fun `empty text`() {
         assertNull(OtpExtractor.extract(""))
     }
