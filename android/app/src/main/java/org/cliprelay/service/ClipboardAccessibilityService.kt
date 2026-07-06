@@ -108,14 +108,10 @@ class ClipboardAccessibilityService : AccessibilityService() {
         // The overlay usually doesn't attach an event source, so also look the
         // window up by id: AOSP titles it "ClipboardOverlay", and its view IDs
         // are com.android.systemui:id/clipboard_*.
+        // nodeTreeHasClipboardId takes ownership of the node and recycles it
+        // as part of its scan — recycling here too would double-recycle.
         event.source?.let { source ->
-            val hit = try {
-                nodeTreeHasClipboardId(source)
-            } finally {
-                @Suppress("DEPRECATION")
-                source.recycle()
-            }
-            if (hit) return true
+            if (nodeTreeHasClipboardId(source)) return true
         }
 
         val window = try {
