@@ -30,8 +30,11 @@ Copy on one device, paste on the other. ClipRelay syncs your clipboard between A
 
 ```sh
 brew tap geekflyer/cliprelay https://github.com/geekflyer/cliprelay
+brew trust geekflyer/cliprelay
 brew install --cask cliprelay
 ```
+
+(`brew trust` is required on newer Homebrew versions, which refuse to load casks from third-party taps until trusted.)
 
 The app auto-updates itself after install (via Sparkle), so `brew upgrade` is not needed.
 
