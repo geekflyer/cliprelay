@@ -136,6 +136,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         telemetryManager?.start()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Escape hatch when the menu bar icon is hidden (e.g. under the notch):
+        // reopening the app from Finder/Launchpad opens pairing directly.
+        NSApp.activate(ignoringOtherApps: true)
+        if pairingManager.loadDevices().isEmpty && !awaitingNewPairingConnection {
+            startPairing()
+        }
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         bluetoothOffDebounceTimer?.invalidate()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
