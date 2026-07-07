@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetryManager: TelemetryManager?
     private var clipboardMonitor: ClipboardMonitor?
     private var awaitingNewPairingConnection = false
+    private var launchedAsLoginItem = false
     private var bluetoothOffDebounceTimer: Timer?
     private var lastWakeTime: Date?
     // A manual Bluetooth toggle surfaces the indicator immediately. The only debounce is for
@@ -43,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let wakeSettleWindow: TimeInterval = 20.0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        launchedAsLoginItem = Self.isLaunchedAsLoginItem()
         // Start the Sparkle updater now that the app is fully launched.
         // Creating the controller with startingUpdater:false in init() and
         // deferring start to here avoids a race where the updater's scheduled
@@ -148,9 +150,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// True when this launch came from the login item (autostart), detected via
-    /// the kAELaunchedAsLogInItem property on the opening AppleEvent. Must be
-    /// read during applicationDidFinishLaunching while the event is current.
-    private var launchedAsLoginItem: Bool {
+    /// the kAELaunchedAsLogInItem property on the opening AppleEvent. The event
+    /// is only current during applicationDidFinishLaunching, so the result is
+    /// captured there into `launchedAsLoginItem`.
+    private static func isLaunchedAsLoginItem() -> Bool {
         guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
         return event.eventID == AEEventID(kAEOpenApplication)
             && event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue
