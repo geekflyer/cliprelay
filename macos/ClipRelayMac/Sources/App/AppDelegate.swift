@@ -1,6 +1,7 @@
 // Core app delegate: wires together BLE, clipboard, pairing, and UI subsystems.
 
 import AppKit
+import Carbon
 import CoreBluetooth
 import CryptoKit
 import os
@@ -32,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetryManager: TelemetryManager?
     private var clipboardMonitor: ClipboardMonitor?
     private var awaitingNewPairingConnection = false
+    private var launchedAsLoginItem = false
     private var bluetoothOffDebounceTimer: Timer?
     private var lastWakeTime: Date?
     // A manual Bluetooth toggle surfaces the indicator immediately. The only debounce is for
@@ -42,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let wakeSettleWindow: TimeInterval = 20.0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        launchedAsLoginItem = Self.isLaunchedAsLoginItem()
         // Start the Sparkle updater now that the app is fully launched.
         // Creating the controller with startingUpdater:false in init() and
         // deferring start to here avoids a race where the updater's scheduled
@@ -134,6 +137,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .noPeering
         }
         telemetryManager?.start()
+
+        // A manual launch (Finder/Spotlight/Dock) should always show visible UI,
+        // because the menu bar icon can be hidden (e.g. under the notch). Login
+        // autostart stays silent.
+        if !launchedAsLoginItem {
+            // Defer one runloop turn so the status item exists before the menu pops.
+            DispatchQueue.main.async { [weak self] in
+                self?.showEntryUI()
+            }
+        }
+    }
+
+    /// True when this launch came from the login item (autostart), detected via
+    /// the kAELaunchedAsLogInItem property on the opening AppleEvent. The event
+    /// is only current during applicationDidFinishLaunching, so the result is
+    /// captured there into `launchedAsLoginItem`.
+    private static func isLaunchedAsLoginItem() -> Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
+        return event.eventID == AEEventID(kAEOpenApplication)
+            && event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue
+                == OSType(keyAELaunchedAsLogInItem)
+    }
+
+    /// Entry UI for launches/reopens where the user acted deliberately:
+    /// unpaired opens pairing, paired shows the status menu at the cursor.
+    private func showEntryUI() {
+        NSApp.activate(ignoringOtherApps: true)
+        if pairingManager.loadDevices().isEmpty {
+            if !awaitingNewPairingConnection {
+                startPairing()
+            }
+        } else {
+            statusBarController.popUpMenuAtMouse()
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Escape hatch when the menu bar icon is hidden (e.g. under the notch):
+        // reopening the app from Finder/Launchpad shows the entry UI.
+        showEntryUI()
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
