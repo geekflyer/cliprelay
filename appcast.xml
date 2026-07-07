@@ -256,5 +256,15 @@
                        length="2261025"
                        type="application/octet-stream" />
         </item>
+            <item>
+            <title>Version 0.7.4 (a582abf)</title>
+            <pubDate>Tue, 07 Jul 2026 00:46:28 +0000</pubDate>
+            <sparkle:version>456</sparkle:version>
+            <sparkle:shortVersionString>0.7.4 (a582abf)</sparkle:shortVersionString>
+            <enclosure url="https://github.com/geekflyer/cliprelay/releases/download/mac/v0.7.4/ClipRelay-0.7.4.dmg"
+                       sparkle:edSignature="MSpnQ9HNO0YRlBlsK3ReKrrLj2aNw4BcXKqGLfEeNpSy1p/Le3GIDU7clT2VvBgN8s7c6e9dSd5QK4V9+QpBAQ=="
+                       length="2261922"
+                       type="application/octet-stream" />
+        </item>
     </channel>
 </rss>
