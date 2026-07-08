@@ -91,12 +91,22 @@ class ClipboardAccessibilityService : AccessibilityService() {
             null
         }
         val tsFresh = AutoCopyHeuristics.isClipTimestampFresh(timestampMs, System.currentTimeMillis())
-        val isOverlay = tsFresh ||
+        // The shape heuristic alone also matches shade/QS panes ("Notification
+        // shade." is a FrameLayout with one text item too), so every shade or
+        // heads-up appearance launched the ghost, which steals focus and
+        // dismisses the panel along with the keyboard (issue #109). Panes
+        // announce themselves with CONTENT_CHANGE_TYPE_PANE_* flags; the
+        // clipboard preview overlay's window event carries none (verified on
+        // Pixel/A16: shade=32, QS=16, overlay=0).
+        val paneFlags = AccessibilityEvent.CONTENT_CHANGE_TYPE_PANE_APPEARED or
+            AccessibilityEvent.CONTENT_CHANGE_TYPE_PANE_DISAPPEARED or
+            AccessibilityEvent.CONTENT_CHANGE_TYPE_PANE_TITLE
+        val shapeMatch = (event.contentChangeTypes and paneFlags) == 0 &&
             AutoCopyHeuristics.looksLikeClipboardOverlay(
                 event.className?.toString(),
                 event.text.map { it?.toString() }
-            ) ||
-            isClipboardOverlayWindow(event)
+            )
+        val isOverlay = tsFresh || shapeMatch || isClipboardOverlayWindow(event)
         if (BuildConfig.DEBUG) Log.v(TAG, "sysui window: clip ts=$timestampMs overlay=$isOverlay")
         if (!isOverlay) return
 
@@ -187,10 +197,14 @@ class ClipboardAccessibilityService : AccessibilityService() {
         // Check source node for ACTION_COPY or a copy label/contentDescription.
         // Icon-only toolbar buttons (e.g. Messages' selection bar) carry the
         // label only in the node's contentDescription, never in event.text.
+        // Editable fields (EditText) expose ACTION_COPY as an available action
+        // merely because they CAN copy a selection — tapping one is focusing,
+        // not copying, and the resulting ghost launch closed the keyboard the
+        // user just opened (issue #109).
         val source = event.source
         if (source != null) {
             try {
-                if (hasActionCopy(source) || nodeHasCopyLabel(source)) {
+                if ((!source.isEditable && hasActionCopy(source)) || nodeHasCopyLabel(source)) {
                     Log.d(TAG, "Copy action detected on clicked node")
                     copyToolbarVisible = false
                     notifyService()
@@ -257,6 +271,14 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
             Log.d(TAG, "Copy toolbar closed → checking clipboard")
             notifyService()
+        }
+    }
+
+    private fun isListedWindow(windowId: Int): Boolean {
+        return try {
+            windows.any { it.id == windowId }
+        } catch (t: Throwable) {
+            false
         }
     }
 
@@ -344,7 +366,9 @@ class ClipboardAccessibilityService : AccessibilityService() {
         Log.v(
             TAG,
             "event=$kind pkg=${event.packageName} class=${event.className} " +
-                "text=${event.text} desc=$desc"
+                "text=${event.text} desc=$desc full=${event.isFullScreen} " +
+                "cct=${event.contentChangeTypes} src=${event.source != null} " +
+                "win=${event.windowId} listed=${isListedWindow(event.windowId)}"
         )
     }
 
