@@ -3,8 +3,6 @@ package org.cliprelay.feedback
 import android.content.Context
 import android.content.Intent
 import android.os.Process
-import org.cliprelay.pairing.PairingStore
-import org.cliprelay.settings.ClipboardSettingsStore
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
@@ -20,7 +18,7 @@ object LogShareExporter {
 
     fun createShareIntent(context: Context, bleState: String): Intent {
         val text = buildShareText(
-            diagnosticsContext = collectContext(context, bleState),
+            diagnosticsContext = SupportLinks.diagnosticsContext(context, bleState),
             generatedAt = Instant.now(),
             logOutput = captureLogcat(),
         )
@@ -29,22 +27,6 @@ object LogShareExporter {
             putExtra(Intent.EXTRA_SUBJECT, "ClipRelay Android logs")
             putExtra(Intent.EXTRA_TEXT, text)
         }
-    }
-
-    /** App / device / flag context prepended to every shared log. */
-    private fun collectContext(context: Context, bleState: String): List<Pair<String, String>> {
-        val settings = ClipboardSettingsStore(context)
-        val pairing = PairingStore(context)
-        val flags = listOf(
-            "autoCopy" to settings.isAutoCopyEnabled(),
-            "hideSyncedClipboard" to settings.isHideSyncedClipboardEnabled(),
-            "autoClearSyncedClipboard" to settings.isAutoClearSyncedClipboardEnabled(),
-            "imageSync" to pairing.isRichMediaEnabled(),
-        ).joinToString(", ") { "${it.first}=${it.second}" }
-        return SupportLinks.diagnosticsContext(bleState) + listOf(
-            "Paired Macs" to pairing.loadPairedMacs().size.toString(),
-            "Flags" to flags,
-        )
     }
 
     internal fun buildShareText(

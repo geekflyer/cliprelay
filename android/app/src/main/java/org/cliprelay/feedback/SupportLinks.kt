@@ -2,9 +2,12 @@ package org.cliprelay.feedback
 
 // Builds pre-filled support URLs with device context.
 
+import android.content.Context
 import android.net.Uri
 import android.os.Build
 import org.cliprelay.BuildConfig
+import org.cliprelay.pairing.PairingStore
+import org.cliprelay.settings.ClipboardSettingsStore
 
 object SupportLinks {
     private fun deviceContext(): List<Pair<String, String>> = listOf(
@@ -14,11 +17,26 @@ object SupportLinks {
         "Device" to "${Build.MANUFACTURER} ${Build.MODEL}",
     )
 
-    fun diagnosticsContext(bleState: String): List<Pair<String, String>> =
-        deviceContext() + ("BLE State" to bleState)
+    /** App / device / flag context shared by GitHub issues, support emails, and log shares. */
+    fun diagnosticsContext(context: Context, bleState: String): List<Pair<String, String>> {
+        val settings = ClipboardSettingsStore(context)
+        val pairing = PairingStore(context)
+        val flags = listOf(
+            "autoCopy" to settings.isAutoCopyEnabled(),
+            "otpRelay" to settings.isOtpRelayEnabled(),
+            "hideSyncedClipboard" to settings.isHideSyncedClipboardEnabled(),
+            "autoClearSyncedClipboard" to settings.isAutoClearSyncedClipboardEnabled(),
+            "imageSync" to pairing.isRichMediaEnabled(),
+        ).joinToString(", ") { "${it.first}=${it.second}" }
+        return deviceContext() + listOf(
+            "BLE State" to bleState,
+            "Paired Macs" to pairing.loadPairedMacs().size.toString(),
+            "Flags" to flags,
+        )
+    }
 
-    fun gitHubIssueUrl(bleState: String): String {
-        val lines = diagnosticsContext(bleState)
+    fun gitHubIssueUrl(context: Context, bleState: String): String {
+        val lines = diagnosticsContext(context, bleState)
             .joinToString("\n") { "- **${it.first}:** ${it.second}" }
         val body = "\n\n---\n$lines"
         return Uri.parse("https://github.com/geekflyer/cliprelay/issues/new").buildUpon()
@@ -28,8 +46,8 @@ object SupportLinks {
             .toString()
     }
 
-    fun emailUrl(bleState: String): String {
-        val lines = diagnosticsContext(bleState)
+    fun emailUrl(context: Context, bleState: String): String {
+        val lines = diagnosticsContext(context, bleState)
             .joinToString("\n") { "${it.first}: ${it.second}" }
         val body = "\n\n---\n$lines"
         return "mailto:info@cliprelay.org" +
