@@ -1367,15 +1367,16 @@ private fun SupportDialog(
     onLinkClick: (String) -> Unit,
     onShareLogsClick: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Feedback & Support") },
         text = {
             Column {
-                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.gitHubIssueUrl(bleState)) }) {
+                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.gitHubIssueUrl(context, bleState)) }) {
                     Text("Report Issue on GitHub", modifier = Modifier.fillMaxWidth())
                 }
-                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.emailUrl(bleState)) }) {
+                TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.emailUrl(context, bleState)) }) {
                     Text("Email Support", modifier = Modifier.fillMaxWidth())
                 }
                 TextButton(onClick = { onLinkClick(org.cliprelay.feedback.SupportLinks.DISCUSSIONS_URL) }) {
