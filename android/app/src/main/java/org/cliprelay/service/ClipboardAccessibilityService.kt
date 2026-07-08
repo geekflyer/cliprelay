@@ -24,6 +24,7 @@ import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import org.cliprelay.BuildConfig
 import org.cliprelay.settings.ClipboardSettingsStore
 
@@ -212,6 +213,13 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         logEventIfDebug("window", event)
+
+        // Keyboard show/hide fires window events too. They must neither arm
+        // nor disarm toolbar tracking: a disarm here launches the ghost
+        // activity, which steals focus and closes the keyboard the user just
+        // opened (issue #109).
+        if (isImeWindow(event.windowId)) return
+
         val text = event.text.joinToString(" ")
 
         // Icon-only selection toolbars (Messages etc.) expose no window text —
@@ -228,9 +236,37 @@ class ClipboardAccessibilityService : AccessibilityService() {
             // Toolbar was visible but this window state change doesn't have copy text
             // → toolbar closed (user tapped an option or dismissed it)
             copyToolbarVisible = false
+
+            // Cheap pre-check before paying the ghost-activity cost (focus
+            // steal → keyboard dismissal): where background metadata reads
+            // work (e.g. Samsung), a provably stale clip means no copy
+            // happened. Unreadable/null timestamps (Pixel) fall through to
+            // the ghost, whose own freshness check handles them.
+            val timestampMs = try {
+                (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
+                    ?.primaryClipDescription?.timestamp
+            } catch (t: Throwable) {
+                null
+            }
+            if (timestampMs != null && timestampMs > 0L &&
+                !AutoCopyHeuristics.isClipFresh(timestampMs, System.currentTimeMillis())
+            ) {
+                Log.d(TAG, "Copy toolbar closed but clip is stale — skipping ghost")
+                return
+            }
+
             Log.d(TAG, "Copy toolbar closed → checking clipboard")
             notifyService()
         }
+    }
+
+    private fun isImeWindow(windowId: Int): Boolean {
+        val window = try {
+            windows.firstOrNull { it.id == windowId }
+        } catch (t: Throwable) {
+            null
+        }
+        return window?.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -252,16 +288,21 @@ class ClipboardAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Bounded breadth-first scan of all interactive windows for a clickable
-     * copy button. All windows, not just the active one — selection toolbars
-     * are often separate popup windows. Breadth-first so shallow toolbar
+     * Bounded breadth-first scan for a clickable copy button in floating
+     * selection toolbars. Only NON-ACTIVE application windows are scanned:
+     * selection toolbars are separate popup windows, while the active window
+     * is the app's main content — which may legitimately contain persistent
+     * "Copy" buttons (GitHub's copy-path/copy-code icons, issue #109) that
+     * must not arm toolbar tracking. Breadth-first so shallow toolbar
      * buttons are found before the node budget is spent on deep content.
      */
     private fun windowHasCopyAffordance(): Boolean {
         val roots = try {
-            windows.mapNotNull { it.root }
+            windows.filter {
+                it.type == AccessibilityWindowInfo.TYPE_APPLICATION && !it.isActive
+            }.mapNotNull { it.root }
         } catch (t: Throwable) {
-            listOfNotNull(rootInActiveWindow)
+            emptyList()
         }
 
         var budget = MAX_WINDOW_SCAN_NODES
