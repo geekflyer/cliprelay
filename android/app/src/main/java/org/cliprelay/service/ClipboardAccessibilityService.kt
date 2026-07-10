@@ -12,10 +12,16 @@ package org.cliprelay.service
 //      that don't fire TYPE_VIEW_CLICKED for their toolbar buttons.
 //      When a text action toolbar containing "Copy" appears, we set a flag.
 //      When the toolbar closes (next window state change without copy text),
-//      we launch the ghost activity to check if the clipboard was updated.
-//      This avoids stealing focus while the toolbar is still visible.
-//      The ghost activity's clip-freshness check filters out toolbars that
-//      closed without an actual copy.
+//      we trigger a clipboard read to check if the clipboard was updated.
+//      The reader's clip-freshness check filters out toolbars that closed
+//      without an actual copy.
+//
+// Detections are resolved by ClipRelayService via ClipboardOverlayReader
+// (a focusable accessibility overlay — no focus steal, closes no system
+// dialogs), falling back to ClipboardGhostActivity when unavailable. The
+// false-positive gates below still matter: every resolved detection costs a
+// clipboard read, and reading a fresh clip shows the system's "ClipRelay
+// pasted from your clipboard" banner.
 
 import android.accessibilityservice.AccessibilityService
 import android.content.ClipboardManager
@@ -31,6 +37,7 @@ import org.cliprelay.settings.ClipboardSettingsStore
 class ClipboardAccessibilityService : AccessibilityService() {
 
     private lateinit var settingsStore: ClipboardSettingsStore
+    private var overlayReader: ClipboardOverlayReader? = null
 
     // Tracks whether a copy toolbar was recently visible
     @Volatile
@@ -39,6 +46,20 @@ class ClipboardAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         settingsStore = ClipboardSettingsStore(this)
+        overlayReader = ClipboardOverlayReader(this)
+        instance = this
+    }
+
+    /**
+     * Reads the clipboard via a focusable accessibility overlay window —
+     * unlike an activity launch, this closes no system dialogs (notification
+     * shade, heads-up, Live Update chips) and keeps the keyboard open.
+     * Returns false when the overlay could not even be added; the caller
+     * falls back to the ghost activity. [onNeedsGhostFallback] fires later
+     * if the overlay was added but never granted window focus.
+     */
+    fun readClipboardViaOverlay(onNeedsGhostFallback: () -> Unit): Boolean {
+        return overlayReader?.start(onNeedsGhostFallback) ?: false
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -229,9 +250,8 @@ class ClipboardAccessibilityService : AccessibilityService() {
         logEventIfDebug("window", event)
 
         // Keyboard show/hide fires window events too. They must neither arm
-        // nor disarm toolbar tracking: a disarm here launches the ghost
-        // activity, which steals focus and closes the keyboard the user just
-        // opened (issue #109).
+        // nor disarm toolbar tracking: a disarm here triggers a pointless
+        // clipboard read on every keyboard toggle (issue #109).
         if (isImeWindow(event.windowId)) return
 
         val text = event.text.joinToString(" ")
@@ -251,11 +271,11 @@ class ClipboardAccessibilityService : AccessibilityService() {
             // → toolbar closed (user tapped an option or dismissed it)
             copyToolbarVisible = false
 
-            // Cheap pre-check before paying the ghost-activity cost (focus
-            // steal → keyboard dismissal): where background metadata reads
-            // work (e.g. Samsung), a provably stale clip means no copy
-            // happened. Unreadable/null timestamps (Pixel) fall through to
-            // the ghost, whose own freshness check handles them.
+            // Cheap pre-check before paying the clipboard-read cost: where
+            // background metadata reads work (e.g. Samsung), a provably stale
+            // clip means no copy happened. Unreadable/null timestamps (Pixel)
+            // fall through to the reader, whose own freshness check handles
+            // them.
             val timestampMs = try {
                 (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
                     ?.primaryClipDescription?.timestamp
@@ -376,6 +396,13 @@ class ClipboardAccessibilityService : AccessibilityService() {
         private const val TAG = "ClipboardA11y"
         private const val MAX_WINDOW_SCAN_NODES = 256
         private const val MAX_OVERLAY_SCAN_NODES = 32
+
+        // Same-process handle for ClipRelayService so copy detections can be
+        // resolved with an overlay read instead of the ghost activity. Null
+        // whenever the accessibility service isn't connected.
+        @Volatile
+        var instance: ClipboardAccessibilityService? = null
+            private set
     }
 
     private fun notifyService() {
@@ -391,5 +418,18 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.d(TAG, "Accessibility service interrupted")
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        if (instance === this) instance = null
+        overlayReader?.cancel()
+        return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        overlayReader?.cancel()
+        overlayReader = null
+        super.onDestroy()
     }
 }
