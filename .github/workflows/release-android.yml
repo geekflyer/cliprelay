@@ -82,7 +82,7 @@ jobs:
           echo "serviceAccountCredentials=play-service-account.json" > android/play.properties
 
       - name: Build release
-        run: ./scripts/build-all.sh --android-only
+        run: ./scripts/build-all.sh --android-only --release
 
       - name: Publish to internal track
         run: ./scripts/publish-android.sh --track internal
@@ -116,6 +116,7 @@ jobs:
           body: ${{ steps.changelog.outputs.body }}
           prerelease: ${{ inputs.beta }}
           files: dist/cliprelay-release.apk
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
