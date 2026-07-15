@@ -348,12 +348,12 @@ extension AppDelegate: ConnectionControllerDelegate {
     func didReceiveClipboard(text: String) {
         clipboardWriter.writeText(text)
         notificationManager.postClipboardReceived(text: text)
-        statusBarController.flashSyncIndicator()
+        statusBarController.flashSyncIndicator(style: .inbound)
     }
 
     func didReceiveImage(data: Data, contentType: String) {
         clipboardWriter.writeImage(data, contentType: contentType)
-        statusBarController.flashSyncIndicator()
+        statusBarController.flashSyncIndicator(style: .inbound)
     }
 
     func didCompletePairing(deviceName: String?) {
@@ -431,7 +431,7 @@ extension AppDelegate: ConnectionControllerDelegate {
     }
 
     func didSyncClipboard(hash: String) {
-        statusBarController.flashSyncIndicator()
+        statusBarController.flashSyncIndicator(style: .outbound)
     }
 
     func didChangeImageSyncSetting(enabled: Bool) {
