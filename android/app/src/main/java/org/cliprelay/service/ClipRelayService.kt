@@ -986,20 +986,34 @@ class ClipRelayService : Service(), L2capServerCallback {
             return
         }
 
-        // Always launch ghost activity — even when the app is "foreground" per
-        // ProcessLifecycleOwner, a Service cannot read the clipboard on Android 10+.
-        // Only an Activity with window focus can call getPrimaryClip() successfully.
-        Log.d(TAG, "Launching ghost activity for clipboard read")
+        // A Service cannot read the clipboard on Android 10+ — only the app
+        // holding window focus can. Prefer the accessibility overlay reader:
+        // unlike a (ghost) activity launch it closes no system dialogs, so the
+        // notification shade, heads-up notifications, Live Update chips, and
+        // the keyboard all stay open (issue #109). Fall back to the ghost
+        // activity only when the overlay is unavailable or never gains focus.
         ghostActivityInFlight = true
-        // Watchdog: if the ghost never launches or dies before reporting back,
-        // clear the flag so auto-copy doesn't stay wedged until a restart.
+        // Watchdog: if the reader/ghost dies before reporting back, clear the
+        // flag so auto-copy doesn't stay wedged until a restart.
         ghostWatchdog?.let(clipboardAutoClearHandler::removeCallbacks)
         ghostWatchdog = Runnable {
             if (ghostActivityInFlight) {
-                Log.w(TAG, "Ghost activity watchdog fired — clearing in-flight flag")
+                Log.w(TAG, "Clipboard read watchdog fired — clearing in-flight flag")
                 clearGhostActivityInFlight()
             }
         }.also { clipboardAutoClearHandler.postDelayed(it, GHOST_WATCHDOG_MS) }
+
+        val overlayStarted = ClipboardAccessibilityService.instance
+            ?.readClipboardViaOverlay(onNeedsGhostFallback = ::launchGhostActivity) == true
+        if (overlayStarted) {
+            Log.d(TAG, "Reading clipboard via accessibility overlay")
+        } else {
+            launchGhostActivity()
+        }
+    }
+
+    private fun launchGhostActivity() {
+        Log.d(TAG, "Launching ghost activity for clipboard read")
         val ghostIntent = Intent(this, ClipboardGhostActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or
