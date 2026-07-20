@@ -185,6 +185,10 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     // Quickie: CameraX + bundled ML Kit QR scanner, no Google Play services required.
     implementation("io.github.g00fy2.quickie:quickie-bundled:1.12.0")
+    // Same ML Kit artifact quickie already bundles (runtime-only there), declared
+    // explicitly so pair-from-image can call it directly. Keep the version in sync
+    // with quickie's to avoid shipping a second copy.
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     // Play In-App Updates: nudges users on old versions to upgrade. Silently
     // no-ops on devices where the app wasn't installed from the Play Store.
     implementation("com.google.android.play:app-update-ktx:2.1.0")

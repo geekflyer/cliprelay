@@ -97,9 +97,11 @@ fun ClipRelayScreen(
     imageSyncEnabled: Boolean = false,
     otpRelayEnabled: Boolean = false,
     pairingFailed: Boolean = false,
+    hasCamera: Boolean = true,
     onPairingCancelClick: () -> Unit = {},
     onPairingErrorDismiss: () -> Unit = {},
     onPairClick: () -> Unit,
+    onPairFromImageClick: () -> Unit = {},
     onForgetMacClick: (String) -> Unit = {},
     onBurstShown: () -> Unit,
     onAutoClearSettingChanged: (Boolean) -> Unit,
@@ -206,9 +208,11 @@ fun ClipRelayScreen(
                     imageSyncEnabled = imageSyncEnabled,
                     otpRelayEnabled = otpRelayEnabled,
                     pairingFailed = pairingFailed,
+                    hasCamera = hasCamera,
                     onPairingCancelClick = onPairingCancelClick,
                     onPairingErrorDismiss = onPairingErrorDismiss,
                     onPairClick = onPairClick,
+                    onPairFromImageClick = onPairFromImageClick,
                     onForgetMacClick = onForgetMacClick,
                     onAutoClearSettingChanged = onAutoClearSettingChanged,
                     onHideClipboardSettingChanged = onHideClipboardSettingChanged,
@@ -375,9 +379,11 @@ private fun MainCard(
     imageSyncEnabled: Boolean = false,
     otpRelayEnabled: Boolean = false,
     pairingFailed: Boolean = false,
+    hasCamera: Boolean = true,
     onPairingCancelClick: () -> Unit = {},
     onPairingErrorDismiss: () -> Unit = {},
     onPairClick: () -> Unit,
+    onPairFromImageClick: () -> Unit = {},
     onForgetMacClick: (String) -> Unit = {},
     onAutoClearSettingChanged: (Boolean) -> Unit,
     onHideClipboardSettingChanged: (Boolean) -> Unit = {},
@@ -607,6 +613,17 @@ private fun MainCard(
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
+                }
+                // Without a camera the primary button already routes to image-based
+                // pairing, so the secondary option only makes sense alongside a scanner.
+                if (hasCamera) {
+                    TextButton(onClick = onPairFromImageClick) {
+                        Text(
+                            text = "Scan from image",
+                            color = Teal.copy(alpha = 0.6f),
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             } else {
                 if (pairingFailed) {
