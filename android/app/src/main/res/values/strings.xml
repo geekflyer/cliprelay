@@ -19,6 +19,14 @@
     <string name="unpair">Unpair</string>
     <string name="share_help">Tip: Use Android’s Share action in other apps to send selected text to your paired Mac.</string>
     <string name="qr_scan_prompt">On your Mac, open ClipRelay and choose \"Pair New Device…\"</string>
+    <string name="pair_from_image_title">Pair from a saved image</string>
+    <string name="pair_from_image_instructions">On your Mac, open ClipRelay and choose \"Pair New Device…\", then save a screenshot or photo of the QR code to this device and choose it below.</string>
+    <string name="pair_from_image_choose">Choose image</string>
+    <string name="pair_from_image_decoding">Reading image…</string>
+    <string name="pair_from_image_cancel">Cancel</string>
+    <string name="pair_from_image_no_code">No QR code found in that image. Use a sharp, uncropped screenshot of the code on your Mac.</string>
+    <string name="pair_from_image_not_pairing">That QR code isn\'t a ClipRelay pairing code. Choose an image of the code shown in ClipRelay on your Mac.</string>
+    <string name="pair_from_image_unreadable">Couldn\'t read that image. Try a different one.</string>
     <string name="auto_clear_setting_title">Auto-clear synced clipboard</string>
     <string name="auto_clear_setting_subtitle">Clear Mac-synced clipboard text after 60 seconds.</string>
     <string name="hide_clipboard_setting_title">Hide synced clipboard</string>

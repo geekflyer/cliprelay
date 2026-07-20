@@ -118,6 +118,10 @@ class MainActivity : AppCompatActivity() {
     // post-grant callback resumes pairing from the link instead of opening the camera scanner.
     private var pendingDeepLinkInfo: org.cliprelay.pairing.PairingInfo? = null
 
+    // Remembers whether the pairing attempt blocked on the BLE permission started from
+    // "Scan from image", so the post-grant callback resumes into the right scanner mode.
+    private var pendingPairFromImage = false
+
     private val pairPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
@@ -128,7 +132,7 @@ class MainActivity : AppCompatActivity() {
                 pendingDeepLinkInfo = null
                 startPairingFromInfo(deepLink)
             } else {
-                launchQrScanner()
+                launchQrScanner(fromImage = pendingPairFromImage)
             }
         } else {
             // Denied again — re-show the explanation. If Android will no longer
@@ -260,6 +264,7 @@ class MainActivity : AppCompatActivity() {
                 imageSyncEnabled = imageSyncEnabled,
                 otpRelayEnabled = otpRelayEnabled,
                 pairingFailed = pairingFailed,
+                hasCamera = QrScannerActivity.deviceHasCamera(this),
                 onPairingCancelClick = {
                     viewModel.onPairingCancelled()
                     val cancelIntent = Intent(this, ClipRelayService::class.java)
@@ -269,16 +274,8 @@ class MainActivity : AppCompatActivity() {
                 onPairingErrorDismiss = {
                     viewModel.onPairingFailedDismissed()
                 },
-                onPairClick = {
-                    if (BlePermissions.hasRequiredRuntimePermissions(this)) {
-                        launchQrScanner()
-                    } else {
-                        blePermissionPermanentlyDenied =
-                            BlePermissions.requiredRuntimePermissions()
-                                .none { shouldShowRequestPermissionRationale(it) }
-                        showBlePermissionDialog = true
-                    }
-                },
+                onPairClick = { requestPairing(fromImage = false) },
+                onPairFromImageClick = { requestPairing(fromImage = true) },
                 onForgetMacClick = { macId ->
                     val forgetIntent = Intent(this, ClipRelayService::class.java)
                     forgetIntent.action = ClipRelayService.ACTION_FORGET_DEVICE
@@ -437,8 +434,23 @@ class MainActivity : AppCompatActivity() {
             PairedMacUi(id = mac.id, name = mac.name, connected = mac.id in connectedIds)
         }
 
-    private fun launchQrScanner() {
-        scannerLauncher.launch(Intent(this, QrScannerActivity::class.java))
+    /** Open the scanner if the BLE permission is granted, else explain why it's needed. */
+    private fun requestPairing(fromImage: Boolean) {
+        if (BlePermissions.hasRequiredRuntimePermissions(this)) {
+            launchQrScanner(fromImage)
+        } else {
+            pendingPairFromImage = fromImage
+            blePermissionPermanentlyDenied = BlePermissions.requiredRuntimePermissions()
+                .none { shouldShowRequestPermissionRationale(it) }
+            showBlePermissionDialog = true
+        }
+    }
+
+    private fun launchQrScanner(fromImage: Boolean = false) {
+        scannerLauncher.launch(
+            Intent(this, QrScannerActivity::class.java)
+                .putExtra(QrScannerActivity.EXTRA_SCAN_FROM_IMAGE, fromImage)
+        )
     }
 
     /**

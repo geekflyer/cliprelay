@@ -689,7 +689,7 @@ done
 
 ANDROID_MODEL="$("${ADB[@]}" shell getprop ro.product.model | tr -d '\r')"
 MAC_NAME_RAW="$(scutil --get ComputerName 2>/dev/null || hostname)"
-MAC_NAME="$(printf '%s' "$MAC_NAME_RAW" | tr -cs '[:alnum:]_-.' '_')"
+MAC_NAME="$(printf '%s' "$MAC_NAME_RAW" | tr -cs '[:alnum:]_.-' '_')"
 PAIR_TOKEN="$(openssl rand -hex 32)"
 
 echo "- Android device: ${ANDROID_MODEL}"
