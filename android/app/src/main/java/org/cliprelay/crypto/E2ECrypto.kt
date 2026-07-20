@@ -38,8 +38,21 @@ object E2ECrypto {
         return deviceTag(hexToBytes(tokenHex))
     }
 
+    /**
+     * Resolve an X25519 JCA service, falling back to the generic "XDH" name. Stock
+     * Android registers "X25519" as an alias for Conscrypt's XDH services, but some
+     * OEM builds omit the alias (seen on the AYN Thor, Android 13) and pairing would
+     * crash. Conscrypt's XDH is X25519-only, so both names yield identical keys.
+     */
+    private inline fun <T> x25519Service(getInstance: (String) -> T): T =
+        try {
+            getInstance("X25519")
+        } catch (e: java.security.NoSuchAlgorithmException) {
+            getInstance("XDH")
+        }
+
     fun generateX25519KeyPair(): KeyPair {
-        val kpg = KeyPairGenerator.getInstance("X25519")
+        val kpg = x25519Service { KeyPairGenerator.getInstance(it) }
         return kpg.generateKeyPair()
     }
 
@@ -51,7 +64,7 @@ object E2ECrypto {
             0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00
         )
         val encoded = x509Header + rawBytes
-        return KeyFactory.getInstance("X25519").generatePublic(X509EncodedKeySpec(encoded))
+        return x25519Service { KeyFactory.getInstance(it) }.generatePublic(X509EncodedKeySpec(encoded))
     }
 
     /** Extract raw 32-byte public key from JCA PublicKey. */
@@ -63,7 +76,7 @@ object E2ECrypto {
     /** Compute ECDH shared secret and derive root secret via HKDF. */
     fun ecdhSharedSecret(privateKey: PrivateKey, remotePublicKeyRaw: ByteArray): ByteArray {
         val remotePub = x25519PublicKeyFromRaw(remotePublicKeyRaw)
-        val ka = JKeyAgreement.getInstance("X25519")
+        val ka = x25519Service { JKeyAgreement.getInstance(it) }
         ka.init(privateKey)
         ka.doPhase(remotePub, true)
         val rawSecret = ka.generateSecret()
@@ -96,7 +109,7 @@ object E2ECrypto {
     /** Compute raw X25519 shared secret (no HKDF wrapping). Production overload using JCA PrivateKey. */
     fun rawX25519(ownPrivateKey: PrivateKey, remotePublicKeyRaw: ByteArray): ByteArray {
         val remotePub = x25519PublicKeyFromRaw(remotePublicKeyRaw)
-        val ka = JKeyAgreement.getInstance("X25519")
+        val ka = x25519Service { JKeyAgreement.getInstance(it) }
         ka.init(ownPrivateKey)
         ka.doPhase(remotePub, true)
         return ka.generateSecret()
@@ -111,9 +124,9 @@ object E2ECrypto {
             0x04, 0x22, 0x04, 0x20
         )
         val encoded = pkcs8Header + ownPrivateKeyRaw
-        val privKey = KeyFactory.getInstance("X25519")
+        val privKey = x25519Service { KeyFactory.getInstance(it) }
             .generatePrivate(java.security.spec.PKCS8EncodedKeySpec(encoded))
-        val ka = JKeyAgreement.getInstance("X25519")
+        val ka = x25519Service { JKeyAgreement.getInstance(it) }
         ka.init(privKey)
         ka.doPhase(remotePub, true)
         return ka.generateSecret()
